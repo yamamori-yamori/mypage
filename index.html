@@ -39,7 +39,9 @@
   .logo {
     font-family: "Shippori Mincho", serif;
     font-weight: 700; letter-spacing: 0.04em; font-size: 1.02rem;
+    color: inherit; text-decoration: none;
   }
+  a.logo:hover { color: var(--ink); opacity: 0.85; }
   .logo .sep { color: var(--muted); font-weight: 400; margin: 0 0.35rem; }
   .logo em {
     font-style: normal; font-weight: 400; font-size: 0.72rem;
@@ -312,7 +314,7 @@
 </head>
 <body>
 <header>
-  <div class="logo">やまもりやもり<span class="sep">/</span>ろりたけんじ</div>
+  <a class="logo" href="index.html">やまもりやもり<span class="sep">/</span>ろりたけんじ</a>
   <nav>
     <a href="#works">商業作品</a>
     <a href="#apps">アプリ</a>
