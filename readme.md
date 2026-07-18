@@ -1,1 +1,3 @@
-ここを建設予定地とする！
+いわゆるホームページです。  
+↓　こちらへ　↓  
+https://yamamori-yamori.github.io/mypage/
