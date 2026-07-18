@@ -168,11 +168,33 @@
     display: flex; justify-content: space-between; align-items: center; gap: 1rem;
     flex-wrap: wrap;
     background: var(--card); border: 1px solid var(--line);
-    padding: 0.9rem 1rem; text-decoration: none; transition: 0.15s;
+    padding: 0.9rem 1rem; text-decoration: none; color: inherit; transition: 0.15s;
   }
   .novel:hover { border-color: #cfc6b6; }
   .novel h3 { font-size: 0.92rem; font-weight: 500; }
+  .novel h3 a { color: inherit; text-decoration: none; }
+  .novel h3 a:hover { color: var(--accent); }
   .novel p { font-size: 0.76rem; color: var(--muted); }
+  /* rich card: outer must not be <a> when work links are inside */
+  .novel-rich {
+    display: block;
+    align-items: stretch;
+  }
+  .novel-rich .novel-top {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
+  }
+  .novel-rich .novel-top > div { min-width: 0; flex: 1; }
+  .novel-works {
+    margin: 0.5rem 0 0;
+    padding-left: 1.15rem;
+    font-size: 0.76rem; color: var(--muted); line-height: 1.6;
+  }
+  .novel-works li { margin: 0.2rem 0; }
+  .novel-works a {
+    color: var(--accent); text-decoration: none;
+    overflow-wrap: anywhere; word-break: break-word;
+  }
+  .novel-works a:hover { text-decoration: underline; }
   .badge {
     font-size: 0.68rem; color: var(--accent);
     border: 1px solid #e7cfc0; padding: 0.2rem 0.5rem; border-radius: 4px;
@@ -399,7 +421,7 @@
         <div class="app-icon">Manga<br>Editor</div>
         <div>
           <h3>マンガページエディタ</h3>
-          <p>コマ・台紙・下書きなど、ページ単位で扱う編集ツール。</p>
+          <p>コマ・台紙・吹き出し・セリフ・下書きなど、ページ単位で扱う編集ツール。</p>
         </div>
         <a class="btn" href="https://note.com/yamamoriyamori/n/ncb5b56e3468a"
            target="_blank" rel="noopener noreferrer">紹介note</a>
@@ -408,7 +430,7 @@
         <div class="app-icon" style="background:linear-gradient(160deg,#1e3a5f,#7a9bb8)">Audio<br>Book</div>
         <div>
           <h3>オーディオブック関連アプリ</h3>
-          <p>テキストから音声書籍（M4B）を作る・管理するアプリ。</p>
+          <p>テキストから音声書籍（M4B）を作成・編集するアプリ。</p>
         </div>
         <a class="btn" href="https://note.com/yamamoriyamori/m/m2a7c8b8b3cf1"
            target="_blank" rel="noopener noreferrer">紹介note</a>
@@ -421,19 +443,30 @@
     <p class="sec-desc">一般向け名義での掲載先です。</p>
     <div class="rule"></div>
     <div class="novel-list">
-      <a class="novel" href="https://kakuyomu.jp/users/yamamoriyamori"
-         target="_blank" rel="noopener noreferrer">
-        <div>
-          <h3>カクヨム</h3>
-          <p>ユーザーページ · 作品一覧</p>
+      <div class="novel novel-rich">
+        <div class="novel-top">
+          <div>
+            <h3><a href="https://kakuyomu.jp/users/yamamoriyamori" target="_blank" rel="noopener noreferrer">カクヨム</a></h3>
+            <p>ユーザーページ · 作品一覧</p>
+          </div>
+          <span class="badge">カクヨム</span>
         </div>
-        <span class="badge">カクヨム</span>
-      </a>
+        <ul class="novel-works">
+          <li>
+            代表作:
+            <a href="https://kakuyomu.jp/works/16818093089670587278" target="_blank" rel="noopener noreferrer">「妹さんは、こんなこと、してくれないでしょ？」</a>
+          </li>
+          <li>
+            最新作:
+            <a href="https://kakuyomu.jp/works/822139840229155764" target="_blank" rel="noopener noreferrer">エルフの義妹とＳＦ研</a>
+          </li>
+        </ul>
+      </div>
       <a class="novel" href="https://mypage.syosetu.com/2458507/"
          target="_blank" rel="noopener noreferrer">
         <div>
           <h3>小説家になろう</h3>
-          <p>マイページ · 作品一覧</p>
+          <p>マイページ · 作品一覧（エルフの義妹とＳＦ研・等）</p>
         </div>
         <span class="badge">なろう</span>
       </a>
@@ -453,14 +486,25 @@
     <p class="sec-desc">R18名義での掲載先です。</p>
     <div class="rule"></div>
     <div class="novel-list">
-      <a class="novel" href="https://xmypage.syosetu.com/x3937ch/"
-         target="_blank" rel="noopener noreferrer">
-        <div>
-          <h3>ノクターンノベルズ</h3>
-          <p>作者Xマイページ · 作品一覧</p>
+      <div class="novel novel-rich">
+        <div class="novel-top">
+          <div>
+            <h3><a href="https://xmypage.syosetu.com/x3937ch/" target="_blank" rel="noopener noreferrer">ノクターンノベルズ</a></h3>
+            <p>作者Xマイページ · 作品一覧</p>
+          </div>
+          <span class="badge">ノクターン</span>
         </div>
-        <span class="badge">ノクターン</span>
-      </a>
+        <ul class="novel-works">
+          <li>
+            代表作（コミカライズ）:
+            <a href="https://novel18.syosetu.com/n6566iq/" target="_blank" rel="noopener noreferrer">★中出しガチャ★異世界転移した俺はHのたびにガチャを引く！</a>
+          </li>
+          <li>
+            新作公開:
+            <a href="https://novel18.syosetu.com/n8784mf/" target="_blank" rel="noopener noreferrer">夏休みが終わったら ～ 中学一年生の美奈と、その親友サキと大学生の僕は、たがいに依存しながら壊れ合う</a>
+          </li>
+        </ul>
+      </div>
       <a class="novel" href="https://pink.solispia.com/user/822/profile"
          target="_blank" rel="noopener noreferrer">
         <div>
