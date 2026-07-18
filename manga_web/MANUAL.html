@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>マンガページエディタ 使い方（図解）</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <style>
+    :root {
+      --bg: #1a1a1c;
+      --panel: #252528;
+      --panel2: #2e2e32;
+      --border: #3f3f46;
+      --text: #e8e8ec;
+      --muted: #9a9aa3;
+      --accent: #6ea8fe;
+      --accent2: #7dd3a7;
+      --warn: #f0c674;
+      --danger: #f07178;
+      --canvas: #f5f2ea;
+      --ink: #1c1c1c;
+      --step: #3d4f6f;
+      --radius: 10px;
+      --shadow: 0 8px 28px rgba(0,0,0,.35);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      font-size: 15px;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* nav */
+    .top {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+      padding: 12px 20px;
+      background: rgba(30,30,34,.92);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(8px);
+    }
+    .top h1 { font-size: 16px; font-weight: 700; white-space: nowrap; }
+    .top h1 .byline {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      margin-left: 8px;
+    }
+    .top nav { display: flex; flex-wrap: wrap; gap: 8px 12px; font-size: 13px; flex: 1; }
+    .top nav a { color: var(--muted); }
+    .top nav a:hover { color: var(--text); }
+    .top .ver {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      opacity: 0.85;
+    }
+
+    main { max-width: 1080px; margin: 0 auto; padding: 28px 20px 80px; }
+
+    section {
+      margin-bottom: 48px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px 22px 28px;
+      box-shadow: var(--shadow);
+    }
+    section h2 {
+      font-size: 20px;
+      margin-bottom: 8px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    section h2 .num {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; border-radius: 8px;
+      background: var(--step); color: #fff; font-size: 13px; font-weight: 700;
+    }
+    .lead { color: var(--muted); margin-bottom: 18px; font-size: 14px; }
+
+    h3 {
+      font-size: 15px;
+      margin: 20px 0 10px;
+      color: var(--accent2);
+      font-weight: 600;
+    }
+
+    .fig {
+      background: #141416;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      overflow-x: auto;
+      margin: 12px 0 8px;
+    }
+    .fig svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+    .cap {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 4px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 760px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 14px 12px;
+    }
+    .card h4 { font-size: 14px; margin-bottom: 6px; }
+    .card p, .card li { font-size: 13px; color: var(--muted); }
+    .card ul { padding-left: 1.2em; margin-top: 6px; }
+    .card li { margin: 3px 0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin: 12px 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #1e1e22; color: var(--accent); font-weight: 600; }
+    td { color: var(--text); }
+    td.k { color: var(--warn); font-family: ui-monospace, monospace; white-space: nowrap; }
+
+    .keys {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin: 10px 0;
+    }
+    .key {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #1e1e22;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+    .key kbd {
+      background: #333;
+      border: 1px solid #555;
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      color: #fff;
+    }
+
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: rgba(110,168,254,.08);
+      padding: 10px 14px;
+      border-radius: 0 8px 8px 0;
+      font-size: 13px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+    .callout strong { color: var(--text); }
+    .callout.warn { border-left-color: var(--warn); background: rgba(240,198,116,.08); }
+
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 20px;
+    }
+
+    /* hero */
+    .hero {
+      text-align: center;
+      padding: 8px 0 4px;
+    }
+    .hero .hero-svg {
+      display: block;
+      margin: 0 auto;
+      max-width: 100%;
+      height: auto;
+    }
+    .hero .hero-blurb {
+      color: #f0c674cc;
+      width: fit-content;
+      max-width: none;
+      margin: 20px auto 0;
+      font-size: 14px;
+      text-align: left;
+      line-height: 1.7;
+    }
+    .hero .hero-blurb p {
+      margin: 0 0 0.2em;
+      color: inherit;
+      white-space: nowrap;
+    }
+    .hero .hero-blurb p:last-child {
+      margin-bottom: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="top">
+    <h1>マンガページエディタ 使い方 <span class="byline">by やまもりやもり</span></h1>
+    <nav>
+      <a href="#s1">画面</a>
+      <a href="#s2">手順</a>
+      <a href="#s3">ステップ</a>
+      <a href="#s4">選択</a>
+      <a href="#s5">ページ</a>
+      <a href="#s6">コピー</a>
+      <a href="#s7">出力</a>
+      <a href="#s8">キー</a>
+      <a href="#s9">FAQ</a>
+    </nav>
+    <span class="ver" data-app-ver><!--APP_VER-->Ver.4.4<!--/APP_VER--></span>
+  </div>
+
+  <main>
+
+    <!-- HERO -->
+    <section class="hero" style="box-shadow:none;background:transparent;border:none;padding:8px 0 8px;margin-bottom:24px;">
+      <svg class="hero-svg" viewBox="0 0 720 120" width="720" height="120" role="img" aria-label="マンガページエディタ">
+        <defs>
+          <linearGradient id="hg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#6ea8fe"/>
+            <stop offset="100%" stop-color="#7dd3a7"/>
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="720" height="120" rx="12" fill="#252528" stroke="#3f3f46"/>
+        <!-- mini page -->
+        <rect x="40" y="22" width="70" height="80" rx="3" fill="#f5f2ea" stroke="#888"/>
+        <path d="M48 40 H102 M48 55 H90 M48 70 H98" stroke="#bbb" stroke-width="2"/>
+        <circle cx="75" cy="48" r="10" fill="none" stroke="#6ea8fe" stroke-width="1.5" stroke-dasharray="3 2"/>
+        <text x="140" y="52" fill="url(#hg)" font-size="28" font-weight="700" font-family="system-ui,sans-serif">マンガページエディタ</text>
+        <text x="430" y="52" fill="#9a9aa3" font-size="13" font-weight="500" font-family="system-ui,sans-serif">by やまもりやもり</text>
+        <text x="140" y="102" fill="#9a9aa3" font-size="14" font-family="system-ui,sans-serif">ブラウザで開くだけ。インストール不要。index.htmlを開けば使えます。</text>
+      </svg>
+      <div class="hero-blurb">
+        <p>● マンガのコマをレイアウトして画像を入れ、吹き出しとセリフを置けます。ネーム用下書きや校閲メモもあります。</p>
+        <p>● 複数ページにも対応。線のガサつきや手書き風の変形、多彩な吹き出し、集中線・スピード線も使えます。</p>
+      </div>
+    </section>
+
+    <!-- 1 画面構成 -->
+    <section id="s1">
+      <h2><span class="num">1</span> 画面の見方</h2>
+      <p class="lead">上バーでファイルとページ、左で作業ステップ、中央で描画、右で設定とプロパティ。</p>
+
+      <div class="fig">
+        <svg viewBox="0 0 900 420" width="900" height="420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="画面レイアウト図">
+          <!-- chrome -->
+          <rect x="8" y="8" width="884" height="404" rx="10" fill="#1e1e22" stroke="#3f3f46" stroke-width="1.5"/>
+          <!-- topbar -->
+          <rect x="8" y="8" width="884" height="44" rx="10" fill="#161618"/>
+          <rect x="8" y="36" width="884" height="16" fill="#161618"/>
+          <text x="24" y="34" fill="#fff" font-size="13" font-weight="700" font-family="system-ui">マンガページエディタ</text>
+          <!-- file buttons -->
+          <g font-family="system-ui" font-size="10" fill="#ccc">
+            <rect x="190" y="18" width="32" height="20" rx="3" fill="#2a2a30" stroke="#444"/>
+            <text x="196" y="32">新規</text>
+            <rect x="226" y="18" width="32" height="20" rx="3" fill="#2a2a30" stroke="#444"/>
+            <text x="232" y="32">開く</text>
+            <rect x="262" y="18" width="32" height="20" rx="3" fill="#2a2a30" stroke="#444"/>
+            <text x="268" y="32">保存</text>
+            <rect x="298" y="18" width="36" height="20" rx="3" fill="#2a2a30" stroke="#444"/>
+            <text x="304" y="32">印刷</text>
+            <rect x="338" y="18" width="48" height="20" rx="3" fill="#2a2a30" stroke="#444"/>
+            <text x="344" y="32">PNG出力</text>
+            <rect x="390" y="18" width="58" height="20" rx="3" fill="#2a2a30" stroke="#444"/>
+            <text x="396" y="32">↩ 元に戻す</text>
+            <rect x="454" y="18" width="40" height="20" rx="3" fill="#2a2a30" stroke="#444"/>
+            <text x="460" y="32">100%</text>
+            <rect x="500" y="18" width="22" height="20" rx="3" fill="#2a2a30" stroke="#6ea8fe"/>
+            <text x="506" y="32" fill="#6ea8fe">？</text>
+          </g>
+          <!-- page nav -->
+          <g font-family="system-ui" font-size="11">
+            <rect x="720" y="16" width="28" height="22" rx="3" fill="#2a2a30" stroke="#6ea8fe"/>
+            <text x="728" y="31" fill="#6ea8fe">◀</text>
+            <text x="758" y="31" fill="#e0e0e0">2/5</text>
+            <rect x="790" y="16" width="28" height="22" rx="3" fill="#2a2a30" stroke="#6ea8fe"/>
+            <text x="798" y="31" fill="#6ea8fe">▶</text>
+            <rect x="826" y="16" width="48" height="22" rx="3" fill="#2a2a30" stroke="#7dd3a7"/>
+            <text x="834" y="31" fill="#7dd3a7">サムネ</text>
+          </g>
+          <!-- annotation topbar -->
+          <path d="M360 52 L360 68" stroke="#f0c674" stroke-width="1.5"/>
+          <text x="280" y="82" fill="#f0c674" font-size="11" font-family="system-ui">ファイル・Undo・倍率・？</text>
+          <path d="M800 52 L800 68" stroke="#7dd3a7" stroke-width="1.5"/>
+          <text x="740" y="82" fill="#7dd3a7" font-size="11" font-family="system-ui">ページ切替</text>
+
+          <!-- left step nav -->
+          <rect x="8" y="52" width="110" height="360" fill="#222226"/>
+          <g font-family="system-ui" font-size="11">
+            <text x="20" y="72" fill="#888">ステップ</text>
+            <!-- steps -->
+            <rect x="16" y="84" width="94" height="28" rx="4" fill="#2a2a30" stroke="#444"/>
+            <text x="28" y="102" fill="#ccc">📄 紙を決める</text>
+            <rect x="16" y="118" width="94" height="28" rx="4" fill="#3d4f6f" stroke="#6ea8fe"/>
+            <text x="28" y="136" fill="#fff">▦ コマを置く</text>
+            <rect x="16" y="152" width="94" height="28" rx="4" fill="#2a2a30" stroke="#444"/>
+            <text x="28" y="170" fill="#ccc">🖼 絵を入れる</text>
+            <rect x="16" y="186" width="94" height="28" rx="4" fill="#2a2a30" stroke="#444"/>
+            <text x="28" y="204" fill="#ccc">💬 吹き出し</text>
+            <rect x="16" y="220" width="94" height="28" rx="4" fill="#2a2a30" stroke="#444"/>
+            <text x="28" y="238" fill="#ccc">A セリフ</text>
+            <rect x="16" y="254" width="94" height="28" rx="4" fill="#2a2a30" stroke="#444"/>
+            <text x="28" y="272" fill="#ccc">✨ エフェクト</text>
+            <rect x="16" y="288" width="94" height="26" rx="4" fill="#222222" stroke="#333"/>
+            <text x="28" y="305" fill="#a8a8a8">✎ 下書き</text>
+            <rect x="16" y="318" width="94" height="26" rx="4" fill="#2a2a30" stroke="#444"/>
+            <path d="M24 331 C30 324, 36 338, 44 330 S56 322, 62 332" fill="none" stroke="#cc2222" stroke-width="1.8" stroke-linecap="round"/>
+            <text x="66" y="335" fill="#e05555" font-size="11">メモ</text>
+            <text x="22" y="362" fill="#666" font-size="10">Shift = 選択</text>
+          </g>
+          <text x="22" y="400" fill="#6ea8fe" font-size="11" font-family="system-ui">① 左ナビ</text>
+
+          <!-- canvas area -->
+          <rect x="118" y="52" width="520" height="360" fill="#2d2d30"/>
+          <!-- page paper -->
+          <rect x="200" y="80" width="280" height="300" fill="#f5f2ea" stroke="#888" stroke-width="1"/>
+          <!-- panels -->
+          <rect x="214" y="96" width="120" height="100" fill="#fff" stroke="#111" stroke-width="2.5"/>
+          <rect x="348" y="96" width="116" height="100" fill="#fff" stroke="#111" stroke-width="2.5"/>
+          <rect x="214" y="210" width="250" height="150" fill="#fff" stroke="#111" stroke-width="2.5"/>
+          <!-- draft circle dashed -->
+          <ellipse cx="274" cy="146" rx="36" ry="30" fill="none" stroke="#6ea8fe" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.7"/>
+          <!-- balloon -->
+          <ellipse cx="400" cy="280" rx="40" ry="28" fill="#fff" stroke="#111" stroke-width="1.5"/>
+          <path d="M380 300 L370 320 L390 305" fill="#fff" stroke="#111" stroke-width="1.5"/>
+          <!-- review memo on top (edit only) -->
+          <path d="M250 250 C280 220, 300 270, 340 240" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+          <path d="M250 250 C280 220, 300 270, 340 240" fill="none" stroke="#cc2222" stroke-width="2" stroke-linecap="round"/>
+          <text x="350" y="248" fill="#fff" font-size="11" font-family="system-ui" stroke="#fff" stroke-width="3" paint-order="stroke">！</text>
+          <text x="350" y="248" fill="#cc2222" font-size="11" font-family="system-ui">！</text>
+          <!-- image placeholder -->
+          <rect x="230" y="110" width="90" height="70" fill="#dde8f5" stroke="#8ab" stroke-dasharray="3 2"/>
+          <text x="248" y="150" fill="#6a8" font-size="11" font-family="system-ui">絵</text>
+          <text x="300" y="400" fill="#7dd3a7" font-size="11" font-family="system-ui">② キャンバス（原稿）</text>
+
+          <!-- right panels -->
+          <rect x="638" y="52" width="254" height="170" fill="#252528" stroke="#333"/>
+          <text x="652" y="74" fill="#7dd3a7" font-size="12" font-weight="600" font-family="system-ui">ステップガイド</text>
+          <text x="652" y="96" fill="#999" font-size="11" font-family="system-ui">空き領域ドラッグでコマ作成</text>
+          <text x="652" y="116" fill="#999" font-size="11" font-family="system-ui">台紙・グリッド設定など</text>
+          <rect x="652" y="130" width="220" height="70" rx="4" fill="#1e1e22" stroke="#3f3f46"/>
+          <text x="664" y="152" fill="#ccc" font-size="11" font-family="system-ui">台紙色 ■  画像を読み込む</text>
+          <text x="664" y="176" fill="#888" font-size="10" font-family="system-ui">グリッド吸着 ON</text>
+          <text x="700" y="232" fill="#6ea8fe" font-size="11" font-family="system-ui">③ 右上：その場の設定</text>
+
+          <rect x="638" y="232" width="254" height="180" fill="#252528" stroke="#333"/>
+          <text x="652" y="254" fill="#f0c674" font-size="12" font-weight="600" font-family="system-ui">プロパティ</text>
+          <text x="652" y="278" fill="#999" font-size="11" font-family="system-ui">選択中のオブジェクト</text>
+          <line x1="652" y1="290" x2="870" y2="290" stroke="#333"/>
+          <text x="652" y="312" fill="#ccc" font-size="11" font-family="system-ui">線幅  2</text>
+          <text x="652" y="334" fill="#ccc" font-size="11" font-family="system-ui">塗り  #FFFFFF</text>
+          <text x="652" y="356" fill="#ccc" font-size="11" font-family="system-ui">コマ内にクロップ ☐</text>
+          <rect x="652" y="370" width="100" height="24" rx="4" fill="#3d4f6f" stroke="#6ea8fe"/>
+          <text x="668" y="386" fill="#fff" font-size="11" font-family="system-ui">⚭ 融合</text>
+          <text x="700" y="408" fill="#f0c674" font-size="11" font-family="system-ui">④ 右下：選択物の編集</text>
+        </svg>
+      </div>
+      <p class="cap">図1 — 画面4領域。青い枠のステップが「今やっている作業」。下書きは暗いグレー、メモは赤。</p>
+
+      <div class="grid-2" style="margin-top:16px">
+        <div class="card">
+          <h4>左ステップ</h4>
+          <p>作業に合わせてツールが切り替わります。<strong style="color:#a8a8a8">紙を決める</strong> → <strong style="color:#a8a8a8">コマを置く</strong> → <strong style="color:#a8a8a8">絵を入れる</strong> → <strong style="color:#a8a8a8">吹き出し</strong> → <strong style="color:#a8a8a8">セリフ</strong> → <strong style="color:#a8a8a8">エフェクト</strong>。<br />
+          <strong style="color:#a8a8a8">下書き</strong>でネーム、<strong style="color:#e05555">メモ</strong>で赤入れもできます。</p>
+        </div>
+        <div class="card">
+          <h4>中央キャンバス</h4>
+          <ul>
+            <li>原稿そのもの。空きをドラッグで作成、Shift で選択・移動</li>
+            <li>Ctrl/Cmd + ドラッグ … パン／Ctrl/Cmd + ホイール … ズーム</li>
+            <li>Ctrl/Cmd + C / V … コピー／貼り付け</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>右上ガイド</h4>
+          <p>今のステップの説明と、台紙・下書きの種類などの設定。</p>
+        </div>
+        <div class="card">
+          <h4>右下プロパティ</h4>
+          <p>選んでいるコマ／絵／吹き出しなどの数値と色。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2 手順 -->
+    <section id="s2">
+      <h2><span class="num">2</span> おすすめの作業順</h2>
+      <p class="lead">迷ったらこの流れ。下書きはいつでも挟めます。</p>
+
+      <div class="fig">
+        <svg viewBox="0 0 900 200" width="900" height="200" role="img" aria-label="作業フロー">
+          <defs>
+            <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#6ea8fe"/>
+            </marker>
+          </defs>
+          <!-- boxes -->
+          <g font-family="system-ui" text-anchor="middle">
+            <rect x="20" y="50" width="90" height="70" rx="8" fill="#2a3040" stroke="#6ea8fe"/>
+            <text x="65" y="80" fill="#fff" font-size="12">1. 紙</text>
+            <text x="65" y="98" fill="#9ab" font-size="10">サイズ</text>
+
+            <rect x="140" y="50" width="90" height="70" rx="8" fill="#2a3040" stroke="#6ea8fe"/>
+            <text x="185" y="80" fill="#fff" font-size="12">2. コマ</text>
+            <text x="185" y="98" fill="#9ab" font-size="10">枠・台紙</text>
+
+            <rect x="260" y="50" width="90" height="70" rx="8" fill="#243828" stroke="#7dd3a7"/>
+            <text x="305" y="80" fill="#fff" font-size="12">3. 下書き</text>
+            <text x="305" y="98" fill="#8c8" font-size="10">任意</text>
+
+            <rect x="380" y="50" width="90" height="70" rx="8" fill="#2a3040" stroke="#6ea8fe"/>
+            <text x="425" y="80" fill="#fff" font-size="12">4. 絵</text>
+            <text x="425" y="98" fill="#9ab" font-size="10">配置</text>
+
+            <rect x="500" y="50" width="90" height="70" rx="8" fill="#2a3040" stroke="#6ea8fe"/>
+            <text x="545" y="80" fill="#fff" font-size="12">5. 吹き出し</text>
+            <text x="545" y="98" fill="#9ab" font-size="10">形・しっぽ</text>
+
+            <rect x="620" y="50" width="90" height="70" rx="8" fill="#2a3040" stroke="#6ea8fe"/>
+            <text x="665" y="80" fill="#fff" font-size="12">6. セリフ</text>
+            <text x="665" y="98" fill="#9ab" font-size="10">文字</text>
+
+            <rect x="740" y="50" width="90" height="70" rx="8" fill="#2a3040" stroke="#6ea8fe"/>
+            <text x="785" y="80" fill="#fff" font-size="12">7. 効果</text>
+            <text x="785" y="98" fill="#9ab" font-size="10">線など</text>
+          </g>
+          <!-- arrows -->
+          <g stroke="#6ea8fe" stroke-width="2" fill="none" marker-end="url(#arr)">
+            <line x1="110" y1="85" x2="136" y2="85"/>
+            <line x1="230" y1="85" x2="256" y2="85"/>
+            <line x1="350" y1="85" x2="376" y2="85"/>
+            <line x1="470" y1="85" x2="496" y2="85"/>
+            <line x1="590" y1="85" x2="616" y2="85"/>
+            <line x1="710" y1="85" x2="736" y2="85"/>
+          </g>
+          <!-- save -->
+          <path d="M785 120 L785 150 L450 150" stroke="#f0c674" stroke-width="1.5" fill="none" marker-end="url(#arr)" stroke-dasharray="4 3"/>
+          <rect x="380" y="158" width="140" height="32" rx="6" fill="#3a3420" stroke="#f0c674"/>
+          <text x="450" y="178" text-anchor="middle" fill="#f0c674" font-size="12" font-family="system-ui">保存 → PNG / 印刷</text>
+          <text x="305" y="40" fill="#7dd3a7" font-size="11" font-family="system-ui" text-anchor="middle">絵の下に描かれる</text>
+        </svg>
+      </div>
+      <p class="cap">図2 — 基本フロー。緑は任意の下書き。校閲のメモは最後に足す想定（図には未掲載）。</p>
+
+      <div class="callout">
+        <strong>レイヤーのイメージ:</strong>
+        台紙色・台紙画像 → コマの塗り → <strong>下書き</strong> → 絵 → 枠 → 吹き出し → セリフ → <strong style="color:#e05555">メモ（校閲）</strong>。
+        絵を載せると下書きは自然に隠れます。メモは常に一番上に見えますが、PNG・印刷・サムネには出ません。
+      </div>
+    </section>
+
+    <!-- 3 ステップ詳細 -->
+    <section id="s3">
+      <h2><span class="num">3</span> 各ステップでできること</h2>
+      <p class="lead">左ナビの8段階。それぞれ「描く／置く」ツールが変わります。最後の<strong style="color:#e05555">メモ</strong>は校閲専用です。</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="fig" style="padding:8px;margin:0 0 10px">
+            <svg viewBox="0 0 280 120" width="100%" height="120">
+              <rect width="280" height="120" rx="6" fill="#1a1a1e"/>
+              <rect x="90" y="20" width="100" height="80" fill="#f5f2ea" stroke="#888"/>
+              <text x="140" y="65" text-anchor="middle" fill="#666" font-size="11" font-family="system-ui">B5 など</text>
+              <text x="20" y="30" fill="#6ea8fe" font-size="12" font-family="system-ui">📄 紙を決める</text>
+            </svg>
+          </div>
+          <h4>紙を決める</h4>
+          <ul>
+            <li>A5 / B5 / A4 / SNS / PC / スマホ縦など</li>
+            <li>向き・カスタムサイズ</li>
+            <li>この画面に画像をドロップするとそのサイズになります</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="fig" style="padding:8px;margin:0 0 10px">
+            <svg viewBox="0 0 280 120" width="100%" height="120">
+              <rect width="280" height="120" rx="6" fill="#1a1a1e"/>
+              <rect x="70" y="18" width="140" height="90" fill="#f5f2ea"/>
+              <rect x="80" y="28" width="55" height="40" fill="#fff" stroke="#111" stroke-width="2"/>
+              <rect x="145" y="28" width="55" height="40" fill="#fff" stroke="#111" stroke-width="2"/>
+              <rect x="80" y="76" width="120" height="24" fill="#fff" stroke="#111" stroke-width="2"/>
+              <circle cx="80" cy="28" r="3" fill="#f90"/>
+              <circle cx="135" cy="28" r="3" fill="#f90"/>
+              <text x="20" y="30" fill="#6ea8fe" font-size="12" font-family="system-ui">▦ コマ</text>
+            </svg>
+          </div>
+          <h4>コマを置く</h4>
+          <ul>
+            <li>空きでドラッグ → 新規コマ。頂点を掴んで変形</li>
+            <li>斜め線も使えるグリッド吸着が強力でオススメ！</li>
+            <li>コマの融合や、線のガサつきも設定できる</li>
+            <li>台紙色・台紙画像も選べる</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="fig" style="padding:8px;margin:0 0 10px">
+            <svg viewBox="0 0 280 120" width="100%" height="120">
+              <rect width="280" height="120" rx="6" fill="#1a1a1e"/>
+              <rect x="70" y="18" width="140" height="90" fill="#f5f2ea"/>
+              <rect x="80" y="28" width="55" height="70" fill="#fff" stroke="#111" stroke-width="2"/>
+              <rect x="90" y="40" width="35" height="45" fill="#cde" stroke="#8ab"/>
+              <text x="98" y="66" fill="#468" font-size="10" font-family="system-ui">IMG</text>
+              <text x="20" y="30" fill="#6ea8fe" font-size="12" font-family="system-ui">🖼 絵</text>
+            </svg>
+          </div>
+          <h4>絵を入れる</h4>
+          <ul>
+            <li>コマを選び画像ファイル選択</li>
+            <li>画像のドラッグアンドドロップも可能</li>
+            <li>移動・回転・拡大縮小・色調整</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="fig" style="padding:8px;margin:0 0 10px">
+            <svg viewBox="0 0 280 120" width="100%" height="120">
+              <rect width="280" height="120" rx="6" fill="#1a1a1e"/>
+              <rect x="70" y="18" width="140" height="90" fill="#f5f2ea"/>
+              <ellipse cx="140" cy="55" rx="38" ry="26" fill="#fff" stroke="#111" stroke-width="1.5"/>
+              <path d="M120 75 L110 95 L130 78" fill="#fff" stroke="#111"/>
+              <text x="20" y="30" fill="#6ea8fe" font-size="12" font-family="system-ui">💬 吹き出し</text>
+            </svg>
+          </div>
+          <h4>吹き出し</h4>
+          <ul>
+            <li>形・しっぽはプロパティで変更</li>
+            <li>複数選んで融合可</li>
+            <li>コマでクロップもできる（既定OFF）</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="fig" style="padding:8px;margin:0 0 10px">
+            <svg viewBox="0 0 280 120" width="100%" height="120">
+              <rect width="280" height="120" rx="6" fill="#1a1a1e"/>
+              <rect x="70" y="18" width="140" height="90" fill="#f5f2ea"/>
+              <text x="100" y="60" fill="#222" font-size="16" font-family="serif" writing-mode="tb">こんにちは</text>
+              <text x="20" y="30" fill="#6ea8fe" font-size="12" font-family="system-ui">A セリフ</text>
+            </svg>
+          </div>
+          <h4>セリフ</h4>
+          <ul>
+            <li>クリックして入力</li>
+            <li>縦書き・横書き</li>
+            <li>アウトライン化して手書き風の変形も可能</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="fig" style="padding:8px;margin:0 0 10px">
+            <svg viewBox="0 0 280 120" width="100%" height="120">
+              <rect width="280" height="120" rx="6" fill="#1a1a1e"/>
+              <rect x="70" y="18" width="140" height="90" fill="#f5f2ea"/>
+              <g stroke="#333" stroke-width="0.8">
+                <line x1="140" y1="55" x2="90" y2="30"/>
+                <line x1="140" y1="55" x2="100" y2="25"/>
+                <line x1="140" y1="55" x2="120" y2="22"/>
+                <line x1="140" y1="55" x2="160" y2="22"/>
+                <line x1="140" y1="55" x2="180" y2="28"/>
+                <line x1="140" y1="55" x2="190" y2="40"/>
+                <line x1="140" y1="55" x2="185" y2="70"/>
+                <line x1="140" y1="55" x2="100" y2="80"/>
+              </g>
+              <circle cx="140" cy="55" r="4" fill="#f90"/>
+              <text x="20" y="30" fill="#6ea8fe" font-size="12" font-family="system-ui">✨ 効果</text>
+            </svg>
+          </div>
+          <h4>エフェクト</h4>
+          <ul>
+            <li>集中線・スピード線など</li>
+            <li>コマ内に配置</li>
+            <li>選択後に移動・回転</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>下書きレイヤー（✎）</h3>
+      <div class="fig">
+        <svg viewBox="0 0 900 220" width="900" height="220" role="img" aria-label="下書きの種類">
+          <rect x="0" y="0" width="900" height="220" rx="8" fill="#141416"/>
+          <text x="24" y="32" fill="#7dd3a7" font-size="14" font-weight="600" font-family="system-ui">下書きの4種類（このステップでは下書きだけ選択可）</text>
+
+          <!-- circle -->
+          <rect x="30" y="50" width="200" height="140" rx="8" fill="#1e1e22" stroke="#333"/>
+          <ellipse cx="130" cy="110" rx="50" ry="40" fill="none" stroke="rgba(180,180,180,0.8)" stroke-width="3"/>
+          <text x="130" y="175" text-anchor="middle" fill="#ccc" font-size="13" font-family="system-ui">円</text>
+          <text x="130" y="58" text-anchor="middle" fill="#666" font-size="10" font-family="system-ui">顔の位置など</text>
+
+          <!-- rect -->
+          <rect x="250" y="50" width="200" height="140" rx="8" fill="#1e1e22" stroke="#333"/>
+          <rect x="295" y="80" width="110" height="70" fill="none" stroke="rgba(180,180,180,0.8)" stroke-width="3"/>
+          <text x="350" y="175" text-anchor="middle" fill="#ccc" font-size="13" font-family="system-ui">矩形</text>
+          <text x="350" y="58" text-anchor="middle" fill="#666" font-size="10" font-family="system-ui">範囲メモ</text>
+
+          <!-- line -->
+          <rect x="470" y="50" width="200" height="140" rx="8" fill="#1e1e22" stroke="#333"/>
+          <line x1="500" y1="140" x2="640" y2="80" stroke="rgba(180,180,180,0.8)" stroke-width="3"/>
+          <circle cx="500" cy="140" r="5" fill="none" stroke="#6ea8fe" stroke-width="2"/>
+          <circle cx="640" cy="80" r="5" fill="none" stroke="#6ea8fe" stroke-width="2"/>
+          <text x="570" y="175" text-anchor="middle" fill="#ccc" font-size="13" font-family="system-ui">直線</text>
+          <text x="570" y="58" text-anchor="middle" fill="#666" font-size="10" font-family="system-ui">端点○で調整</text>
+
+          <!-- string -->
+          <rect x="690" y="50" width="180" height="140" rx="8" fill="#1e1e22" stroke="#333"/>
+          <text x="780" y="115" text-anchor="middle" fill="#808080" font-size="16" font-family="system-ui">注記</text>
+          <text x="780" y="175" text-anchor="middle" fill="#ccc" font-size="13" font-family="system-ui">文字列</text>
+          <text x="780" y="58" text-anchor="middle" fill="#666" font-size="10" font-family="system-ui">構図用テキスト</text>
+        </svg>
+      </div>
+      <p class="cap">図3 — 下書き。印刷には出ない。PNG には含まれる。</p>
+      <div class="callout warn">
+        <strong>セリフ / 下書きの文字列 / メモ の違い:</strong>
+        本文は「セリフ」ステップ。構図・作業用の灰色テキストは下書きの「文字列」。校閲の<strong style="color:#e05555">赤+白縁</strong>は左ナビ最下段の「メモ」です。
+      </div>
+
+      <h3>メモレイヤー（校閲・赤）</h3>
+      <div class="fig">
+        <svg viewBox="0 0 900 220" width="900" height="220" role="img" aria-label="メモの種類">
+          <rect x="0" y="0" width="900" height="220" rx="8" fill="#141416"/>
+          <text x="24" y="32" fill="#e05555" font-size="14" font-weight="600" font-family="system-ui">メモ（このステップではメモだけ選択可 · 常に最上層）</text>
+
+          <!-- freehand -->
+          <rect x="80" y="50" width="340" height="140" rx="8" fill="#1e1e22" stroke="#442222"/>
+          <!-- white edge then red stroke -->
+          <path d="M120 140 C160 70, 200 160, 250 100 S320 60, 380 120" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M120 140 C160 70, 200 160, 250 100 S320 60, 380 120" fill="none" stroke="#cc2222" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <text x="250" y="175" text-anchor="middle" fill="#e8a0a0" font-size="13" font-family="system-ui">自由曲線</text>
+          <text x="250" y="68" text-anchor="middle" fill="#888" font-size="10" font-family="system-ui">ドラッグで描く · リサイズなし</text>
+
+          <!-- string -->
+          <rect x="480" y="50" width="340" height="140" rx="8" fill="#1e1e22" stroke="#442222"/>
+          <text x="650" y="108" text-anchor="middle" fill="#fff" font-size="22" font-weight="700" font-family="system-ui"
+                stroke="#fff" stroke-width="4" paint-order="stroke">要修正</text>
+          <text x="650" y="108" text-anchor="middle" fill="#cc2222" font-size="22" font-weight="700" font-family="system-ui">要修正</text>
+          <text x="650" y="175" text-anchor="middle" fill="#e8a0a0" font-size="13" font-family="system-ui">文字列</text>
+          <text x="650" y="68" text-anchor="middle" fill="#888" font-size="10" font-family="system-ui">クリックで入力 · 同じ赤+白縁</text>
+        </svg>
+      </div>
+      <p class="cap">図3b — 校閲メモ。PNG・印刷・サムネには出ない。Ctrl/Cmd+A の全選択にも入らない。</p>
+      <div class="grid-2" style="margin-top:12px">
+        <div class="card">
+          <h4>操作</h4>
+          <ul>
+            <li>クリック … 文字メモ</li>
+            <li>ドラッグ … 赤い自由曲線</li>
+            <li>Shift … 選択・移動（ハンドルでの拡大縮小・回転なし）</li>
+            <li>融合・コマクロップなし</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>一括削除</h4>
+          <ul>
+            <li>右上ガイド:「このページのメモをすべて削除」</li>
+            <li>サムネ側:「全ページのメモを削除」</li>
+            <li>Undo で戻せます</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4 選択・融合 -->
+    <section id="s4">
+      <h2><span class="num">4</span> 選択・移動・融合</h2>
+      <p class="lead">専用の「選択ステップ」はありません。Shift で一時的に選択モードになります。</p>
+
+      <div class="fig">
+        <svg viewBox="0 0 900 260" width="900" height="260" role="img" aria-label="Shift選択と融合">
+          <defs>
+            <marker id="arr2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#6ea8fe"/>
+            </marker>
+          </defs>
+          <rect width="900" height="260" rx="8" fill="#141416"/>
+
+          <!-- left: shift -->
+          <text x="30" y="30" fill="#6ea8fe" font-size="14" font-weight="600" font-family="system-ui">A. Shift で選択</text>
+          <rect x="30" y="48" width="400" height="190" rx="8" fill="#1e1e22" stroke="#333"/>
+          <!-- key -->
+          <rect x="50" y="70" width="70" height="36" rx="6" fill="#333" stroke="#888"/>
+          <text x="85" y="93" text-anchor="middle" fill="#fff" font-size="14" font-family="system-ui">Shift</text>
+          <path d="M130 88 L160 88" stroke="#6ea8fe" stroke-width="2" marker-end="url(#arr2)"/>
+          <!-- paper mini -->
+          <rect x="170" y="65" width="120" height="140" fill="#f5f2ea"/>
+          <rect x="185" y="80" width="50" height="40" fill="#fff" stroke="#111" stroke-width="2"/>
+          <rect x="185" y="80" width="50" height="40" fill="none" stroke="#6ea8fe" stroke-width="2" stroke-dasharray="4 2"/>
+          <rect x="185" y="78" width="8" height="8" fill="#6ea8fe"/>
+          <rect x="227" y="78" width="8" height="8" fill="#6ea8fe"/>
+          <rect x="185" y="112" width="8" height="8" fill="#6ea8fe"/>
+          <rect x="227" y="112" width="8" height="8" fill="#6ea8fe"/>
+          <!-- rubber -->
+          <rect x="250" y="130" width="80" height="55" fill="rgba(110,168,254,0.15)" stroke="#6ea8fe" stroke-dasharray="3 2"/>
+          <text x="50" y="140" fill="#aaa" font-size="11" font-family="system-ui">クリック = 選択</text>
+          <text x="50" y="160" fill="#aaa" font-size="11" font-family="system-ui">空ドラッグ = 範囲</text>
+          <text x="50" y="180" fill="#aaa" font-size="11" font-family="system-ui">角 = リサイズ</text>
+          <text x="50" y="200" fill="#aaa" font-size="11" font-family="system-ui">選択中は Shift 離しても維持</text>
+          <text x="50" y="220" fill="#666" font-size="10" font-family="system-ui">空選択 + Shift 離す → 描画ツールへ</text>
+
+          <!-- right: fuse -->
+          <text x="470" y="30" fill="#7dd3a7" font-size="14" font-weight="600" font-family="system-ui">B. 融合（同じ種類同士）</text>
+          <rect x="470" y="48" width="400" height="190" rx="8" fill="#1e1e22" stroke="#333"/>
+          <!-- before: overlap but each has own outline (境界が残る) -->
+          <text x="500" y="75" fill="#888" font-size="11" font-family="system-ui">融合前（重なっても境界あり）</text>
+          <ellipse cx="545" cy="118" rx="32" ry="26" fill="#fff" stroke="#111" stroke-width="2.5"/>
+          <ellipse cx="585" cy="118" rx="32" ry="26" fill="#fff" stroke="#111" stroke-width="2.5"/>
+          <text x="565" y="158" text-anchor="middle" fill="#c88" font-size="10" font-family="system-ui">← 間に線が残る</text>
+          <!-- arrow -->
+          <path d="M640 118 L700 118" stroke="#7dd3a7" stroke-width="2"/>
+          <polygon points="700,112 712,118 700,124" fill="#7dd3a7"/>
+          <!-- after: union look = stroke both, then re-fill white to erase internal edges -->
+          <text x="730" y="75" fill="#888" font-size="11" font-family="system-ui">融合後（外形がつながる）</text>
+          <g>
+            <ellipse cx="760" cy="118" rx="32" ry="26" fill="#fff" stroke="#111" stroke-width="2.5"/>
+            <ellipse cx="800" cy="118" rx="32" ry="26" fill="#fff" stroke="#111" stroke-width="2.5"/>
+            <!-- 内側の境界線を塗りで消す（外形の外半分の枠は残る） -->
+            <ellipse cx="760" cy="118" rx="32" ry="26" fill="#fff" stroke="none"/>
+            <ellipse cx="800" cy="118" rx="32" ry="26" fill="#fff" stroke="none"/>
+          </g>
+          <text x="780" y="158" text-anchor="middle" fill="#7dd3a7" font-size="10" font-family="system-ui">間の境界が消える</text>
+          <text x="500" y="185" fill="#ccc" font-size="12" font-family="system-ui">複数選択 → プロパティの「⚭ 融合」</text>
+          <text x="500" y="205" fill="#aaa" font-size="11" font-family="system-ui">コマ同士 / 吹き出し同士 / 下書き同士（メモは融合なし）</text>
+          <text x="500" y="225" fill="#aaa" font-size="11" font-family="system-ui">塗り・枠が1つに。選択・移動も一体。「融合を解除」で分離</text>
+        </svg>
+      </div>
+      <p class="cap">図4 — 選択モードと融合。</p>
+
+      <table>
+        <thead>
+          <tr><th>操作</th><th>結果</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>クリック</td><td>選択（融合なら仲間ごと）</td></tr>
+          <tr><td>Shift+クリック</td><td>追加／解除</td></tr>
+          <tr><td>空ドラッグ</td><td>範囲選択</td></tr>
+          <tr><td>ドラッグ</td><td>移動</td></tr>
+          <tr><td>Delete / Backspace</td><td>削除（入力中は文字消し）</td></tr>
+          <tr><td>コマ内にクロップ</td><td>吹き出し・下書きをコマ形で切る（既定OFF）。メモには無し</td></tr>
+          <tr><td>Ctrl/Cmd+A</td><td>現在ページの通常オブジェクトを全選択（メモは対象外）</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 5 複数ページ -->
+    <section id="s5">
+      <h2><span class="num">5</span> 複数ページ</h2>
+      <p class="lead">追加・削除・並べ替えはサムネ一覧だけ。上バーは前後移動とサムネを開く用。</p>
+
+      <div class="fig">
+        <svg viewBox="0 0 900 280" width="900" height="280" role="img" aria-label="複数ページと追加モード">
+          <rect width="900" height="280" rx="8" fill="#141416"/>
+
+          <text x="30" y="32" fill="#6ea8fe" font-size="14" font-weight="600" font-family="system-ui">ページナビ</text>
+          <rect x="30" y="48" width="220" height="50" rx="6" fill="#1e1e22" stroke="#3f3f46"/>
+          <rect x="42" y="60" width="32" height="26" rx="4" fill="#2a2a30" stroke="#6ea8fe"/>
+          <text x="50" y="78" fill="#6ea8fe" font-size="14" font-family="system-ui">◀</text>
+          <text x="110" y="78" fill="#eee" font-size="14" font-family="system-ui">3 / 8</text>
+          <rect x="160" y="60" width="32" height="26" rx="4" fill="#2a2a30" stroke="#6ea8fe"/>
+          <text x="168" y="78" fill="#6ea8fe" font-size="14" font-family="system-ui">▶</text>
+          <text x="30" y="120" fill="#888" font-size="11" font-family="system-ui">キー [ ] でも前後ページ</text>
+
+          <!-- thumbs -->
+          <text x="300" y="32" fill="#7dd3a7" font-size="14" font-weight="600" font-family="system-ui">サムネ一覧（ここで追加・削除・並べ替え）</text>
+          <g>
+            <rect x="300" y="48" width="70" height="90" rx="4" fill="#f5f2ea" stroke="#555"/>
+            <text x="335" y="95" text-anchor="middle" fill="#999" font-size="12" font-family="system-ui">1</text>
+            <rect x="385" y="48" width="70" height="90" rx="4" fill="#f5f2ea" stroke="#555"/>
+            <text x="420" y="95" text-anchor="middle" fill="#999" font-size="12" font-family="system-ui">2</text>
+            <rect x="470" y="44" width="78" height="98" rx="4" fill="#f5f2ea" stroke="#6ea8fe" stroke-width="3"/>
+            <text x="509" y="95" text-anchor="middle" fill="#6ea8fe" font-size="12" font-family="system-ui">3</text>
+            <text x="509" y="115" text-anchor="middle" fill="#6ea8fe" font-size="9" font-family="system-ui">現在</text>
+            <rect x="563" y="48" width="70" height="90" rx="4" fill="#f5f2ea" stroke="#555"/>
+            <text x="598" y="95" text-anchor="middle" fill="#999" font-size="12" font-family="system-ui">4</text>
+          </g>
+
+          <!-- insert modes -->
+          <text x="30" y="160" fill="#f0c674" font-size="14" font-weight="600" font-family="system-ui">ページ追加モード（基準＝いま見ているページ）</text>
+
+          <rect x="30" y="178" width="270" height="80" rx="8" fill="#1e1e22" stroke="#444"/>
+          <text x="50" y="205" fill="#fff" font-size="13" font-family="system-ui">白紙</text>
+          <text x="50" y="228" fill="#888" font-size="11" font-family="system-ui">空の新しいページ</text>
+          <rect x="200" y="195" width="80" height="50" fill="#fff" stroke="#666"/>
+
+          <rect x="315" y="178" width="270" height="80" rx="8" fill="#1e1e22" stroke="#444"/>
+          <text x="335" y="205" fill="#fff" font-size="13" font-family="system-ui">前ページと同じ台紙</text>
+          <text x="335" y="228" fill="#888" font-size="11" font-family="system-ui">色・台紙画像のみ継承</text>
+          <rect x="500" y="195" width="60" height="50" fill="#e8dcc8" stroke="#666"/>
+          <text x="530" y="225" text-anchor="middle" fill="#a80" font-size="9" font-family="system-ui">台紙</text>
+
+          <rect x="600" y="178" width="270" height="80" rx="8" fill="#1e1e22" stroke="#444"/>
+          <text x="620" y="205" fill="#fff" font-size="13" font-family="system-ui">前ページのコピー</text>
+          <text x="620" y="228" fill="#888" font-size="11" font-family="system-ui">中身ごと複製（位置そのまま）</text>
+          <rect x="800" y="195" width="50" height="50" fill="#f5f2ea" stroke="#666"/>
+          <rect x="808" y="203" width="16" height="14" fill="#fff" stroke="#111"/>
+          <rect x="828" y="220" width="14" height="16" fill="#fff" stroke="#111"/>
+        </svg>
+      </div>
+      <p class="cap">図5 — ページ操作。最後の1枚は削除不可。最大64ページ程度。</p>
+      <div class="callout warn">
+        <strong>Undo に注意:</strong>
+        ページ追加の直後に「元に戻す」と、追加そのものが取り消されてページが消えることがあります。
+      </div>
+    </section>
+
+    <!-- 6 コピー -->
+    <section id="s6">
+      <h2><span class="num">6</span> コピー＆ペースト</h2>
+      <p class="lead">画像データ込みでコピーできます。同じページと別ページで「ずれ方」が違います。</p>
+
+      <div class="fig">
+        <svg viewBox="0 0 900 200" width="900" height="200" role="img" aria-label="ペーストのオフセット">
+          <defs>
+            <marker id="arr3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#f0c674"/>
+            </marker>
+          </defs>
+          <rect width="900" height="200" rx="8" fill="#141416"/>
+
+          <text x="30" y="30" fill="#6ea8fe" font-size="13" font-weight="600" font-family="system-ui">同じページへ Ctrl/Cmd+V</text>
+          <rect x="40" y="50" width="100" height="120" fill="#f5f2ea" stroke="#555"/>
+          <rect x="55" y="70" width="40" height="35" fill="#fff" stroke="#111" stroke-width="2"/>
+          <rect x="75" y="90" width="40" height="35" fill="none" stroke="#6ea8fe" stroke-width="2" stroke-dasharray="3 2"/>
+          <path d="M75 87 L95 105" stroke="#f0c674" stroke-width="1.5" marker-end="url(#arr3)"/>
+          <text x="50" y="185" fill="#f0c674" font-size="11" font-family="system-ui">+20px ずらす（重なり回避）</text>
+
+          <text x="320" y="30" fill="#7dd3a7" font-size="13" font-weight="600" font-family="system-ui">別ページへ Ctrl/Cmd+V</text>
+          <rect x="320" y="50" width="100" height="120" fill="#f5f2ea" stroke="#555"/>
+          <text x="370" y="115" text-anchor="middle" fill="#bbb" font-size="11" font-family="system-ui">P.1</text>
+          <rect x="335" y="70" width="40" height="35" fill="#fff" stroke="#111" stroke-width="2"/>
+          <text x="450" y="110" fill="#7dd3a7" font-size="20" font-family="system-ui">→</text>
+          <rect x="490" y="50" width="100" height="120" fill="#f5f2ea" stroke="#555"/>
+          <text x="540" y="115" text-anchor="middle" fill="#bbb" font-size="11" font-family="system-ui">P.2</text>
+          <rect x="505" y="70" width="40" height="35" fill="#fff" stroke="#111" stroke-width="2"/>
+          <text x="320" y="185" fill="#7dd3a7" font-size="11" font-family="system-ui">位置そのまま（レイアウト複製向き）</text>
+
+          <rect x="640" y="50" width="230" height="120" rx="8" fill="#1e1e22" stroke="#333"/>
+          <text x="660" y="80" fill="#ccc" font-size="12" font-family="system-ui">Ctrl/Cmd + A … このページ全選択</text>
+          <text x="660" y="105" fill="#ccc" font-size="12" font-family="system-ui">Ctrl/Cmd + C … コピー</text>
+          <text x="660" y="130" fill="#ccc" font-size="12" font-family="system-ui">Ctrl/Cmd + V … 貼り付け</text>
+          <text x="660" y="155" fill="#888" font-size="11" font-family="system-ui">台紙はコピー対象外</text>
+        </svg>
+      </div>
+      <p class="cap">図6 — 同一ページは少しずらす／別ページは座標維持。</p>
+    </section>
+
+    <!-- 7 出力 -->
+    <section id="s7">
+      <h2><span class="num">7</span> 保存・PNG・印刷</h2>
+      <p class="lead">作業の本体は <code>.manga.json</code> 保存（中身は JSON。識別タグ付き・無くても読込可）。PNG と印刷の対象範囲が違います。</p>
+
+      <div class="fig">
+        <svg viewBox="0 0 900 210" width="900" height="210" role="img" aria-label="出力の違い">
+          <rect width="900" height="210" rx="8" fill="#141416"/>
+
+          <rect x="40" y="40" width="240" height="140" rx="10" fill="#1e1e22" stroke="#6ea8fe"/>
+          <text x="160" y="75" text-anchor="middle" fill="#6ea8fe" font-size="16" font-weight="700" font-family="system-ui">保存（.manga.json）</text>
+          <text x="160" y="105" text-anchor="middle" fill="#ccc" font-size="12" font-family="system-ui">全ページ・全データ</text>
+          <text x="160" y="128" text-anchor="middle" fill="#888" font-size="11" font-family="system-ui">あとから編集できる本体</text>
+
+          <rect x="330" y="40" width="240" height="140" rx="10" fill="#1e1e22" stroke="#7dd3a7"/>
+          <text x="450" y="75" text-anchor="middle" fill="#7dd3a7" font-size="16" font-weight="700" font-family="system-ui">PNG出力</text>
+          <text x="450" y="105" text-anchor="middle" fill="#ccc" font-size="12" font-family="system-ui">いまの1ページだけ</text>
+          <text x="450" y="128" text-anchor="middle" fill="#888" font-size="11" font-family="system-ui">下書きあり · メモなし</text>
+          <text x="450" y="155" text-anchor="middle" fill="#666" font-size="11" font-family="system-ui">複数時: タイトル-2.png</text>
+
+          <rect x="620" y="40" width="240" height="140" rx="10" fill="#1e1e22" stroke="#f0c674"/>
+          <text x="740" y="75" text-anchor="middle" fill="#f0c674" font-size="16" font-weight="700" font-family="system-ui">印刷</text>
+          <text x="740" y="105" text-anchor="middle" fill="#ccc" font-size="12" font-family="system-ui">全ページ</text>
+          <text x="740" y="128" text-anchor="middle" fill="#888" font-size="11" font-family="system-ui">下書きなし · メモなし</text>
+          <text x="740" y="155" text-anchor="middle" fill="#666" font-size="11" font-family="system-ui">ブラウザ印刷ダイアログ</text>
+        </svg>
+      </div>
+      <p class="cap">図7 — 出力3種の違い。</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>表示の拡大</h4>
+          <ul>
+            <li>上バーの倍率セレクト</li>
+            <li>Ctrl/Cmd + ホイール … カーソル基準ズーム</li>
+            <li>Ctrl/Cmd + ドラッグ … パン</li>
+            <li>ズームは見た目だけ（保存に入らない）</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Undo</h4>
+          <ul>
+            <li>Ctrl/Cmd + Z / 上バー「元に戻す」</li>
+            <li>やり直しは Ctrl/Cmd + Y または Shift + Z</li>
+            <li>履歴はおおよそ直近10操作</li>
+            <li>ページをまたいでも履歴は共有</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8 keys -->
+    <section id="s8">
+      <h2><span class="num">8</span> キーボード早見</h2>
+      <p class="lead">Windows は Ctrl、Mac は ⌘（Cmd）。文字入力・IME 変換中は一部キーが文字編集優先になります。</p>
+
+      <table>
+        <thead><tr><th>キー</th><th>機能</th></tr></thead>
+        <tbody>
+          <tr><td class="k">Shift（押し続け）</td><td>選択・範囲選択・ハンドル操作</td></tr>
+          <tr><td class="k">Ctrl/Cmd + Z</td><td>元に戻す</td></tr>
+          <tr><td class="k">Ctrl/Cmd + Y / Shift+Z</td><td>やり直し</td></tr>
+          <tr><td class="k">Ctrl/Cmd + A</td><td>現在ページの全選択（メモは除外）</td></tr>
+          <tr><td class="k">Ctrl/Cmd + C / V</td><td>コピー / 貼り付け</td></tr>
+          <tr><td class="k">Delete / Backspace</td><td>選択削除（入力中は文字消し）</td></tr>
+          <tr><td class="k">← ↑ → ↓</td><td>選択中: 1px 移動。未選択: 画面スクロール</td></tr>
+          <tr><td class="k">[ / ]</td><td>前ページ / 次ページ</td></tr>
+          <tr><td class="k">Ctrl/Cmd + ホイール</td><td>ズーム（見た目のみ）</td></tr>
+          <tr><td class="k">Ctrl/Cmd + ドラッグ</td><td>パン（キャンバス移動）</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 9 FAQ -->
+    <section id="s9">
+      <h2><span class="num">9</span> よくある質問</h2>
+      <p class="lead">「壊れた？」と思いやすい挙動の多くは仕様です。</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>下書きが絵の上に出ない</h4>
+          <p>仕様です。下書きは画像の下。絵を載せると隠れます。</p>
+        </div>
+        <div class="card">
+          <h4>下書きステップでコマが選べない</h4>
+          <p>仕様です。下書き作業中は下書きだけ触れます。</p>
+        </div>
+        <div class="card">
+          <h4>吹き出しがコマで切られる</h4>
+          <p>「コマ内にクロップ」が ON になっていないか確認。既定は OFF。</p>
+        </div>
+        <div class="card">
+          <h4>印刷に下書きが残る？</h4>
+          <p>印刷は下書きオフ。残るのは PNG 側です。校閲メモは PNG にも印刷にも出ません。</p>
+        </div>
+        <div class="card">
+          <h4>メモが PNG に出ない / Ctrl+A で選ばれない</h4>
+          <p>仕様です。メモは編集画面だけの校閲レイヤーです。全選択からも外れます。</p>
+        </div>
+        <div class="card">
+          <h4>台紙がコピーできない</h4>
+          <p>台紙は背景扱い。ページ追加の「同じ台紙」を使います。</p>
+        </div>
+        <div class="card">
+          <h4>融合したのに片方だけ動く</h4>
+          <p>再選択して全員がハイライトされるか確認。だめなら解除→再融合。</p>
+        </div>
+        <div class="card">
+          <h4>1ページだけ書き出し・読み込みしたい</h4>
+          <p>ブラウザを2枚開き、元で Ctrl/Cmd+A → C、先で V。コマレイアウトや棒人形はストック用 HTML にまとめてコピペも可。</p>
+        </div>
+        <div class="card">
+          <h4>マニュアルはどこ？</h4>
+          <p>アプリ上バー右端の <strong>？</strong> からこの図解を別タブで開けます（同フォルダの MANUAL.html）。</p>
+        </div>
+      </div>
+    </section>
+
+    <section style="background:transparent;border:none;box-shadow:none;padding:8px 0;">
+      <div class="callout">
+        <strong>関連ファイル</strong><br>
+        開発仕様（データ・API）: <a href="README.md">README.md</a><br>
+        アプリ本体: <a href="index.html">index.html</a>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    マンガページエディタ 図解マニュアル · 仕様 Ver.4.4 · copyright 2026 やまもりやもり
+  </footer>
+
+  <script src="js/core/app-version.js"></script>
+  <script>
+  (function() {
+    function apply() {
+      var label = (window.ME && ME.APP_VERSION_LABEL) ? ME.APP_VERSION_LABEL : null;
+      if (!label) return;
+      var nodes = document.querySelectorAll('[data-app-ver]');
+      for (var i = 0; i < nodes.length; i++) nodes[i].textContent = label;
+      var foot = document.querySelector('footer');
+      if (foot && /仕様 Ver\./.test(foot.textContent)) {
+        foot.textContent = foot.textContent.replace(/仕様 Ver\.[0-9.]+/, '仕様 ' + label);
+      }
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply);
+    else apply();
+  })();
+  </script>
+</body>
+</html>

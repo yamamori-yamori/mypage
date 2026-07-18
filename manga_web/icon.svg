@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="マンガページエディタ">
+  <!-- gray ground -->
+  <rect width="128" height="128" rx="22" fill="#8a8f96"/>
+  <rect x="6" y="6" width="116" height="116" rx="18" fill="#9aa0a6"/>
+  <!-- body + long thin tail as one closed path (no seam) -->
+  <path
+    fill="#f7f7f5"
+    stroke="#0a0a0a"
+    stroke-width="8"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+    paint-order="stroke fill"
+    d="
+      M 52 78
+      C 34 74 26 58 30 46
+      C 34 30 48 22 64 22
+      C 84 22 100 34 102 50
+      C 104 66 92 80 70 80
+      L 56 78
+      L 34 112
+      L 52 78
+      Z
+    "
+  />
+  <ellipse cx="50" cy="40" rx="11" ry="6" fill="#ffffff" opacity="0.4"/>
+</svg>

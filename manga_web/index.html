@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>マンガページエディタ</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- 上部バー: タイトル + ファイル操作 -->
+  <div id="topbar">
+    <span id="app-title">🖊 マンガページエディタ<span id="app-credit">by やまもりやもり</span></span>
+    <span id="scroll-hint" class="topbar-hint">ctrl+ドラッグでパン、<wbr>ctrl+ホイールで倍率</span>
+    <div id="page-nav"></div>
+    <div id="file-actions"></div>
+  </div>
+
+  <!-- 作業領域: 左=手順ナビ / 中央=キャンバス / 右=ガイド+プロパティ -->
+  <div id="workspace">
+    <div id="step-nav"></div>
+
+    <div id="canvas-container">
+      <canvas id="main-canvas"></canvas>
+    </div>
+
+    <div id="side-panel">
+      <div id="step-panel"></div>
+      <div id="property-panel"></div>
+    </div>
+  </div>
+
+  <!-- ファイル入力（hidden） -->
+  <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp" hidden>
+
+  <!-- script読み込み順: core → render → tools → io → ui → main -->
+  <script src="js/core/app-version.js"></script>
+  <script src="js/core/data-models.js"></script>
+  <script src="js/core/scene-graph.js"></script>
+  <script src="js/core/page-manager.js"></script>
+  <script src="js/core/command-stack.js"></script>
+  <script src="js/core/selection-manager.js"></script>
+  <script src="js/core/clipboard-manager.js"></script>
+  <script src="js/render/panel-renderer.js"></script>
+  <script src="js/render/image-renderer.js"></script>
+  <script src="js/render/balloon-renderer.js"></script>
+  <script src="js/render/text-renderer.js"></script>
+  <script src="js/render/effect-renderer.js"></script>
+  <script src="js/render/render-engine.js"></script>
+  <script src="js/tools/select-tool.js"></script>
+  <script src="js/tools/panel-tool.js"></script>
+  <script src="js/tools/image-tool.js"></script>
+  <script src="js/tools/balloon-tool.js"></script>
+  <script src="js/tools/text-tool.js"></script>
+  <script src="js/tools/effect-tool.js"></script>
+  <script src="js/render/draft-renderer.js"></script>
+  <script src="js/render/string-renderer.js"></script>
+  <script src="js/render/memo-renderer.js"></script>
+  <script src="js/render/page-draw.js"></script>
+  <script src="js/tools/draft-tool.js"></script>
+  <script src="js/tools/memo-tool.js"></script>
+  <script src="js/tools/string-tool.js"></script>
+  <script src="js/io/serializer.js"></script>
+  <script src="js/io/exporter.js"></script>
+  <script src="js/io/print.js"></script>
+  <script src="js/ui/toolbar.js"></script>
+  <script src="js/ui/page-nav.js"></script>
+  <script src="js/ui/confirm-dialog.js"></script>
+  <script src="js/ui/page-thumbnail-panel.js"></script>
+  <script src="js/ui/step-panel.js"></script>
+  <script src="js/ui/property-panel.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
