@@ -141,12 +141,15 @@
 
   .apps { display: grid; gap: 0.85rem; }
   .app {
-    display: grid; grid-template-columns: 64px 1fr auto; gap: 1rem; align-items: center;
+    display: grid; gap: 0.9rem;
     background: var(--card); border: 1px solid var(--line); padding: 1rem 1.1rem;
   }
+  .app-head {
+    display: grid; grid-template-columns: 64px 1fr auto; gap: 1rem; align-items: center;
+  }
   @media (max-width: 560px) {
-    .app { grid-template-columns: 64px 1fr; }
-    .app .btn { grid-column: 2; justify-self: start; }
+    .app-head { grid-template-columns: 64px 1fr; }
+    .app-head .btn { grid-column: 2; justify-self: start; }
   }
   .app-icon {
     width: 64px; height: 64px; border-radius: 14px;
@@ -156,6 +159,40 @@
   }
   .app h3 { font-size: 0.98rem; margin-bottom: 0.2rem; }
   .app p { font-size: 0.82rem; color: var(--muted); }
+  .app-thumbs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.65rem;
+    align-items: stretch;
+  }
+  .app-thumb {
+    display: block; border: 1px solid var(--line); border-radius: 8px;
+    overflow: hidden; background: #ebe4d8; line-height: 0;
+    transition: 0.2s; min-width: 0; height: 100%;
+  }
+  .app-thumb:hover { border-color: #cfc6b6; box-shadow: 0 8px 20px rgba(28,25,23,0.06); }
+  .app-thumb img {
+    width: 100%; height: 100%; min-height: 140px; max-height: 180px;
+    object-fit: cover; display: block; aspect-ratio: 16 / 9;
+  }
+  .app-shots {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem;
+    min-width: 0; min-height: 0;
+  }
+  .app-shots a {
+    display: block; border: 1px solid var(--line); border-radius: 8px;
+    overflow: hidden; background: #ebe4d8; line-height: 0;
+    transition: 0.2s; min-width: 0; height: 100%;
+  }
+  .app-shots a:hover { border-color: #cfc6b6; box-shadow: 0 8px 20px rgba(28,25,23,0.06); }
+  .app-shots img {
+    width: 100%; height: 100%; min-height: 140px; max-height: 180px;
+    object-fit: cover; object-position: top center; display: block;
+  }
+  @media (max-width: 560px) {
+    .app-thumbs { grid-template-columns: 1fr; }
+    .app-thumb img, .app-shots img { max-height: 160px; }
+  }
   .btn {
     display: inline-block; text-decoration: none;
     border: 1px solid var(--ink); padding: 0.42rem 0.85rem; font-size: 0.78rem;
@@ -418,22 +455,76 @@
     <div class="rule"></div>
     <div class="apps">
       <div class="app">
-        <div class="app-icon">Manga<br>Editor</div>
-        <div>
-          <h3>マンガページエディタ</h3>
-          <p>コマ・台紙・吹き出し・セリフ・下書きなど、ページ単位で扱う編集ツール。</p>
+        <div class="app-head">
+          <div class="app-icon">Manga<br>Editor</div>
+          <div>
+            <h3>マンガページエディタ</h3>
+            <p>コマ・台紙・吹き出し・セリフ・下書きなど、ページ単位で扱う編集ツール。</p>
+          </div>
+          <a class="btn" href="https://note.com/yamamoriyamori/n/ncb5b56e3468a"
+             target="_blank" rel="noopener noreferrer">紹介note</a>
         </div>
-        <a class="btn" href="https://note.com/yamamoriyamori/n/ncb5b56e3468a"
-           target="_blank" rel="noopener noreferrer">紹介note</a>
+        <div class="app-thumbs">
+          <a class="app-thumb" href="https://note.com/yamamoriyamori/n/ncb5b56e3468a"
+             target="_blank" rel="noopener noreferrer"
+             aria-label="マンガページエディタ 紹介noteのサムネイル">
+            <img
+              src="https://assets.st-note.com/production/uploads/images/295292887/rectangle_large_type_2_c4c904fa375865fb2a535168eca9de31.png?fit=bounds&amp;quality=85&amp;width=1280"
+              alt="マンガページエディタ紹介noteのアイキャッチ"
+              width="1280" height="720" loading="lazy" decoding="async"
+              referrerpolicy="no-referrer" />
+          </a>
+          <div class="app-shots" aria-label="アプリ画面のプレビュー">
+            <a href="https://note.com/yamamoriyamori/n/ncb5b56e3468a" target="_blank" rel="noopener noreferrer">
+              <img
+                src="https://assets.st-note.com/img/1784330812-AXS0KLN9upoGW53UyB46E2wf.png"
+                alt="マンガページエディタの画面1"
+                loading="lazy" decoding="async" referrerpolicy="no-referrer" />
+            </a>
+            <a href="https://note.com/yamamoriyamori/n/ncb5b56e3468a" target="_blank" rel="noopener noreferrer">
+              <img
+                src="https://assets.st-note.com/img/1784348400-J7qGiMxHYA86Bwun1jzWFh4E.png"
+                alt="マンガページエディタの画面2"
+                loading="lazy" decoding="async" referrerpolicy="no-referrer" />
+            </a>
+          </div>
+        </div>
       </div>
       <div class="app">
-        <div class="app-icon" style="background:linear-gradient(160deg,#1e3a5f,#7a9bb8)">Audio<br>Book</div>
-        <div>
-          <h3>オーディオブック関連アプリ</h3>
-          <p>テキストから音声書籍（M4B）を作成・編集するアプリ。</p>
+        <div class="app-head">
+          <div class="app-icon" style="background:linear-gradient(160deg,#1e3a5f,#7a9bb8)">Audio<br>Book</div>
+          <div>
+            <h3>オーディオブック関連アプリ</h3>
+            <p>テキストから音声書籍（M4B）を作成・編集するアプリ。</p>
+          </div>
+          <a class="btn" href="https://note.com/yamamoriyamori/m/m2a7c8b8b3cf1"
+             target="_blank" rel="noopener noreferrer">紹介note</a>
         </div>
-        <a class="btn" href="https://note.com/yamamoriyamori/m/m2a7c8b8b3cf1"
-           target="_blank" rel="noopener noreferrer">紹介note</a>
+        <div class="app-thumbs">
+          <a class="app-thumb" href="https://note.com/yamamoriyamori/m/m2a7c8b8b3cf1"
+             target="_blank" rel="noopener noreferrer"
+             aria-label="オーディオブック関連アプリ 紹介noteマガジンのサムネイル">
+            <img
+              src="https://assets.st-note.com/production/uploads/images/289829098/f79691cdff47df8302c08170e63a799d.png?fit=bounds&amp;format=jpeg&amp;height=1024&amp;quality=85&amp;width=1024"
+              alt="オーディオブック関連アプリ紹介noteのアイキャッチ"
+              width="1024" height="1024" loading="lazy" decoding="async"
+              referrerpolicy="no-referrer" />
+          </a>
+          <div class="app-shots" aria-label="アプリ画面のプレビュー">
+            <a href="https://note.com/yamamoriyamori/n/n8235c94e86ba" target="_blank" rel="noopener noreferrer">
+              <img
+                src="https://assets.st-note.com/img/1783237641-5fhPHpoU3k1gqnQG4wJ8Ktmy.png"
+                alt="チャプター編集Audiobook Editorの画面"
+                loading="lazy" decoding="async" referrerpolicy="no-referrer" />
+            </a>
+            <a href="https://note.com/yamamoriyamori/n/nc6aba126494a" target="_blank" rel="noopener noreferrer">
+              <img
+                src="https://assets.st-note.com/img/1782561900-6ZNWULQFj0TD9PdeHOtgyM5f.png"
+                alt="日本語長文Audiobook Makerの画面"
+                loading="lazy" decoding="async" referrerpolicy="no-referrer" />
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   </section>
