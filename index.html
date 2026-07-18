@@ -453,7 +453,7 @@
         </div>
         <ul class="novel-works">
           <li>
-            代表作:
+            代表作えっちなラブコメ:
             <a href="https://kakuyomu.jp/works/16818093089670587278" target="_blank" rel="noopener noreferrer">「妹さんは、こんなこと、してくれないでしょ？」</a>
           </li>
           <li>
@@ -619,34 +619,37 @@
     const re = /status(?:es)?\/(\d{10,})/g;
     let m;
     while ((m = re.exec(blob)) !== null) ids.push(m[1]);
+    // syndication / JSON blobs
+    const re2 = /"id_str":"(\d{10,})"/g;
+    while ((m = re2.exec(blob)) !== null) ids.push(m[1]);
     return uniqIds(ids);
   }
   async function collectStatusIds(user, want) {
-    // Prefer Nitter HTML via jina (fresh timeline). mobile.twitter.com / x.com
-    // often return pinned + old highlight IDs only. Do NOT stop after the first
-    // sparse source fills `want` — merge several sources then snowflake-sort.
+    // Nitter is often Cloudflare-blocked. Prefer mobile/twitter HTML via jina
+    // (many more status IDs than markdown) + syndication profile HTML.
+    // Always try the preferred sources first; do not early-exit on a sparse hit.
     const u = encodeURIComponent(user);
-    const sources = [
+    const preferred = [
       {
-        url: "https://r.jina.ai/http://nitter.cz/" + u,
+        url: "https://r.jina.ai/https://mobile.twitter.com/" + u,
         headers: { Accept: "application/json", "X-Return-Format": "html" },
       },
       {
-        url: "https://r.jina.ai/https://nitter.cz/" + u,
+        url: "https://r.jina.ai/https://twitter.com/" + u,
         headers: { Accept: "application/json", "X-Return-Format": "html" },
       },
       {
-        url: "https://r.jina.ai/http://nitter.cz/" + u + "/with_replies",
+        url:
+          "https://r.jina.ai/https://syndication.twitter.com/srv/timeline-profile/screen-name/" +
+          u,
         headers: { Accept: "application/json", "X-Return-Format": "html" },
-      },
-      {
-        url: "https://r.jina.ai/http://nitter.cz/" + u,
-        headers: { Accept: "application/json" },
       },
       {
         url: "https://r.jina.ai/https://mobile.twitter.com/" + u,
         headers: { Accept: "application/json" },
       },
+    ];
+    const fallbacks = [
       {
         url: "https://r.jina.ai/https://twiiit.com/" + u,
         headers: { Accept: "application/json" },
@@ -661,30 +664,23 @@
       },
     ];
     const all = [];
-    let freshEnough = false;
-    for (const src of sources) {
+    async function pull(src) {
       try {
         const res = await fetch(src.url, { headers: src.headers, cache: "no-store" });
-        if (!res.ok) continue;
+        if (!res.ok) return;
         const text = await res.text();
-        const ids = extractStatusIds(text);
-        all.push(...ids);
-        // Heuristic: a snowflake from ~the last ~14 days means the source is fresh
-        // (not the old highlight mix). 1 day ≈ 2^22 * 1000 * 86400 ms in snowflake space;
-        // compare via BigInt thresholds using latest id age if possible.
-        if (ids.length) {
-          const newest = sortIdsDesc(ids)[0];
-          try {
-            const ts = Number((BigInt(newest) >> 22n) + 1288834974657n);
-            if (Date.now() - ts < 14 * 24 * 3600 * 1000 && ids.length >= Math.min(want, 8)) {
-              freshEnough = true;
-            }
-          } catch (_) {}
+        // Skip obvious challenge / empty shells
+        if (/Just a moment|Attention Required|cf-browser-verification/i.test(text) && !/status(?:es)?\/\d{10,}/.test(text)) {
+          return;
         }
-        if (freshEnough && uniqIds(all).length >= want) break;
+        all.push(...extractStatusIds(text));
       } catch (_) {}
     }
-    return sortIdsDesc(uniqIds(all)).slice(0, Math.max(want, 24));
+    for (const src of preferred) await pull(src);
+    if (uniqIds(all).length < Math.max(want, 16)) {
+      for (const src of fallbacks) await pull(src);
+    }
+    return sortIdsDesc(uniqIds(all)).slice(0, Math.max(want, 48));
   }
   function pickFxImages(tweet) {
     const urls = [];
@@ -735,11 +731,38 @@
     const data = await res.json();
     return data && data.tweet;
   }
+  function isReplyTweet(tw, user) {
+    if (!tw || typeof tw !== "object") return false;
+    const me = String(user || "").toLowerCase();
+    const repName = String(
+      tw.replying_to || tw.in_reply_to_screen_name || ""
+    )
+      .trim()
+      .replace(/^@/, "")
+      .toLowerCase();
+    // Reply to someone else → exclude. Self-thread (replying to self) → keep.
+    if (repName && repName !== me) return true;
+    if (tw.is_reply === true && repName && repName !== me) return true;
+    // If only status id is present without name, treat as reply (unknown parent).
+    if (!repName && (tw.replying_to_status || tw.in_reply_to_status_id_str || tw.in_reply_to_status_id)) {
+      return true;
+    }
+    return false;
+  }
+  function pickRecentEnough(tweets, limit) {
+    // Newest first assumed. Prefer posts within ~150 days so the grid is not
+    // padded with year-old highlights when recent originals are few.
+    const nowSec = Date.now() / 1000;
+    const windowSec = 150 * 24 * 3600;
+    const fresh = tweets.filter((t) => t.created && nowSec - t.created <= windowSec);
+    if (fresh.length > 0) return fresh.slice(0, limit);
+    return tweets.slice(0, limit);
+  }
   async function enrichIds(user, ids, limit) {
     const out = [];
     const seen = new Set();
     // Over-scan IDs: scrapes include RTs / other authors / stale highlight mix
-    const scanCap = Math.max(ids.length, limit * 8);
+    const scanCap = Math.max(ids.length, limit * 12);
     for (let i = 0; i < ids.length && i < scanCap; i++) {
       const id = ids[i];
       if (seen.has(id)) continue;
@@ -749,6 +772,8 @@
         if (!tw) continue;
         const author = String((tw.author && tw.author.screen_name) || "").toLowerCase();
         if (author && author !== String(user).toLowerCase()) continue; // skip pure others / bare RTs
+        // Skip replies to others (own replies still have this author).
+        if (isReplyTweet(tw, user)) continue;
         const text = String(tw.text || "").trim();
         const created = Number(tw.created_timestamp || 0) || 0;
         let when = "";
@@ -775,11 +800,13 @@
           card,
           url: "https://x.com/" + user + "/status/" + (tw.id || id),
         });
+        // Enough candidates to age-filter later
+        if (out.length >= Math.max(limit * 4, 12)) break;
       } catch (_) {}
     }
     // Newest first by real timestamp (not scrape order / highlight rank)
     out.sort((a, b) => (b.created || 0) - (a.created || 0));
-    return out.slice(0, limit);
+    return pickRecentEnough(out, limit);
   }
   function mediaHtml(t) {
     const card = t.card;
