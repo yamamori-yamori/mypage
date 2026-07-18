@@ -622,31 +622,69 @@
     return uniqIds(ids);
   }
   async function collectStatusIds(user, want) {
+    // Prefer Nitter HTML via jina (fresh timeline). mobile.twitter.com / x.com
+    // often return pinned + old highlight IDs only. Do NOT stop after the first
+    // sparse source fills `want` — merge several sources then snowflake-sort.
+    const u = encodeURIComponent(user);
     const sources = [
       {
-        url: "https://r.jina.ai/https://twiiit.com/" + encodeURIComponent(user),
-        headers: { Accept: "application/json" },
-      },
-      {
-        url: "https://r.jina.ai/https://nitter.privacyredirect.com/" + encodeURIComponent(user),
+        url: "https://r.jina.ai/http://nitter.cz/" + u,
         headers: { Accept: "application/json", "X-Return-Format": "html" },
       },
       {
-        url: "https://r.jina.ai/https://x.com/" + encodeURIComponent(user),
+        url: "https://r.jina.ai/https://nitter.cz/" + u,
+        headers: { Accept: "application/json", "X-Return-Format": "html" },
+      },
+      {
+        url: "https://r.jina.ai/http://nitter.cz/" + u + "/with_replies",
+        headers: { Accept: "application/json", "X-Return-Format": "html" },
+      },
+      {
+        url: "https://r.jina.ai/http://nitter.cz/" + u,
+        headers: { Accept: "application/json" },
+      },
+      {
+        url: "https://r.jina.ai/https://mobile.twitter.com/" + u,
+        headers: { Accept: "application/json" },
+      },
+      {
+        url: "https://r.jina.ai/https://twiiit.com/" + u,
+        headers: { Accept: "application/json" },
+      },
+      {
+        url: "https://r.jina.ai/https://nitter.privacyredirect.com/" + u,
+        headers: { Accept: "application/json", "X-Return-Format": "html" },
+      },
+      {
+        url: "https://r.jina.ai/https://x.com/" + u,
         headers: { Accept: "application/json" },
       },
     ];
     const all = [];
+    let freshEnough = false;
     for (const src of sources) {
       try {
         const res = await fetch(src.url, { headers: src.headers, cache: "no-store" });
         if (!res.ok) continue;
         const text = await res.text();
-        all.push(...extractStatusIds(text));
-        if (uniqIds(all).length >= want) break;
+        const ids = extractStatusIds(text);
+        all.push(...ids);
+        // Heuristic: a snowflake from ~the last ~14 days means the source is fresh
+        // (not the old highlight mix). 1 day ≈ 2^22 * 1000 * 86400 ms in snowflake space;
+        // compare via BigInt thresholds using latest id age if possible.
+        if (ids.length) {
+          const newest = sortIdsDesc(ids)[0];
+          try {
+            const ts = Number((BigInt(newest) >> 22n) + 1288834974657n);
+            if (Date.now() - ts < 14 * 24 * 3600 * 1000 && ids.length >= Math.min(want, 8)) {
+              freshEnough = true;
+            }
+          } catch (_) {}
+        }
+        if (freshEnough && uniqIds(all).length >= want) break;
       } catch (_) {}
     }
-    return sortIdsDesc(uniqIds(all)).slice(0, Math.max(want, 12));
+    return sortIdsDesc(uniqIds(all)).slice(0, Math.max(want, 24));
   }
   function pickFxImages(tweet) {
     const urls = [];
@@ -699,9 +737,13 @@
   }
   async function enrichIds(user, ids, limit) {
     const out = [];
-    // over-fetch: timeline scrapes include RTs / others
-    for (const id of ids) {
-      if (out.length >= limit) break;
+    const seen = new Set();
+    // Over-scan IDs: scrapes include RTs / other authors / stale highlight mix
+    const scanCap = Math.max(ids.length, limit * 8);
+    for (let i = 0; i < ids.length && i < scanCap; i++) {
+      const id = ids[i];
+      if (seen.has(id)) continue;
+      seen.add(id);
       try {
         const tw = await fetchTweet(user, id);
         if (!tw) continue;
@@ -735,7 +777,9 @@
         });
       } catch (_) {}
     }
-    return out;
+    // Newest first by real timestamp (not scrape order / highlight rank)
+    out.sort((a, b) => (b.created || 0) - (a.created || 0));
+    return out.slice(0, limit);
   }
   function mediaHtml(t) {
     const card = t.card;
