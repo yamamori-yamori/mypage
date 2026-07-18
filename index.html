@@ -147,8 +147,12 @@
   .app-head {
     display: grid; grid-template-columns: 64px 1fr auto; gap: 1rem; align-items: center;
   }
+  .app-actions {
+    display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; justify-content: flex-end;
+  }
   @media (max-width: 560px) {
     .app-head { grid-template-columns: 64px 1fr; }
+    .app-head .app-actions,
     .app-head .btn { grid-column: 2; justify-self: start; }
   }
   .app-icon {
@@ -461,8 +465,11 @@
             <h3>マンガページエディタ</h3>
             <p>コマ・台紙・吹き出し・セリフ・下書きなど、ページ単位で扱う編集ツール。</p>
           </div>
-          <a class="btn" href="https://note.com/yamamoriyamori/n/ncb5b56e3468a"
-             target="_blank" rel="noopener noreferrer">紹介note</a>
+          <div class="app-actions">
+            <a class="btn" href="./manga_web/">WEB版</a>
+            <a class="btn" href="https://note.com/yamamoriyamori/n/ncb5b56e3468a"
+               target="_blank" rel="noopener noreferrer">紹介note</a>
+          </div>
         </div>
         <div class="app-thumbs">
           <a class="app-thumb" href="https://note.com/yamamoriyamori/n/ncb5b56e3468a"
