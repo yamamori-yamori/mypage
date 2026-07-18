@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>やまもりやもり / ろりたけんじ</title>
+<meta name="description" content="やまもりやもり / ろりたけんじ の一般向け公式ページ。商業作品、Web小説、自作アプリのリンク。" />
+<meta name="theme-color" content="#f7f4ef" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600;700&family=IBM+Plex+Sans+JP:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #1c1917;
+    --paper: #f7f4ef;
+    --card: #fffcf7;
+    --muted: #78716c;
+    --line: #e7e0d5;
+    --accent: #9a3412;
+  }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: "IBM Plex Sans JP", sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.75;
+  }
+  a { color: inherit; }
+  header {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; flex-wrap: wrap;
+    padding: 1rem 1.5rem;
+    background: rgba(247,244,239,0.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .logo {
+    font-family: "Shippori Mincho", serif;
+    font-weight: 700; letter-spacing: 0.04em; font-size: 1.02rem;
+  }
+  .logo .sep { color: var(--muted); font-weight: 400; margin: 0 0.35rem; }
+  .logo em {
+    font-style: normal; font-weight: 400; font-size: 0.72rem;
+    color: var(--muted); margin-left: 0.55rem; letter-spacing: 0.02em;
+  }
+  nav { display: flex; gap: 1.1rem; flex-wrap: wrap; }
+  nav a {
+    text-decoration: none; color: var(--muted); font-size: 0.84rem;
+    border-bottom: 1px solid transparent; padding-bottom: 2px;
+  }
+  nav a:hover { color: var(--ink); border-color: var(--accent); }
+
+  .hero {
+    max-width: 880px; margin: 0 auto;
+    padding: 4.25rem 1.5rem 2.75rem;
+  }
+  .eyebrow {
+    font-size: 0.72rem; letter-spacing: 0.2em; color: var(--accent);
+    margin-bottom: 0.9rem;
+  }
+  h1 {
+    font-family: "Shippori Mincho", serif;
+    font-size: clamp(2rem, 5vw, 3.1rem);
+    line-height: 1.3; letter-spacing: 0.04em; margin-bottom: 1rem;
+  }
+  .lead { color: var(--muted); font-weight: 300; max-width: 36rem; font-size: 1.02rem; }
+
+  /* 商業名義の紹介帯：切替ではなく「関係の説明」 */
+  .identity {
+    margin-top: 1.75rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.85rem;
+  }
+  @media (max-width: 640px) { .identity { grid-template-columns: 1fr; } }
+  .id-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    padding: 1.1rem 1.15rem;
+  }
+  .id-card.primary { border-color: #d6c4b0; }
+  .id-card .label {
+    font-size: 0.68rem; letter-spacing: 0.14em; color: var(--muted);
+    margin-bottom: 0.35rem;
+  }
+  .id-card h2 {
+    font-family: "Shippori Mincho", serif;
+    font-size: 1.15rem; font-weight: 600; margin-bottom: 0.35rem;
+  }
+  .id-card p { font-size: 0.84rem; color: var(--muted); line-height: 1.65; }
+  .id-card .tag {
+    display: inline-block; margin-top: 0.65rem;
+    font-size: 0.7rem; padding: 0.2rem 0.55rem;
+    border-radius: 999px; border: 1px solid var(--line); color: var(--muted);
+  }
+  .id-card.primary .tag {
+    border-color: #e7cfc0; color: var(--accent); background: #fff8f3;
+  }
+
+  main { max-width: 880px; margin: 0 auto; padding: 0 1.5rem 4.5rem; display: grid; gap: 3.25rem; }
+  section > h2 {
+    font-family: "Shippori Mincho", serif;
+    font-size: 1.4rem; margin-bottom: 0.35rem;
+  }
+  .sec-desc { color: var(--muted); font-size: 0.88rem; margin-bottom: 1.25rem; }
+  .rule { height: 1px; background: var(--line); margin-bottom: 1.35rem; }
+
+  .works {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1rem;
+  }
+  .work {
+    background: var(--card); border: 1px solid var(--line);
+    padding: 0.9rem; transition: 0.2s; text-decoration: none; display: block;
+  }
+  .work:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(28,25,23,0.06); }
+  .cover {
+    aspect-ratio: 3/4; margin-bottom: 0.75rem;
+    border: 1px solid var(--line);
+    background: linear-gradient(145deg, #ebe4d8, #cfc6b6);
+    display: grid; place-items: center;
+    font-family: "Shippori Mincho", serif; color: var(--muted); font-size: 0.8rem;
+    overflow: hidden;
+  }
+  .cover img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .work h3 { font-size: 0.92rem; font-weight: 500; margin-bottom: 0.2rem; line-height: 1.45; }
+  .work p { font-size: 0.76rem; color: var(--muted); }
+  .work .by {
+    display: inline-block; margin-top: 0.45rem;
+    font-size: 0.68rem; color: var(--accent);
+    border: 1px solid #e7cfc0; padding: 0.12rem 0.45rem; border-radius: 4px;
+  }
+  .note { margin-top: 0.75rem; font-size: 0.72rem; color: var(--muted); }
+
+  .apps { display: grid; gap: 0.85rem; }
+  .app {
+    display: grid; grid-template-columns: 64px 1fr auto; gap: 1rem; align-items: center;
+    background: var(--card); border: 1px solid var(--line); padding: 1rem 1.1rem;
+  }
+  @media (max-width: 560px) {
+    .app { grid-template-columns: 64px 1fr; }
+    .app .btn { grid-column: 2; justify-self: start; }
+  }
+  .app-icon {
+    width: 64px; height: 64px; border-radius: 14px;
+    display: grid; place-items: center; color: #fff; font-size: 0.68rem;
+    text-align: center; font-weight: 500; line-height: 1.25;
+    background: linear-gradient(160deg, #9a3412, #c4a484);
+  }
+  .app h3 { font-size: 0.98rem; margin-bottom: 0.2rem; }
+  .app p { font-size: 0.82rem; color: var(--muted); }
+  .btn {
+    display: inline-block; text-decoration: none;
+    border: 1px solid var(--ink); padding: 0.42rem 0.85rem; font-size: 0.78rem;
+    background: transparent; color: var(--ink); cursor: pointer;
+  }
+  .btn:hover { background: var(--ink); color: var(--paper); }
+
+  .novel-list { display: grid; gap: 0.6rem; }
+  .novel {
+    display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+    flex-wrap: wrap;
+    background: var(--card); border: 1px solid var(--line);
+    padding: 0.9rem 1rem; text-decoration: none; transition: 0.15s;
+  }
+  .novel:hover { border-color: #cfc6b6; }
+  .novel h3 { font-size: 0.92rem; font-weight: 500; }
+  .novel p { font-size: 0.76rem; color: var(--muted); }
+  .badge {
+    font-size: 0.68rem; color: var(--accent);
+    border: 1px solid #e7cfc0; padding: 0.2rem 0.5rem; border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  .two-cols {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem;
+    width: 100%; max-width: 100%;
+  }
+  @media (max-width: 700px) { .two-cols { grid-template-columns: minmax(0, 1fr); } }
+  .links-block {
+    background: var(--card); border: 1px solid var(--line); padding: 1.35rem 1.4rem;
+    min-width: 0; max-width: 100%; overflow: hidden;
+  }
+  .links-block h3 {
+    font-family: "Shippori Mincho", serif; font-size: 1.1rem; margin-bottom: 0.25rem;
+  }
+  .links-block .sub { font-size: 0.8rem; color: var(--muted); margin-bottom: 1rem; }
+  .link-rows { display: grid; gap: 0.35rem; }
+  .link-rows a {
+    display: flex; align-items: center; gap: 0.5rem;
+    justify-content: space-between; text-decoration: none;
+    padding: 0.55rem 0; border-bottom: 1px dashed var(--line); font-size: 0.9rem;
+    min-width: 0;
+  }
+  .link-rows a:hover { color: var(--accent); }
+  .link-rows a .link-label {
+    flex: 1 1 auto; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .link-rows a .link-go {
+    flex: 0 0 auto; color: var(--muted); font-size: 0.75rem;
+  }
+
+  .x-feed {
+    margin-top: 1.1rem;
+    border-top: 1px dashed var(--line);
+    padding-top: 0.9rem;
+    min-width: 0; max-width: 100%;
+  }
+  .x-feed-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.55rem;
+    min-width: 0;
+  }
+  .x-feed-label {
+    font-size: 0.68rem; letter-spacing: 0.14em; color: var(--muted);
+  }
+  .x-feed-head a {
+    font-size: 0.72rem; color: var(--accent); text-decoration: none;
+  }
+  .x-feed-head a:hover { text-decoration: underline; }
+  .x-feed-list {
+    display: grid; gap: 0.55rem;
+    max-height: 420px; overflow: auto;
+    padding-right: 2px;
+    min-width: 0; max-width: 100%;
+  }
+  .x-tweet {
+    position: relative;
+    display: block; color: inherit;
+    border: 1px solid var(--line); background: #fffefb;
+    padding: 0.75rem 0.8rem; transition: 0.15s;
+    min-width: 0; max-width: 100%; overflow: hidden;
+  }
+  .x-tweet:hover { border-color: #cfc6b6; box-shadow: 0 8px 18px rgba(28,25,23,0.05); }
+  /* whole-card hit target; in-tweet links sit above (no nested <a>) */
+  .x-tweet-stretch {
+    position: absolute; inset: 0; z-index: 0;
+    text-decoration: none; color: transparent;
+  }
+  .x-tweet-meta {
+    position: relative; z-index: 1;
+    display: flex; justify-content: space-between; gap: 0.5rem;
+    font-size: 0.68rem; color: var(--muted); margin-bottom: 0.35rem;
+    min-width: 0;
+  }
+  .x-tweet-text {
+    position: relative; z-index: 1;
+    font-size: 0.84rem; line-height: 1.65;
+    white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+    max-width: 100%; min-width: 0;
+  }
+  .x-tweet-text a {
+    position: relative; z-index: 2;
+    color: var(--accent);
+    display: inline;
+    overflow-wrap: anywhere; word-break: break-all;
+  }
+  .x-tweet-media,
+  .x-tweet-card {
+    position: relative; z-index: 1;
+  }
+  .x-tweet-media {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+    gap: 0.35rem;
+    margin-top: 0.55rem;
+    min-width: 0;
+  }
+  .x-tweet-media img {
+    display: block; width: 100%; max-width: 100%; height: 140px; object-fit: cover;
+    border: 1px solid var(--line); background: #f3efe6;
+  }
+  .x-tweet-card {
+    display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 0.55rem;
+    margin-top: 0.55rem; border: 1px solid var(--line); background: #faf7f1;
+    overflow: hidden; min-height: 72px; min-width: 0; max-width: 100%;
+  }
+  .x-tweet-card img {
+    width: 88px; height: 100%; min-height: 72px; object-fit: cover; display: block;
+    background: #f3efe6;
+  }
+  .x-tweet-card .x-card-body {
+    padding: 0.45rem 0.5rem 0.5rem 0; min-width: 0;
+  }
+  .x-tweet-card .x-card-domain {
+    font-size: 0.62rem; color: var(--muted); letter-spacing: 0.04em; margin-bottom: 0.15rem;
+  }
+  .x-tweet-card .x-card-title {
+    font-size: 0.78rem; line-height: 1.4; font-weight: 500;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .x-feed-status {
+    font-size: 0.8rem; color: var(--muted); padding: 0.85rem 0.2rem; line-height: 1.6;
+  }
+  .x-feed-status a { color: var(--accent); }
+  .x-feed-note {
+    margin-top: 0.55rem; font-size: 0.68rem; color: var(--muted); line-height: 1.5;
+  }
+
+  footer {
+    border-top: 1px solid var(--line);
+    text-align: center; color: var(--muted);
+    font-size: 0.76rem; padding: 2rem 1rem;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">やまもりやもり<span class="sep">/</span>ろりたけんじ</div>
+  <nav>
+    <a href="#works">商業作品</a>
+    <a href="#apps">アプリ</a>
+    <a href="#novels-general">小説</a>
+    <a href="#links">リンク</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="eyebrow">OFFICIAL · GENERAL</div>
+  <h1>やまもりやもり<span style="color:var(--muted);font-weight:400"> / </span>ろりたけんじ</h1>
+  <p class="lead">
+    二つの名義で活動しています。
+    一般向けWeb小説・創作ツールは「やまもりやもり」、R18（マンガ原作など）は「ろりたけんじ」名義となっています。
+  </p>
+
+  <div class="identity">
+    <div class="id-card primary">
+      <div class="label">WEB · TOOLS · THIS REPO</div>
+      <h2>やまもりやもり</h2>
+      <p>一般向けWeb小説・note・自作アプリ（マンガエディタ／オーディオブック）。この GitHub Pages のリポジトリ名義。</p>
+      <span class="tag">一般向けWeb小説 / ツール</span>
+    </div>
+    <div class="id-card primary">
+      <div class="label">COMMERCIAL · BETTER KNOWN</div>
+      <h2>ろりたけんじ</h2>
+      <p>R18作家の名義。ヤンマガWeb・Amazon など、単行本・コミカライズはこちらが中心。</p>
+      <span class="tag">マンガ原作 / R18小説</span>
+    </div>
+  </div>
+</section>
+
+<main>
+  <section id="works">
+    <h2>商業作品</h2>
+    <p class="sec-desc">
+      書店・電子で手に取れる作品。クレジットは
+      <strong style="color:var(--ink);font-weight:500">ろりたけんじ</strong>
+      名義です。
+    </p>
+    <div class="rule"></div>
+    <div class="works">
+      <a class="work"
+         href="https://amzn.to/4vFdqU6"
+         target="_blank" rel="noopener noreferrer sponsored"
+         title="Amazonで見る（アフィリエイト）">
+        <div class="cover">
+          <img
+            src="https://m.media-amazon.com/images/I/81sxi5wGfIL._SL500_.jpg"
+            alt="異世界転移した俺は、Ｈのたびにガチャを引く！（１） 表紙"
+            width="500" height="667" loading="lazy" decoding="async"
+            referrerpolicy="no-referrer" />
+        </div>
+        <h3>異世界転移した俺は、Ｈのたびにガチャを引く！～もってくれ、俺の精力！～（１）</h3>
+        <p>コミカライズ原作</p><p>講談社ヤンマガKCスペシャル</p>
+        <span class="by">ろりたけんじ</span>
+      </a>
+      <a class="work"
+         href="https://amzn.to/45ajSHG"
+         target="_blank" rel="noopener noreferrer sponsored"
+         title="Amazonで見る（アフィリエイト）">
+        <div class="cover">
+          <img
+            src="https://m.media-amazon.com/images/I/81jcx8v-weL._SL500_.jpg"
+            alt="異世界転移した俺は、Ｈのたびにガチャを引く！（２） 表紙"
+            width="500" height="667" loading="lazy" decoding="async"
+            referrerpolicy="no-referrer" />
+        </div>
+        <h3>異世界転移した俺は、Ｈのたびにガチャを引く！～もってくれ、俺の精力！～（２）</h3>
+        <p>コミカライズ原作</p><p>講談社ヤンマガKCスペシャル</p>
+        <span class="by">ろりたけんじ</span>
+      </a>
+    </div>
+  </section>
+
+  <section id="apps">
+    <h2>自作アプリ</h2>
+    <p class="sec-desc">やまもりやもり名義で公開・紹介している創作ツールです。</p>
+    <div class="rule"></div>
+    <div class="apps">
+      <div class="app">
+        <div class="app-icon">Manga<br>Editor</div>
+        <div>
+          <h3>マンガページエディタ</h3>
+          <p>コマ・台紙・下書きなど、ページ単位で扱う編集ツール。</p>
+        </div>
+        <a class="btn" href="https://note.com/yamamoriyamori/n/ncb5b56e3468a"
+           target="_blank" rel="noopener noreferrer">紹介note</a>
+      </div>
+      <div class="app">
+        <div class="app-icon" style="background:linear-gradient(160deg,#1e3a5f,#7a9bb8)">Audio<br>Book</div>
+        <div>
+          <h3>オーディオブック関連アプリ</h3>
+          <p>テキストから音声書籍（M4B）を作る・管理するアプリ。</p>
+        </div>
+        <a class="btn" href="https://note.com/yamamoriyamori/m/m2a7c8b8b3cf1"
+           target="_blank" rel="noopener noreferrer">紹介note</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="novels-general">
+    <h2>一般向けWeb小説（やまもりやもり）</h2>
+    <p class="sec-desc">一般向け名義での掲載先です。</p>
+    <div class="rule"></div>
+    <div class="novel-list">
+      <a class="novel" href="https://kakuyomu.jp/users/yamamoriyamori"
+         target="_blank" rel="noopener noreferrer">
+        <div>
+          <h3>カクヨム</h3>
+          <p>ユーザーページ · 作品一覧</p>
+        </div>
+        <span class="badge">カクヨム</span>
+      </a>
+      <a class="novel" href="https://mypage.syosetu.com/2458507/"
+         target="_blank" rel="noopener noreferrer">
+        <div>
+          <h3>小説家になろう</h3>
+          <p>マイページ · 作品一覧</p>
+        </div>
+        <span class="badge">なろう</span>
+      </a>
+      <a class="novel" href="https://syosetu.org/novel/399247/"
+         target="_blank" rel="noopener noreferrer">
+        <div>
+          <h3>ハーメルン</h3>
+          <p>掲載作例（エルフの義妹とＳＦ研）</p>
+        </div>
+        <span class="badge">ハーメルン</span>
+      </a>
+    </div>
+  </section>
+
+  <section id="novels-r18">
+    <h2>R18 Web小説（ろりたけんじ）</h2>
+    <p class="sec-desc">R18名義での掲載先です。</p>
+    <div class="rule"></div>
+    <div class="novel-list">
+      <a class="novel" href="https://xmypage.syosetu.com/x3937ch/"
+         target="_blank" rel="noopener noreferrer">
+        <div>
+          <h3>ノクターンノベルズ</h3>
+          <p>作者Xマイページ · 作品一覧</p>
+        </div>
+        <span class="badge">ノクターン</span>
+      </a>
+      <a class="novel" href="https://pink.solispia.com/user/822/profile"
+         target="_blank" rel="noopener noreferrer">
+        <div>
+          <h3>ソリスピア（R18）</h3>
+          <p>作者プロフィール · 作品一覧</p>
+        </div>
+        <span class="badge">ソリスピア</span>
+      </a>
+    </div>
+  </section>
+
+  <section id="links">
+    <h2>リンク</h2>
+    <div class="rule"></div>
+    <div class="two-cols">
+      <div class="links-block">
+        <h3>やまもりやもり</h3>
+        <p class="sub">このサイトの名義 · Web小説 · ツール</p>
+        <div class="link-rows">
+          <a href="https://note.com/yamamoriyamori" target="_blank" rel="noopener noreferrer"><span class="link-label">note やまもりやもり</span><span class="link-go">→</span></a>
+          <a href="#novels-general"><span class="link-label">小説掲載</span><span class="link-go">↑</span></a>
+          <a href="#apps"><span class="link-label">自作アプリ</span><span class="link-go">↑</span></a>
+        </div>
+        <div class="x-feed" aria-label="やまもりやもりの最近の投稿">
+          <div class="x-feed-head">
+            <span class="x-feed-label">RECENT ON X</span>
+            <a href="https://x.com/yamamori_yamori" target="_blank" rel="noopener noreferrer">@yamamori_yamori</a>
+          </div>
+          <div class="x-feed-list" data-x-user="yamamori_yamori" data-x-limit="5">
+            <p class="x-feed-status">読み込み中…</p>
+          </div>
+        </div>
+      </div>
+      <div class="links-block">
+        <h3>ろりたけんじ</h3>
+        <p class="sub">商業で知られている名義 · 原作・単行本</p>
+        <div class="link-rows">
+          <a href="https://note.com/loliloli_kenji" target="_blank" rel="noopener noreferrer"><span class="link-label">note ろりたけんじ</span><span class="link-go">→</span></a>
+          <a href="https://yanmaga.jp/comics/%E7%95%B0%E4%B8%96%E7%95%8C%E8%BB%A2%E7%A7%BB%E3%81%97%E3%81%9F%E4%BF%BA%E3%81%AF%E3%80%81H%E3%81%AE%E3%81%9F%E3%81%B3%E3%81%AB%E3%82%AC%E3%83%81%E3%83%A3%E3%82%92%E5%BC%95%E3%81%8F%EF%BC%81%E3%82%82%E3%81%A3%E3%81%A6%E3%81%8F%E3%82%8C%E3%80%81%E4%BF%BA%E3%81%AE%E7%B2%BE%E5%8A%9B%EF%BC%81"
+             target="_blank" rel="noopener noreferrer"><span class="link-label">ヤンマガWeb 異世界転移した俺は、Hのたびにガチャを引く！～もってくれ、俺の精力！～</span><span class="link-go">→</span></a>
+          <a href="https://amzn.to/4gGxP7n" target="_blank" rel="noopener noreferrer sponsored"><span class="link-label">Amazon ろりたけんじ</span><span class="link-go">→</span></a>
+          <a href="#novels-r18"><span class="link-label">R18小説掲載</span><span class="link-go">↑</span></a>
+        </div>
+        <div class="x-feed" aria-label="ろりたけんじの最近の投稿">
+          <div class="x-feed-head">
+            <span class="x-feed-label">RECENT ON X</span>
+            <a href="https://x.com/loliloli_kenji" target="_blank" rel="noopener noreferrer">@loliloli_kenji</a>
+          </div>
+          <div class="x-feed-list" data-x-user="loliloli_kenji" data-x-limit="5">
+            <p class="x-feed-status">読み込み中…</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="x-feed-note">
+      ※ 最近の投稿は X 公式ウィジェットではなく、公開ページから取得して自前表示しています（公式埋め込みは現状ほぼ表示されないため）。取得元の制限で失敗することがあり、その場合は上の X リンクからアカウントを開いてください。
+    </p>
+  </section>
+</main>
+
+<footer>© やまもりやもり / ろりたけんじ</footer>
+<script>
+(function () {
+  const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ESC[c]);
+  }
+  function shortenUrlDisplay(url) {
+    const u = String(url || "");
+    if (u.length <= 42) return u;
+    return u.slice(0, 36) + "…";
+  }
+  function linkify(text) {
+    const esc = escapeHtml(text);
+    return esc
+      .replace(/(https?:\/\/[^\s<]+)/g, (url) => {
+        return (
+          '<a href="' +
+          url +
+          '" target="_blank" rel="noopener noreferrer">' +
+          escapeHtml(shortenUrlDisplay(url.replace(/&amp;/g, "&"))) +
+          "</a>"
+        );
+      })
+      .replace(/(^|[\s])@([A-Za-z0-9_]+)/g, '$1<a href="https://x.com/$2" target="_blank" rel="noopener noreferrer">@$2</a>')
+      .replace(/(^|[\s])#([^\s#@]+)/g, '$1<a href="https://x.com/hashtag/$2" target="_blank" rel="noopener noreferrer">#$2</a>');
+  }
+  function uniqIds(list) {
+    const out = [];
+    const seen = new Set();
+    for (const id of list || []) {
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+    return out;
+  }
+  function sortIdsDesc(ids) {
+    return ids.slice().sort((a, b) => {
+      try {
+        const da = BigInt(a);
+        const db = BigInt(b);
+        if (da === db) return 0;
+        return da > db ? -1 : 1;
+      } catch (_) {
+        return String(b).localeCompare(String(a));
+      }
+    });
+  }
+  function extractStatusIds(blob) {
+    const ids = [];
+    const re = /status(?:es)?\/(\d{10,})/g;
+    let m;
+    while ((m = re.exec(blob)) !== null) ids.push(m[1]);
+    return uniqIds(ids);
+  }
+  async function collectStatusIds(user, want) {
+    const sources = [
+      {
+        url: "https://r.jina.ai/https://twiiit.com/" + encodeURIComponent(user),
+        headers: { Accept: "application/json" },
+      },
+      {
+        url: "https://r.jina.ai/https://nitter.privacyredirect.com/" + encodeURIComponent(user),
+        headers: { Accept: "application/json", "X-Return-Format": "html" },
+      },
+      {
+        url: "https://r.jina.ai/https://x.com/" + encodeURIComponent(user),
+        headers: { Accept: "application/json" },
+      },
+    ];
+    const all = [];
+    for (const src of sources) {
+      try {
+        const res = await fetch(src.url, { headers: src.headers, cache: "no-store" });
+        if (!res.ok) continue;
+        const text = await res.text();
+        all.push(...extractStatusIds(text));
+        if (uniqIds(all).length >= want) break;
+      } catch (_) {}
+    }
+    return sortIdsDesc(uniqIds(all)).slice(0, Math.max(want, 12));
+  }
+  function pickFxImages(tweet) {
+    const urls = [];
+    const media = tweet && tweet.media;
+    const lists = [];
+    if (media) {
+      if (Array.isArray(media.photos)) lists.push(media.photos);
+      if (Array.isArray(media.all)) lists.push(media.all);
+      if (Array.isArray(media)) lists.push(media);
+    }
+    for (const list of lists) {
+      for (const item of list) {
+        if (!item) continue;
+        const type = item.type || "";
+        if (type && type !== "photo" && type !== "image" && type !== "animated_gif") continue;
+        const u = item.url || item.thumbnail_url || item.preview_url;
+        if (u && /pbs\.twimg\.com|twimg\.com/.test(u)) urls.push(u);
+      }
+    }
+    const out = [];
+    const seen = new Set();
+    for (const u of urls) {
+      if (seen.has(u)) continue;
+      seen.add(u);
+      out.push(u);
+    }
+    return out;
+  }
+  function pickFxCard(tweet) {
+    const c = tweet && tweet.card;
+    if (!c) return null;
+    const img = (c.image && (c.image.url || c.image)) || c.image_url || null;
+    const title = c.title || "";
+    const domain = c.domain || "";
+    if (!img && !title) return null;
+    return {
+      image: typeof img === "string" ? img : null,
+      title: String(title || "").trim(),
+      domain: String(domain || "").trim(),
+    };
+  }
+  async function fetchTweet(user, id) {
+    const res = await fetch(
+      "https://api.fxtwitter.com/" + encodeURIComponent(user) + "/status/" + id,
+      { headers: { Accept: "application/json" } }
+    );
+    if (!res.ok) throw new Error("fx " + res.status);
+    const data = await res.json();
+    return data && data.tweet;
+  }
+  async function enrichIds(user, ids, limit) {
+    const out = [];
+    // over-fetch: timeline scrapes include RTs / others
+    for (const id of ids) {
+      if (out.length >= limit) break;
+      try {
+        const tw = await fetchTweet(user, id);
+        if (!tw) continue;
+        const author = String((tw.author && tw.author.screen_name) || "").toLowerCase();
+        if (author && author !== String(user).toLowerCase()) continue; // skip pure others / bare RTs
+        const text = String(tw.text || "").trim();
+        const created = Number(tw.created_timestamp || 0) || 0;
+        let when = "";
+        if (created) {
+          try {
+            when = new Date(created * 1000).toLocaleString("ja-JP", {
+              year: "numeric",
+              month: "numeric",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+          } catch (_) {}
+        }
+        const images = pickFxImages(tw).slice(0, 4);
+        const card = images.length ? null : pickFxCard(tw);
+        if (!text && !images.length && !card) continue;
+        out.push({
+          id: String(tw.id || id),
+          when,
+          text,
+          created,
+          images,
+          card,
+          url: "https://x.com/" + user + "/status/" + (tw.id || id),
+        });
+      } catch (_) {}
+    }
+    return out;
+  }
+  function mediaHtml(t) {
+    const card = t.card;
+    const imgs = (t.images || []).filter(Boolean);
+    if (card && (card.image || card.title) && !imgs.some((u) => /\/media\//.test(u))) {
+      return (
+        '<div class="x-tweet-card">' +
+        (card.image
+          ? '<img src="' +
+            escapeHtml(card.image) +
+            '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />'
+          : "<div></div>") +
+        '<div class="x-card-body">' +
+        (card.domain
+          ? '<div class="x-card-domain">' + escapeHtml(card.domain) + "</div>"
+          : "") +
+        (card.title
+          ? '<div class="x-card-title">' + escapeHtml(card.title) + "</div>"
+          : "") +
+        "</div></div>"
+      );
+    }
+    if (imgs.length) {
+      return (
+        '<div class="x-tweet-media">' +
+        imgs
+          .slice(0, 4)
+          .map(
+            (src) =>
+              '<img src="' +
+              escapeHtml(src) +
+              '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />'
+          )
+          .join("") +
+        "</div>"
+      );
+    }
+    return "";
+  }
+  function render(el, user, tweets) {
+    if (!tweets.length) {
+      el.innerHTML =
+        '<p class="x-feed-status">投稿を取得できませんでした。<a href="https://x.com/' +
+        encodeURIComponent(user) +
+        '" target="_blank" rel="noopener noreferrer">@' +
+        escapeHtml(user) +
+        " を開く</a></p>";
+      return;
+    }
+    el.innerHTML = tweets
+      .map((t) => {
+        // Outer must NOT be <a>: linkify inserts <a> for URLs; nested anchors
+        // get split by the browser into many tiny frames.
+        return (
+          '<article class="x-tweet">' +
+          '<a class="x-tweet-stretch" href="' +
+          escapeHtml(t.url) +
+          '" target="_blank" rel="noopener noreferrer" aria-label="Xで投稿を開く"></a>' +
+          '<div class="x-tweet-meta"><span>@' +
+          escapeHtml(user) +
+          "</span><span>" +
+          escapeHtml(t.when || "投稿") +
+          "</span></div>" +
+          '<div class="x-tweet-text">' +
+          linkify(t.text || "") +
+          "</div>" +
+          mediaHtml(t) +
+          "</article>"
+        );
+      })
+      .join("");
+  }
+  async function loadFeed(el) {
+    const user = el.getAttribute("data-x-user");
+    const limit = Math.max(1, Math.min(10, Number(el.getAttribute("data-x-limit") || 5)));
+    if (!user) return;
+    el.innerHTML = '<p class="x-feed-status">読み込み中…</p>';
+    try {
+      const ids = await collectStatusIds(user, Math.max(limit * 6, 24));
+      const tweets = await enrichIds(user, ids, limit);
+      render(el, user, tweets);
+    } catch (err) {
+      el.innerHTML =
+        '<p class="x-feed-status">読み込みに失敗しました。<a href="https://x.com/' +
+        encodeURIComponent(user) +
+        '" target="_blank" rel="noopener noreferrer">@' +
+        escapeHtml(user) +
+        " を X で開く</a></p>";
+      console.warn("[x-feed]", user, err);
+    }
+  }
+  document.querySelectorAll("[data-x-user]").forEach(loadFeed);
+})();
+</script>
+</body>
+</html>
