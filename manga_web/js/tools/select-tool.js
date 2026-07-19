@@ -235,7 +235,11 @@ window.ME.Tools = window.ME.Tools || {};
       for (var i = 0; i < ids.length; i++) {
         var o = ME.SceneGraph.getObjectById(project, ids[i]);
         if (!o || o.locked) continue;
-        if (o.type !== 'effect' || o.kind !== 'concentration') continue;
+        if (o.type !== 'effect') continue;
+        var okOrigin = (ME.Effects && ME.Effects.hasOriginHandle)
+          ? ME.Effects.hasOriginHandle(o.kind)
+          : (o.kind === 'concentration');
+        if (!okOrigin) continue;
         if (!o.params || !o.params.origin) continue;
         var disp = originDisplayOf(o);
         if (!disp) continue;
@@ -991,9 +995,12 @@ window.ME.Tools = window.ME.Tools || {};
           drawTailHandle(ctx, obj.tail.curvePoint, '#FFB347');
         }
 
-        // 集中線の焦点（オレンジ十字）— 相対座標＋回転を考慮した画面位置
-        if (obj.type === 'effect' && obj.kind === 'concentration' &&
-            obj.params && obj.params.origin) {
+        // 焦点付きエフェクト（オレンジ十字）— 相対座標＋回転を考慮した画面位置
+        var showOrigin = obj.type === 'effect' && obj.params && obj.params.origin &&
+          ((ME.Effects && ME.Effects.hasOriginHandle)
+            ? ME.Effects.hasOriginHandle(obj.kind)
+            : (obj.kind === 'concentration'));
+        if (showOrigin) {
           var od = originDisplayOf(obj);
           if (od) drawOriginHandle(ctx, od);
         }

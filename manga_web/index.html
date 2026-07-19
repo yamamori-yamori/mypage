@@ -6,8 +6,16 @@
   <title>マンガページエディタ</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/style.css">
+  <style>
+    #me-loading {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; align-items: center; justify-content: center;
+      background: #fff; font: 18px sans-serif; color: #555;
+    }
+  </style>
 </head>
 <body>
+  <div id="me-loading">loading...</div>
   <!-- 上部バー: タイトル + ファイル操作 -->
   <div id="topbar">
     <span id="app-title">🖊 マンガページエディタ<span id="app-credit">by やまもりやもり</span></span>
@@ -36,6 +44,7 @@
   <!-- script読み込み順: core → render → tools → io → ui → main -->
   <script src="js/core/app-version.js"></script>
   <script src="js/core/data-models.js"></script>
+  <script src="js/core/effect-presets.js"></script>
   <script src="js/core/scene-graph.js"></script>
   <script src="js/core/page-manager.js"></script>
   <script src="js/core/command-stack.js"></script>

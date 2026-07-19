@@ -38,14 +38,20 @@ window.ME.Tools = window.ME.Tools || {};
       return null;
     }
 
-    // 選択中の集中線（焦点ハンドルを出す対象）
-    function selectedConcentration() {
+    // 選択中の焦点ハンドル付きエフェクト
+    function selectedOriginEffect() {
       var ids = selection.getSelectedIds();
       for (var i = 0; i < ids.length; i++) {
         var o = ME.SceneGraph.getObjectById(project, ids[i]);
-        if (o && o.type === 'effect' && o.kind === 'concentration') return o;
+        if (o && o.type === 'effect' && hasOriginHandle(o.kind)) return o;
       }
       return null;
+    }
+    function hasOriginHandle(kind) {
+      if (ME.Effects && typeof ME.Effects.hasOriginHandle === 'function') {
+        return ME.Effects.hasOriginHandle(kind);
+      }
+      return kind === 'concentration';
     }
 
     function onMouseDown(e) {
@@ -54,7 +60,7 @@ window.ME.Tools = window.ME.Tools || {};
       var mx = m.x, my = m.y;
 
       // 集中線の焦点ハンドルを掴んだら位置ドラッグ開始
-      var conc = selectedConcentration();
+      var conc = selectedOriginEffect();
       if (conc && conc.params && conc.params.origin) {
         var disp = originDisplayOf(conc);
         if (disp) {
@@ -96,15 +102,17 @@ window.ME.Tools = window.ME.Tools || {};
         panelId: panelId,
         transform: { x: mx, y: my, rotation: 0, scaleX: 1, scaleY: 1 }
       };
+      if (ME.Effects && typeof ME.Effects.defaultParams === 'function') {
+        effectData.params = ME.Effects.defaultParams(kind, null);
+      }
       var effectObj = ME.SceneGraph.addEffect(project, effectData, panelId);
       if (!effectObj) return;
-      if (kind === 'concentration' && effectObj.params) {
+      if (hasOriginHandle(kind) && effectObj.params) {
         // コマ中心からの相対座標（コマ移動で焦点がズレない）
         var c = panelCenter(panels, panelId);
         effectObj.params.origin = { x: mx - c.x, y: my - c.y };
         effectObj.params.originRelative = true;
       } else if (kind === 'speedLines' && effectObj.params) {
-        // スピード線は方向ベース。origin は未使用だが互換で中心相対0
         effectObj.params.origin = { x: 0, y: 0 };
         effectObj.params.originRelative = true;
       }
@@ -153,7 +161,7 @@ window.ME.Tools = window.ME.Tools || {};
 
     // 選択中の集中線の焦点ハンドル（オレンジの十字）を描画。ズームに関係なく一定サイズ。
     function drawOriginHandle(ctx) {
-      var conc = selectedConcentration();
+      var conc = selectedOriginEffect();
       if (!conc || !conc.params || !conc.params.origin) return;
       var o = originDisplayOf(conc);
       if (!o) return;
@@ -280,40 +288,11 @@ window.ME.Tools = window.ME.Tools || {};
     }
 
     function applyDefaultParams(effectObj, kind) {
-      if (!effectObj.params) effectObj.params = {};
-      var p = effectObj.params;
-      if (kind === 'screenTone') {
-        effectObj.params = { pattern: 'dot', density: 50, angle: 0, scale: 1 };
-      } else if (kind === 'concentration') {
-        effectObj.params = {
-          origin: p.origin || { x: 0, y: 0 },
-          originRelative: (p.originRelative !== undefined ? p.originRelative : true),
-          lineCount: (p.lineCount !== undefined ? p.lineCount : 36),
-          lengthRatio: (p.lengthRatio !== undefined ? p.lengthRatio : 90),
-          color: p.color || '#000000'
-        };
-      } else if (kind === 'speedLines') {
-        effectObj.params = {
-          direction: p.direction || 'horizontal',
-          lineCount: (p.lineCount !== undefined ? p.lineCount : 24),
-          lengthRatio: (p.lengthRatio !== undefined ? p.lengthRatio : 100),
-          color: p.color || '#000000'
-        };
-      } else if (kind === 'flatTone') {
-        effectObj.params = { color: '#000000' };
-      } else if (kind === 'whiteFlash') {
-        effectObj.params = {};
-      } else if (kind === 'blackFlash') {
-        effectObj.params = {};
-      } else if (kind === 'frame') {
-        effectObj.params = { width: 4, color: '#000000' };
-      } else if (kind === 'flatBand') {
-        effectObj.params = { height: 30, color: '#000000' };
-      } else if (kind === 'whiteBorder') {
-        effectObj.params = { width: 8 };
-      } else {
-        effectObj.params = {};
+      if (ME.Effects && typeof ME.Effects.defaultParams === 'function') {
+        effectObj.params = ME.Effects.defaultParams(kind, effectObj.params || {});
+        return;
       }
+      effectObj.params = effectObj.params || {};
     }
 
     canvas.addEventListener('mousedown', onMouseDown);

@@ -5,5 +5,5 @@
 #
 # APP  = アプリ仕様 / UI / README・MANUAL の「現行」表示（Ver.APP）
 # JSON = プロジェクトファイル version（serializer / createProject）
-APP=4.4
+APP=4.4.1
 JSON=1.3

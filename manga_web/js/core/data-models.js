@@ -178,26 +178,38 @@ window.ME.Core = window.ME.Core || {};
     obj.scope = scope || 'page';
     obj.panelId = null;
     obj.kind = kind || 'flatTone';
-    if (kind === 'screenTone') {
-      obj.params = params || { pattern: 'dot', density: 50, angle: 0, scale: 1 };
+    if (params) {
+      obj.params = params;
+    } else if (ME.Effects && typeof ME.Effects.defaultParams === 'function') {
+      obj.params = ME.Effects.defaultParams(kind, null);
+    } else if (kind === 'screenTone') {
+      obj.params = { pattern: 'dot', density: 50, angle: 0, scale: 1 };
     } else if (kind === 'concentration') {
-      obj.params = params || { origin: { x: 0, y: 0 }, originRelative: true, lineCount: 36, lengthRatio: 90, color: '#000000' };
+      obj.params = {
+        origin: { x: 0, y: 0 }, originRelative: true,
+        lineCount: 36, lengthRatio: 90, thickness: 100, color: '#000000',
+        jitter: 30, lengthVariation: 50
+      };
     } else if (kind === 'speedLines') {
-      obj.params = params || { direction: 'horizontal', lineCount: 24, lengthRatio: 100, color: '#000000' };
+      obj.params = {
+        direction: 'horizontal', align: 'start',
+        lineCount: 24, lengthRatio: 100, thickness: 100, color: '#000000',
+        jitter: 30, lengthVariation: 50
+      };
     } else if (kind === 'flatTone') {
-      obj.params = params || { color: '#000000' };
+      obj.params = { color: '#000000' };
     } else if (kind === 'whiteFlash') {
-      obj.params = params || {};
+      obj.params = {};
     } else if (kind === 'blackFlash') {
-      obj.params = params || {};
+      obj.params = {};
     } else if (kind === 'frame') {
-      obj.params = params || { width: 4, color: '#000000' };
+      obj.params = { width: 4, color: '#000000' };
     } else if (kind === 'flatBand') {
-      obj.params = params || { height: 30, color: '#000000' };
+      obj.params = { height: 30, color: '#000000' };
     } else if (kind === 'whiteBorder') {
-      obj.params = params || { width: 8 };
+      obj.params = { width: 8 };
     } else {
-      obj.params = params || {};
+      obj.params = {};
     }
     return obj;
   }

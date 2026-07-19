@@ -158,6 +158,9 @@
 
     renderEngine.setDirty();
     centerView();
+    // ローディング画面を消す
+    var loadingEl = document.getElementById('me-loading');
+    if (loadingEl) loadingEl.remove();
   }
 
   // ページサイズ(mm) + 断ち切り余白 + 表示倍率 でキャンバスサイズを決める
@@ -1947,32 +1950,8 @@
   }
 
   function applyDefaultParams(effectObj, kind) {
-    if (kind === 'screenTone') {
-      effectObj.params = { pattern: 'dot', density: 50, angle: 0, scale: 1 };
-    } else if (kind === 'concentration') {
-      effectObj.params = {
-        origin: { x: 0, y: 0 },
-        originRelative: true,
-        lineCount: 36,
-        lengthRatio: 90,
-        color: '#000000'
-      };
-    } else if (kind === 'speedLines') {
-      effectObj.params = { direction: 'horizontal', lineCount: 24, lengthRatio: 100, color: '#000000' };
-    } else if (kind === 'flatTone') {
-      effectObj.params = { color: '#000000' };
-    } else if (kind === 'whiteFlash') {
-      effectObj.params = {};
-    } else if (kind === 'blackFlash') {
-      effectObj.params = {};
-    } else if (kind === 'frame') {
-      effectObj.params = { width: 4, color: '#000000' };
-    } else if (kind === 'flatBand') {
-      effectObj.params = { height: 30, color: '#000000' };
-    } else if (kind === 'whiteBorder') {
-      effectObj.params = { width: 8 };
     // draft kind defaults
-    } else if (kind === 'circle') {
+    if (kind === 'circle') {
       effectObj.params = { width: 60, height: 40 };
       if (effectObj.strokeColor == null) effectObj.strokeColor = 'rgba(140,140,140,0.55)';
       if (effectObj.strokeWidth == null) effectObj.strokeWidth = 4.5;
@@ -1994,6 +1973,27 @@
         };
       }
       effectObj.writingMode = 'horizontal';
+    } else if (ME.Effects && typeof ME.Effects.defaultParams === 'function') {
+      effectObj.params = ME.Effects.defaultParams(kind, effectObj.params || {});
+    } else if (kind === 'concentration') {
+      effectObj.params = {
+        origin: { x: 0, y: 0 },
+        originRelative: true,
+        lineCount: 36,
+        lengthRatio: 90,
+        thickness: 100,
+        color: '#000000',
+        jitter: 30,
+        lengthVariation: 50
+      };
+    } else if (kind === 'speedLines') {
+      effectObj.params = {
+        direction: 'horizontal', align: 'start',
+        lineCount: 24, lengthRatio: 100, thickness: 100, color: '#000000',
+        jitter: 30, lengthVariation: 50
+      };
+    } else {
+      effectObj.params = effectObj.params || {};
     }
   }
 

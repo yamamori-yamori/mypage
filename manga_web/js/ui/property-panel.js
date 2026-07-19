@@ -725,6 +725,15 @@ window.ME.UI = window.ME.UI || {};
   }
 
   // --- エフェクト ---
+  function isLinePsychEffect(kind) {
+    if (ME.Effects && typeof ME.Effects.isLinePsychKind === 'function') {
+      return ME.Effects.isLinePsychKind(kind);
+    }
+    return kind === 'concentration' || kind === 'speedLines' ||
+      kind === 'horrorLines' || kind === 'dropLines' ||
+      kind === 'wavyLines' || kind === 'crackLines';
+  }
+
   function renderEffectProps(container, obj, emit) {
     var section = createSection('効果設定');
 
@@ -736,17 +745,37 @@ window.ME.UI = window.ME.UI || {};
     var KINDS = [
       { id: 'concentration', label: '集中線' },
       { id: 'speedLines', label: 'スピード線' },
+      { id: 'horrorLines', label: 'ホラー線' },
+      { id: 'dropLines', label: 'ドロップ線' },
+      { id: 'wavyLines', label: '揺れ線' },
+      { id: 'crackLines', label: 'ヒビ' },
       { id: 'whiteFlash', label: '白フラッシュ' },
       { id: 'blackFlash', label: '黒フラッシュ' },
       { id: 'frame', label: '枠線' },
       { id: 'whiteBorder', label: '白フチ' }
     ];
+    if (ME.Effects && ME.Effects.STEP_KINDS) {
+      KINDS = ME.Effects.STEP_KINDS.concat([
+        { id: 'whiteFlash', label: '白フラッシュ' },
+        { id: 'blackFlash', label: '黒フラッシュ' },
+        { id: 'frame', label: '枠線' },
+        { id: 'whiteBorder', label: '白フチ' }
+      ]);
+    }
+    var kindFound = false;
     for (var i = 0; i < KINDS.length; i++) {
       var opt = document.createElement('option');
       opt.value = KINDS[i].id;
       opt.textContent = KINDS[i].label;
-      if (obj.kind === KINDS[i].id) opt.selected = true;
+      if (obj.kind === KINDS[i].id) { opt.selected = true; kindFound = true; }
       kindSelect.appendChild(opt);
+    }
+    if (!kindFound && obj.kind) {
+      var optU = document.createElement('option');
+      optU.value = obj.kind;
+      optU.textContent = obj.kind;
+      optU.selected = true;
+      kindSelect.appendChild(optU);
     }
     kindSelect.addEventListener('change', function() { emit('kind', this.value); });
     kindField.appendChild(kindLabel);
@@ -767,18 +796,20 @@ window.ME.UI = window.ME.UI || {};
       addColorField(section, '色', obj.params.color, function(v) { emit('params', { color: v }); });
     }
 
-    if (obj.kind === 'concentration' || obj.kind === 'speedLines') {
-      if (obj.kind === 'speedLines') {
+    if (isLinePsychEffect(obj.kind)) {
+      if (obj.kind === 'speedLines' || obj.kind === 'wavyLines') {
         var dirField = document.createElement('div');
         dirField.className = 'prop-field';
         var dirLabel = document.createElement('label');
         dirLabel.textContent = '向き:';
         var dirSelect = document.createElement('select');
-        var dirs = [
-          { id: 'horizontal', label: '横' },
-          { id: 'vertical', label: '縦' },
-          { id: 'diagonal', label: '斜め' }
-        ];
+        var dirs = (obj.kind === 'wavyLines')
+          ? [{ id: 'horizontal', label: '横' }, { id: 'vertical', label: '縦' }]
+          : [
+            { id: 'horizontal', label: '横' },
+            { id: 'vertical', label: '縦' },
+            { id: 'diagonal', label: '斜め' }
+          ];
         var curDir = (obj.params && obj.params.direction) || 'horizontal';
         for (var di = 0; di < dirs.length; di++) {
           var dOpt = document.createElement('option');
@@ -792,15 +823,74 @@ window.ME.UI = window.ME.UI || {};
         dirField.appendChild(dirLabel);
         section.appendChild(dirField);
       }
+      if (obj.kind === 'speedLines') {
+        var alField = document.createElement('div');
+        alField.className = 'prop-field';
+        var alLabel = document.createElement('label');
+        alLabel.textContent = '寄せ:';
+        var alSelect = document.createElement('select');
+        var aligns = [
+          { id: 'start', label: '始点側' },
+          { id: 'center', label: '中央' },
+          { id: 'end', label: '終点側' }
+        ];
+        var curAl = (obj.params && obj.params.align) || 'start';
+        for (var ai = 0; ai < aligns.length; ai++) {
+          var aOpt = document.createElement('option');
+          aOpt.value = aligns[ai].id;
+          aOpt.textContent = aligns[ai].label;
+          if (curAl === aligns[ai].id) aOpt.selected = true;
+          alSelect.appendChild(aOpt);
+        }
+        alSelect.addEventListener('change', function() { emit('params', { align: this.value }); });
+        alLabel.appendChild(alSelect);
+        alField.appendChild(alLabel);
+        section.appendChild(alField);
+      }
+
       var lc = (obj.params && obj.params.lineCount !== undefined) ? obj.params.lineCount : 24;
-      addSliderField(section, '本数', lc, 4, 80, function(v) { emit('params', { lineCount: v }); });
+      var lcMax = (obj.kind === 'horrorLines') ? 120 : 80;
+      addSliderField(section, '本数', lc, 4, lcMax, function(v) { emit('params', { lineCount: v }); });
       var lr = (obj.params && obj.params.lengthRatio !== undefined) ? obj.params.lengthRatio : 90;
-      // 集中線は長さ最大100%、スピード線は200%まで
-      var lrMax = (obj.kind === 'concentration') ? 100 : 200;
+      var lrMax = 100;
+      if (obj.kind === 'speedLines') lrMax = 200;
+      if (obj.kind === 'concentration') lrMax = 100;
       if (lr > lrMax) lr = lrMax;
       addSliderField(section, '長さ(%)', lr, 10, lrMax, function(v) { emit('params', { lengthRatio: v }); });
       var th = (obj.params && obj.params.thickness !== undefined) ? obj.params.thickness : 100;
       addSliderField(section, '太さ(%)', th, 10, 400, function(v) { emit('params', { thickness: v }); });
+      var jit = (obj.params && obj.params.jitter !== undefined) ? obj.params.jitter : 30;
+      addSliderField(section, '揺らぎ(%)', jit, 0, 100, function(v) { emit('params', { jitter: v }); });
+      var seedVal = (obj.params && obj.params.seed !== undefined) ? obj.params.seed : 0;
+      addSliderField(section, '乱数', seedVal, 0, 999, function(v) { emit('params', { seed: v }); });
+
+      if (obj.kind === 'concentration' || obj.kind === 'speedLines' ||
+          obj.kind === 'dropLines' || obj.kind === 'wavyLines') {
+        var lv = (obj.params && obj.params.lengthVariation !== undefined) ? obj.params.lengthVariation : 50;
+        addSliderField(section, '長さのばらつき(%)', lv, 0, 100, function(v) { emit('params', { lengthVariation: v }); });
+      }
+      if (obj.kind === 'horrorLines') {
+        var ep = (obj.params && obj.params.edgePadding !== undefined) ? obj.params.edgePadding : 0;
+        addSliderField(section, '縁余白(%)', ep, 0, 40, function(v) { emit('params', { edgePadding: v }); });
+      }
+      if (obj.kind === 'dropLines') {
+        var bw = (obj.params && obj.params.bandWidth !== undefined) ? obj.params.bandWidth : 100;
+        var ox = (obj.params && obj.params.offsetX !== undefined) ? obj.params.offsetX : 0;
+        var dr = (obj.params && obj.params.drift !== undefined) ? obj.params.drift : 0;
+        addSliderField(section, '幅(%)', bw, 10, 100, function(v) { emit('params', { bandWidth: v }); });
+        addSliderField(section, '左右位置', ox, -50, 50, function(v) { emit('params', { offsetX: v }); });
+        addSliderField(section, '横ずれ(%)', dr, 0, 100, function(v) { emit('params', { drift: v }); });
+      }
+      if (obj.kind === 'wavyLines') {
+        var amp = (obj.params && obj.params.amplitude !== undefined) ? obj.params.amplitude : 8;
+        var wl = (obj.params && obj.params.wavelength !== undefined) ? obj.params.wavelength : 36;
+        addSliderField(section, '振幅', amp, 1, 40, function(v) { emit('params', { amplitude: v }); });
+        addSliderField(section, '波長', wl, 8, 120, function(v) { emit('params', { wavelength: v }); });
+      }
+      if (obj.kind === 'crackLines') {
+        var br = (obj.params && obj.params.branch !== undefined) ? obj.params.branch : 2;
+        addSliderField(section, '分岐', br, 0, 4, function(v) { emit('params', { branch: v }); });
+      }
     }
 
     container.appendChild(section);
@@ -1130,7 +1220,19 @@ window.ME.UI = window.ME.UI || {};
       label === '色相' ||
       label === 'トーンカーブ' ||
       label === '本数' ||
-      label === '長さ(%)'
+      label === '長さ(%)' ||
+      label === '揺らぎ(%)' ||
+      label === '長さのばらつき(%)' ||
+      label === '縁余白(%)' ||
+      label === '角度(°)' ||
+      label === '鋭さ(%)' ||
+      label === '横ずれ(%)' ||
+      label === '幅(%)' ||
+      label === '左右位置' ||
+      label === '乱数' ||
+      label === '振幅' ||
+      label === '波長' ||
+      label === '分岐'
     ) {
       field.className += ' prop-short-slider';
     }

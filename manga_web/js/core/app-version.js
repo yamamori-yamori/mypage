@@ -9,7 +9,7 @@ window.ME = window.ME || {};
   'use strict';
 
   // BEGIN-SYNC-VERSION
-  var APP_VERSION = '4.4';
+  var APP_VERSION = '4.4.1';
   var JSON_VERSION = '1.3';
   // END-SYNC-VERSION
 

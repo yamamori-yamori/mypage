@@ -51,11 +51,18 @@ window.ME.UI = window.ME.UI || {};
   var EFFECT_KINDS = [
     { id: 'concentration', label: '集中線' },
     { id: 'speedLines',  label: 'スピード線' },
-    { id: 'whiteFlash',  label: '白フラッシュ' },
-    { id: 'blackFlash',  label: '黒フラッシュ' },
-    { id: 'frame',       label: '枠線' },
-    { id: 'whiteBorder', label: '白フチ' }
+    { id: 'horrorLines', label: 'ホラー線' },
+    { id: 'dropLines',   label: 'ドロップ線' },
+    { id: 'wavyLines',   label: '揺れ線' },
+    { id: 'crackLines',  label: 'ヒビ' }
   ];
+
+  function getEffectKindList() {
+    if (window.ME && ME.Effects && ME.Effects.STEP_KINDS && ME.Effects.STEP_KINDS.length) {
+      return ME.Effects.STEP_KINDS;
+    }
+    return EFFECT_KINDS;
+  }
 
   var containerEl = null;
 
@@ -703,16 +710,17 @@ window.ME.UI = window.ME.UI || {};
     var currentKind = opts.currentEffectKind || 'concentration';
     var onChange = opts.onEffectKindChange || function() {};
     var onDelete = opts.onDeleteSelectedEffects || function() {};
+    var kinds = getEffectKindList();
 
     var title = document.createElement('div');
     title.className = 'effect-kinds-title';
-    title.textContent = '効果の種類';
+    title.textContent = '効果の種類（線・心理）';
     container.appendChild(title);
 
     var grid = document.createElement('div');
     grid.className = 'effect-kinds-grid';
 
-    for (var i = 0; i < EFFECT_KINDS.length; i++) {
+    for (var i = 0; i < kinds.length; i++) {
       (function(kind) {
         var btn = document.createElement('button');
         btn.type = 'button';
@@ -721,17 +729,15 @@ window.ME.UI = window.ME.UI || {};
         btn.textContent = kind.label;
         btn.addEventListener('click', function() {
           onChange(kind.id);
-          // アクティブ表示更新
           var siblings = grid.querySelectorAll('.effect-kind-btn');
           for (var j = 0; j < siblings.length; j++) siblings[j].classList.remove('active');
           btn.classList.add('active');
         });
         grid.appendChild(btn);
-      })(EFFECT_KINDS[i]);
+      })(kinds[i]);
     }
     container.appendChild(grid);
 
-    // 配置済みエフェクトの削除
     var delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'effect-delete-btn';
