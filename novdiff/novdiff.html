@@ -1,0 +1,1638 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小説テキスト比較ツール novdiff</title>
+<style>
+  :root {
+    --deleted-bg: #ffebee;
+    --deleted-text: #c62828;
+    --added-bg: #e8f5e9;
+    --added-text: #2e7d32;
+    --changed-bg: #fff8e1;
+    --changed-text: #f9a825;
+    --toolbar-h: 48px;
+    --header-h: 28px;
+    --minimap-w: 52px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", Meiryo, sans-serif;
+    background: #f5f5f5;
+    overflow: hidden;
+  }
+  #toolbar {
+    height: var(--toolbar-h);
+    background: #263238;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+    flex-shrink: 0;
+  }
+  #toolbar .app-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #cfd8dc;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  #toolbar .app-title .app-name {
+    color: #eceff1;
+    font-weight: 700;
+  }
+  #toolbar .toolbar-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: 1;
+    min-width: 0;
+  }
+  #toolbar .app-meta {
+    margin-left: auto;
+    font-size: 11px;
+    color: #90a4ae;
+    white-space: nowrap;
+    flex-shrink: 0;
+    text-align: right;
+    line-height: 1.35;
+  }
+  #toolbar .app-meta .ver {
+    color: #b0bec5;
+  }
+  #toolbar .app-meta a.credit {
+    color: #90a4ae;
+    text-decoration: none;
+  }
+  #toolbar .app-meta a.credit:hover {
+    color: #cfd8dc;
+    text-decoration: underline;
+  }
+  #toolbar button {
+    background: #455a64;
+    color: #fff;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  #toolbar button:hover { background: #546e7a; }
+  #toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #toolbar button.primary { background: #2e7d32; }
+  #toolbar button.primary:hover { background: #388e3c; }
+  #toolbar label { font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  #toolbar input[type="number"], #toolbar select {
+    width: 64px;
+    padding: 4px 6px;
+    border-radius: 3px;
+    border: 1px solid #546e7a;
+    background: #37474f;
+    color: #fff;
+    font-size: 13px;
+  }
+  #main {
+    display: grid;
+    grid-template-columns: var(--minimap-w) 1fr 1fr;
+    height: calc(100% - var(--toolbar-h));
+  }
+  #minimap-wrap {
+    background: #eceff1;
+    border-right: 1px solid #b0bec5;
+    position: relative;
+    overflow: hidden;
+  }
+  #minimap {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+    touch-action: none;
+  }
+  .panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #fff;
+    border-right: 1px solid #cfd8dc;
+    position: relative;
+  }
+  .panel-header {
+    height: var(--header-h);
+    background: #eceff1;
+    border-bottom: 1px solid #cfd8dc;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    font-size: 12px;
+    color: #546e7a;
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    gap: 8px;
+  }
+  .panel-header .fname {
+    color: #263238;
+    font-weight: 600;
+    margin-left: 4px;
+  }
+  .panel-header button {
+    background: #2e7d32;
+    color: #fff;
+    border: none;
+    padding: 3px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .panel-header button:hover { background: #388e3c; }
+  .panel-header button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .panel-body {
+    flex: 1;
+    overflow: auto;
+    position: relative;
+  }
+  .panel-inner {
+    padding: 12px 16px;
+    line-height: 1.75;
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+    min-height: 100%;
+    outline: none;
+  }
+  #old-inner {
+    user-select: text;
+    cursor: default;
+  }
+  .panel-inner:empty::before {
+    content: attr(data-placeholder);
+    color: #90a4ae;
+    pointer-events: none;
+  }
+  .del { background: var(--deleted-bg); color: var(--deleted-text); }
+  .add { background: var(--added-bg); color: var(--added-text); }
+  .chg { background: var(--changed-bg); color: var(--changed-text); }
+  /* Alignment segment: body = real text, fill = fake spacer (gray box). */
+  .seg {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+  }
+  .seg-body {
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+    flex: 0 0 auto;
+  }
+  /* Artificial alignment space — subtle solid fill (not a real newline) */
+  .seg-fill {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0;
+    border-radius: 2px;
+    border: none;
+    background: #eceff1;
+    opacity: 1;
+    pointer-events: none;
+    user-select: none;
+    box-sizing: border-box;
+  }
+  /* Pure gap hunk (no text on this side): fill is the whole segment */
+  .seg.gap {
+    min-height: 0;
+  }
+  .seg.gap > .seg-fill {
+    flex: 1 1 auto;
+    margin: 0;
+  }
+  /* Trailing pad so left/right scrollHeight match (prevents mid-doc scroll drift) */
+  .scroll-eq {
+    display: block;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    pointer-events: none;
+    user-select: none;
+  }
+  #drop-hint {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(38,50,56,0.7);
+    color: #fff;
+    font-size: 18px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 10;
+  }
+  .panel.drag-over #drop-hint { opacity: 1; }
+</style>
+</head>
+<body>
+  <div id="toolbar">
+    <div class="app-title">小説テキスト比較ツール <span class="app-name">novdiff</span></div>
+    <div class="toolbar-controls">
+      <label>文字サイズ
+        <select id="font-size">
+          <option value="12">12</option>
+          <option value="14" selected>14</option>
+          <option value="16">16</option>
+          <option value="18">18</option>
+          <option value="20">20</option>
+          <option value="22">22</option>
+          <option value="24">24</option>
+        </select>
+      </label>
+      <label>表示幅
+        <input type="number" id="char-width" value="40" min="10" max="120">
+        文字
+      </label>
+      <button id="btn-save">保存</button>
+    </div>
+    <div class="app-meta">
+      <span class="ver">v1.0</span>
+      · <a class="credit" href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="minimap-wrap">
+      <canvas id="minimap"></canvas>
+    </div>
+    <div class="panel" id="panel-old">
+      <div class="panel-header">
+        <span>古いテキスト: <span class="fname" id="old-fname">（未設定）</span></span>
+      </div>
+      <div class="panel-body" id="old-body">
+        <div class="panel-inner" id="old-inner" data-placeholder="ここに古いテキストをドロップ（または貼り付け）"></div>
+        <div id="drop-hint">古いテキストをドロップ</div>
+      </div>
+    </div>
+    <div class="panel" id="panel-new">
+      <div class="panel-header">
+        <span>新しいテキスト: <span class="fname" id="new-fname">（未設定）</span></span>
+      </div>
+      <div class="panel-body" id="new-body">
+        <div class="panel-inner" id="new-inner" contenteditable="true" data-placeholder="ここに新しいテキストをドロップ（または貼り付け）"></div>
+        <div id="drop-hint">新しいテキストをドロップ</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ===== diff-match-patch (embedded) ===== */
+var diff_match_patch=function(){this.Diff_Timeout=1;this.Diff_EditCost=4;this.Match_Threshold=.5;this.Match_Distance=1E3;this.Patch_DeleteThreshold=.5;this.Patch_Margin=4;this.Match_MaxBits=32},DIFF_DELETE=-1,DIFF_INSERT=1,DIFF_EQUAL=0;diff_match_patch.Diff=function(a,b){this[0]=a;this[1]=b};diff_match_patch.Diff.prototype.length=2;diff_match_patch.Diff.prototype.toString=function(){return this[0]+","+this[1]};
+diff_match_patch.prototype.diff_main=function(a,b,c,d){"undefined"==typeof d&&(d=0>=this.Diff_Timeout?Number.MAX_VALUE:(new Date).getTime()+1E3*this.Diff_Timeout);if(null==a||null==b)throw Error("Null input. (diff_main)");if(a==b)return a?[new diff_match_patch.Diff(DIFF_EQUAL,a)]:[];"undefined"==typeof c&&(c=!0);var e=c,f=this.diff_commonPrefix(a,b);c=a.substring(0,f);a=a.substring(f);b=b.substring(f);f=this.diff_commonSuffix(a,b);var g=a.substring(a.length-f);a=a.substring(0,a.length-f);b=b.substring(0,
+b.length-f);a=this.diff_compute_(a,b,e,d);c&&a.unshift(new diff_match_patch.Diff(DIFF_EQUAL,c));g&&a.push(new diff_match_patch.Diff(DIFF_EQUAL,g));this.diff_cleanupMerge(a);return a};
+diff_match_patch.prototype.diff_compute_=function(a,b,c,d){if(!a)return[new diff_match_patch.Diff(DIFF_INSERT,b)];if(!b)return[new diff_match_patch.Diff(DIFF_DELETE,a)];var e=a.length>b.length?a:b,f=a.length>b.length?b:a,g=e.indexOf(f);return-1!=g?(c=[new diff_match_patch.Diff(DIFF_INSERT,e.substring(0,g)),new diff_match_patch.Diff(DIFF_EQUAL,f),new diff_match_patch.Diff(DIFF_INSERT,e.substring(g+f.length))],a.length>b.length&&(c[0][0]=c[2][0]=DIFF_DELETE),c):1==f.length?[new diff_match_patch.Diff(DIFF_DELETE,
+a),new diff_match_patch.Diff(DIFF_INSERT,b)]:(e=this.diff_halfMatch_(a,b))?(b=e[1],f=e[3],a=e[4],e=this.diff_main(e[0],e[2],c,d),c=this.diff_main(b,f,c,d),e.concat([new diff_match_patch.Diff(DIFF_EQUAL,a)],c)):c&&100<a.length&&100<b.length?this.diff_lineMode_(a,b,d):this.diff_bisect_(a,b,d)};
+diff_match_patch.prototype.diff_lineMode_=function(a,b,c){var d=this.diff_linesToChars_(a,b);a=d.chars1;b=d.chars2;d=d.lineArray;a=this.diff_main(a,b,!1,c);this.diff_charsToLines_(a,d);this.diff_cleanupSemantic(a);a.push(new diff_match_patch.Diff(DIFF_EQUAL,""));for(var e=d=b=0,f="",g="";b<a.length;){switch(a[b][0]){case DIFF_INSERT:e++;g+=a[b][1];break;case DIFF_DELETE:d++;f+=a[b][1];break;case DIFF_EQUAL:if(1<=d&&1<=e){a.splice(b-d-e,d+e);b=b-d-e;d=this.diff_main(f,g,!1,c);for(e=d.length-1;0<=e;e--)a.splice(b,
+0,d[e]);b+=d.length}d=e=0;g=f=""}b++}a.pop();return a};
+diff_match_patch.prototype.diff_bisect_=function(a,b,c){for(var d=a.length,e=b.length,f=Math.ceil((d+e)/2),g=2*f,h=Array(g),l=Array(g),k=0;k<g;k++)h[k]=-1,l[k]=-1;h[f+1]=0;l[f+1]=0;k=d-e;for(var m=0!=k%2,p=0,x=0,w=0,q=0,t=0;t<f&&!((new Date).getTime()>c);t++){for(var v=-t+p;v<=t-x;v+=2){var n=f+v;var r=v==-t||v!=t&&h[n-1]<h[n+1]?h[n+1]:h[n-1]+1;for(var y=r-v;r<d&&y<e&&a.charAt(r)==b.charAt(y);)r++,y++;h[n]=r;if(r>d)x+=2;else if(y>e)p+=2;else if(m&&(n=f+k-v,0<=n&&n<g&&-1!=l[n])){var u=d-l[n];if(r>=
+u)return this.diff_bisectSplit_(a,b,r,y,c)}}for(v=-t+w;v<=t-q;v+=2){n=f+v;u=v==-t||v!=t&&l[n-1]<l[n+1]?l[n+1]:l[n-1]+1;for(r=u-v;u<d&&r<e&&a.charAt(d-u-1)==b.charAt(e-r-1);)u++,r++;l[n]=u;if(u>d)q+=2;else if(r>e)w+=2;else if(!m&&(n=f+k-v,0<=n&&n<g&&-1!=h[n]&&(r=h[n],y=f+r-n,u=d-u,r>=u)))return this.diff_bisectSplit_(a,b,r,y,c)}}return[new diff_match_patch.Diff(DIFF_DELETE,a),new diff_match_patch.Diff(DIFF_INSERT,b)]};
+diff_match_patch.prototype.diff_bisectSplit_=function(a,b,c,d,e){var f=a.substring(0,c),g=b.substring(0,d);a=a.substring(c);b=b.substring(d);f=this.diff_main(f,g,!1,e);e=this.diff_main(a,b,!1,e);return f.concat(e)};
+diff_match_patch.prototype.diff_linesToChars_=function(a,b){function c(a){for(var b="",c=0,g=-1,h=d.length;g<a.length-1;){g=a.indexOf("\n",c);-1==g&&(g=a.length-1);var l=a.substring(c,g+1);(e.hasOwnProperty?e.hasOwnProperty(l):void 0!==e[l])?b+=String.fromCharCode(e[l]):(h==f&&(l=a.substring(c),g=a.length),b+=String.fromCharCode(h),e[l]=h,d[h++]=l);c=g+1}return b}var d=[],e={};d[0]="";var f=4E4,g=c(a);f=65535;var h=c(b);return{chars1:g,chars2:h,lineArray:d}};
+diff_match_patch.prototype.diff_charsToLines_=function(a,b){for(var c=0;c<a.length;c++){for(var d=a[c][1],e=[],f=0;f<d.length;f++)e[f]=b[d.charCodeAt(f)];a[c][1]=e.join("")}};diff_match_patch.prototype.diff_commonPrefix=function(a,b){if(!a||!b||a.charAt(0)!=b.charAt(0))return 0;for(var c=0,d=Math.min(a.length,b.length),e=d,f=0;c<e;)a.substring(f,e)==b.substring(f,e)?f=c=e:d=e,e=Math.floor((d-c)/2+c);return e};
+diff_match_patch.prototype.diff_commonSuffix=function(a,b){if(!a||!b||a.charAt(a.length-1)!=b.charAt(b.length-1))return 0;for(var c=0,d=Math.min(a.length,b.length),e=d,f=0;c<e;)a.substring(a.length-e,a.length-f)==b.substring(b.length-e,b.length-f)?f=c=e:d=e,e=Math.floor((d-c)/2+c);return e};
+diff_match_patch.prototype.diff_commonOverlap_=function(a,b){var c=a.length,d=b.length;if(0==c||0==d)return 0;c>d?a=a.substring(c-d):c<d&&(b=b.substring(0,c));c=Math.min(c,d);if(a==b)return c;d=0;for(var e=1;;){var f=a.substring(c-e);f=b.indexOf(f);if(-1==f)return d;e+=f;if(0==f||a.substring(c-e)==b.substring(0,e))d=e,e++}};
+diff_match_patch.prototype.diff_halfMatch_=function(a,b){function c(a,b,c){for(var d=a.substring(c,c+Math.floor(a.length/4)),e=-1,g="",h,k,l,m;-1!=(e=b.indexOf(d,e+1));){var p=f.diff_commonPrefix(a.substring(c),b.substring(e)),u=f.diff_commonSuffix(a.substring(0,c),b.substring(0,e));g.length<u+p&&(g=b.substring(e-u,e)+b.substring(e,e+p),h=a.substring(0,c-u),k=a.substring(c+p),l=b.substring(0,e-u),m=b.substring(e+p))}return 2*g.length>=a.length?[h,k,l,m,g]:null}if(0>=this.Diff_Timeout)return null;
+var d=a.length>b.length?a:b,e=a.length>b.length?b:a;if(4>d.length||2*e.length<d.length)return null;var f=this,g=c(d,e,Math.ceil(d.length/4));d=c(d,e,Math.ceil(d.length/2));if(g||d)g=d?g?g[4].length>d[4].length?g:d:d:g;else return null;if(a.length>b.length){d=g[0];e=g[1];var h=g[2];var l=g[3]}else h=g[0],l=g[1],d=g[2],e=g[3];return[d,e,h,l,g[4]]};
+diff_match_patch.prototype.diff_cleanupSemantic=function(a){for(var b=!1,c=[],d=0,e=null,f=0,g=0,h=0,l=0,k=0;f<a.length;)a[f][0]==DIFF_EQUAL?(c[d++]=f,g=l,h=k,k=l=0,e=a[f][1]):(a[f][0]==DIFF_INSERT?l+=a[f][1].length:k+=a[f][1].length,e&&e.length<=Math.max(g,h)&&e.length<=Math.max(l,k)&&(a.splice(c[d-1],0,new diff_match_patch.Diff(DIFF_DELETE,e)),a[c[d-1]+1][0]=DIFF_INSERT,d--,d--,f=0<d?c[d-1]:-1,k=l=h=g=0,e=null,b=!0)),f++;b&&this.diff_cleanupMerge(a);this.diff_cleanupSemanticLossless(a);for(f=1;f<
+a.length;){if(a[f-1][0]==DIFF_DELETE&&a[f][0]==DIFF_INSERT){b=a[f-1][1];c=a[f][1];d=this.diff_commonOverlap_(b,c);e=this.diff_commonOverlap_(c,b);if(d>=e){if(d>=b.length/2||d>=c.length/2)a.splice(f,0,new diff_match_patch.Diff(DIFF_EQUAL,c.substring(0,d))),a[f-1][1]=b.substring(0,b.length-d),a[f+1][1]=c.substring(d),f++}else if(e>=b.length/2||e>=c.length/2)a.splice(f,0,new diff_match_patch.Diff(DIFF_EQUAL,b.substring(0,e))),a[f-1][0]=DIFF_INSERT,a[f-1][1]=c.substring(0,c.length-e),a[f+1][0]=DIFF_DELETE,
+a[f+1][1]=b.substring(e),f++;f++}f++}};
+diff_match_patch.prototype.diff_cleanupSemanticLossless=function(a){function b(a,b){if(!a||!b)return 6;var c=a.charAt(a.length-1),d=b.charAt(0),e=c.match(diff_match_patch.nonAlphaNumericRegex_),f=d.match(diff_match_patch.nonAlphaNumericRegex_),g=e&&c.match(diff_match_patch.whitespaceRegex_),h=f&&d.match(diff_match_patch.whitespaceRegex_);c=g&&c.match(diff_match_patch.linebreakRegex_);d=h&&d.match(diff_match_patch.linebreakRegex_);var k=c&&a.match(diff_match_patch.blanklineEndRegex_),l=d&&b.match(diff_match_patch.blanklineStartRegex_);
+return k||l?5:c||d?4:e&&!g&&h?3:g||h?2:e||f?1:0}for(var c=1;c<a.length-1;){if(a[c-1][0]==DIFF_EQUAL&&a[c+1][0]==DIFF_EQUAL){var d=a[c-1][1],e=a[c][1],f=a[c+1][1],g=this.diff_commonSuffix(d,e);if(g){var h=e.substring(e.length-g);d=d.substring(0,d.length-g);e=h+e.substring(0,e.length-g);f=h+f}g=d;h=e;for(var l=f,k=b(d,e)+b(e,f);e.charAt(0)===f.charAt(0);){d+=e.charAt(0);e=e.substring(1)+f.charAt(0);f=f.substring(1);var m=b(d,e)+b(e,f);m>=k&&(k=m,g=d,h=e,l=f)}a[c-1][1]!=g&&(g?a[c-1][1]=g:(a.splice(c-
+1,1),c--),a[c][1]=h,l?a[c+1][1]=l:(a.splice(c+1,1),c--))}c++}};diff_match_patch.nonAlphaNumericRegex_=/[^a-zA-Z0-9]/;diff_match_patch.whitespaceRegex_=/\s/;diff_match_patch.linebreakRegex_=/[\r\n]/;diff_match_patch.blanklineEndRegex_=/\n\r?\n$/;diff_match_patch.blanklineStartRegex_=/^\r?\n\r?\n/;
+diff_match_patch.prototype.diff_cleanupEfficiency=function(a){for(var b=!1,c=[],d=0,e=null,f=0,g=!1,h=!1,l=!1,k=!1;f<a.length;)a[f][0]==DIFF_EQUAL?(a[f][1].length<this.Diff_EditCost&&(l||k)?(c[d++]=f,g=l,h=k,e=a[f][1]):(d=0,e=null),l=k=!1):(a[f][0]==DIFF_DELETE?k=!0:l=!0,e&&(g&&h&&l&&k||e.length<this.Diff_EditCost/2&&3==g+h+l+k)&&(a.splice(c[d-1],0,new diff_match_patch.Diff(DIFF_DELETE,e)),a[c[d-1]+1][0]=DIFF_INSERT,d--,e=null,g&&h?(l=k=!0,d=0):(d--,f=0<d?c[d-1]:-1,l=k=!1),b=!0)),f++;b&&this.diff_cleanupMerge(a)};
+diff_match_patch.prototype.diff_cleanupMerge=function(a){a.push(new diff_match_patch.Diff(DIFF_EQUAL,""));for(var b=0,c=0,d=0,e="",f="",g;b<a.length;)switch(a[b][0]){case DIFF_INSERT:d++;f+=a[b][1];b++;break;case DIFF_DELETE:c++;e+=a[b][1];b++;break;case DIFF_EQUAL:1<c+d?(0!==c&&0!==d&&(g=this.diff_commonPrefix(f,e),0!==g&&(0<b-c-d&&a[b-c-d-1][0]==DIFF_EQUAL?a[b-c-d-1][1]+=f.substring(0,g):(a.splice(0,0,new diff_match_patch.Diff(DIFF_EQUAL,f.substring(0,g))),b++),f=f.substring(g),e=e.substring(g)),
+g=this.diff_commonSuffix(f,e),0!==g&&(a[b][1]=f.substring(f.length-g)+a[b][1],f=f.substring(0,f.length-g),e=e.substring(0,e.length-g))),b-=c+d,a.splice(b,c+d),e.length&&(a.splice(b,0,new diff_match_patch.Diff(DIFF_DELETE,e)),b++),f.length&&(a.splice(b,0,new diff_match_patch.Diff(DIFF_INSERT,f)),b++),b++):0!==b&&a[b-1][0]==DIFF_EQUAL?(a[b-1][1]+=a[b][1],a.splice(b,1)):b++,c=d=0,f=e=""}""===a[a.length-1][1]&&a.pop();c=!1;for(b=1;b<a.length-1;)a[b-1][0]==DIFF_EQUAL&&a[b+1][0]==DIFF_EQUAL&&(a[b][1].substring(a[b][1].length-
+a[b-1][1].length)==a[b-1][1]?(a[b][1]=a[b-1][1]+a[b][1].substring(0,a[b][1].length-a[b-1][1].length),a[b+1][1]=a[b-1][1]+a[b+1][1],a.splice(b-1,1),c=!0):a[b][1].substring(0,a[b+1][1].length)==a[b+1][1]&&(a[b-1][1]+=a[b+1][1],a[b][1]=a[b][1].substring(a[b+1][1].length)+a[b+1][1],a.splice(b+1,1),c=!0)),b++;c&&this.diff_cleanupMerge(a)};
+diff_match_patch.prototype.diff_xIndex=function(a,b){var c=0,d=0,e=0,f=0,g;for(g=0;g<a.length;g++){a[g][0]!==DIFF_INSERT&&(c+=a[g][1].length);a[g][0]!==DIFF_DELETE&&(d+=a[g][1].length);if(c>b)break;e=c;f=d}return a.length!=g&&a[g][0]===DIFF_DELETE?f:f+(b-e)};
+diff_match_patch.prototype.diff_prettyHtml=function(a){for(var b=[],c=/&/g,d=/</g,e=/>/g,f=/\n/g,g=0;g<a.length;g++){var h=a[g][0],l=a[g][1].replace(c,"&amp;").replace(d,"&lt;").replace(e,"&gt;").replace(f,"&para;<br>");switch(h){case DIFF_INSERT:b[g]='<ins style="background:#e6ffe6;">'+l+"</ins>";break;case DIFF_DELETE:b[g]='<del style="background:#ffe6e6;">'+l+"</del>";break;case DIFF_EQUAL:b[g]="<span>"+l+"</span>"}}return b.join("")};
+diff_match_patch.prototype.diff_text1=function(a){for(var b=[],c=0;c<a.length;c++)a[c][0]!==DIFF_INSERT&&(b[c]=a[c][1]);return b.join("")};diff_match_patch.prototype.diff_text2=function(a){for(var b=[],c=0;c<a.length;c++)a[c][0]!==DIFF_DELETE&&(b[c]=a[c][1]);return b.join("")};
+diff_match_patch.prototype.diff_levenshtein=function(a){for(var b=0,c=0,d=0,e=0;e<a.length;e++){var f=a[e][1];switch(a[e][0]){case DIFF_INSERT:c+=f.length;break;case DIFF_DELETE:d+=f.length;break;case DIFF_EQUAL:b+=Math.max(c,d),d=c=0}}return b+=Math.max(c,d)};
+diff_match_patch.prototype.diff_toDelta=function(a){for(var b=[],c=0;c<a.length;c++)switch(a[c][0]){case DIFF_INSERT:b[c]="+"+encodeURI(a[c][1]);break;case DIFF_DELETE:b[c]="-"+a[c][1].length;break;case DIFF_EQUAL:b[c]="="+a[c][1].length}return b.join("\t").replace(/%20/g," ")};
+diff_match_patch.prototype.diff_fromDelta=function(a,b){for(var c=[],d=0,e=0,f=b.split(/\t/g),g=0;g<f.length;g++){var h=f[g].substring(1);switch(f[g].charAt(0)){case "+":try{c[d++]=new diff_match_patch.Diff(DIFF_INSERT,decodeURI(h))}catch(k){throw Error("Illegal escape in diff_fromDelta: "+h);}break;case "-":case "=":var l=parseInt(h,10);if(isNaN(l)||0>l)throw Error("Invalid number in diff_fromDelta: "+h);h=a.substring(e,e+=l);"="==f[g].charAt(0)?c[d++]=new diff_match_patch.Diff(DIFF_EQUAL,h):c[d++]=
+new diff_match_patch.Diff(DIFF_DELETE,h);break;default:if(f[g])throw Error("Invalid diff operation in diff_fromDelta: "+f[g]);}}if(e!=a.length)throw Error("Delta length ("+e+") does not equal source text length ("+a.length+").");return c};diff_match_patch.prototype.match_main=function(a,b,c){if(null==a||null==b||null==c)throw Error("Null input. (match_main)");c=Math.max(0,Math.min(c,a.length));return a==b?0:a.length?a.substring(c,c+b.length)==b?c:this.match_bitap_(a,b,c):-1};
+diff_match_patch.prototype.match_bitap_=function(a,b,c){function d(a,d){var e=a/b.length,g=Math.abs(c-d);return f.Match_Distance?e+g/f.Match_Distance:g?1:e}if(b.length>this.Match_MaxBits)throw Error("Pattern too long for this browser.");var e=this.match_alphabet_(b),f=this,g=this.Match_Threshold,h=a.indexOf(b,c);-1!=h&&(g=Math.min(d(0,h),g),h=a.lastIndexOf(b,c+b.length),-1!=h&&(g=Math.min(d(0,h),g)));var l=1<<b.length-1;h=-1;for(var k,m,p=b.length+a.length,x,w=0;w<b.length;w++){k=0;for(m=p;k<m;)d(w,
+c+m)<=g?k=m:p=m,m=Math.floor((p-k)/2+k);p=m;k=Math.max(1,c-m+1);var q=Math.min(c+m,a.length)+b.length;m=Array(q+2);for(m[q+1]=(1<<w)-1;q>=k;q--){var t=e[a.charAt(q-1)];m[q]=0===w?(m[q+1]<<1|1)&t:(m[q+1]<<1|1)&t|(x[q+1]|x[q])<<1|1|x[q+1];if(m[q]&l&&(t=d(w,q-1),t<=g))if(g=t,h=q-1,h>c)k=Math.max(1,2*c-h);else break}if(d(w+1,c)>g)break;x=m}return h};
+diff_match_patch.prototype.match_alphabet_=function(a){for(var b={},c=0;c<a.length;c++)b[a.charAt(c)]=0;for(c=0;c<a.length;c++)b[a.charAt(c)]|=1<<a.length-c-1;return b};
+diff_match_patch.prototype.patch_addContext_=function(a,b){if(0!=b.length){if(null===a.start2)throw Error("patch not initialized");for(var c=b.substring(a.start2,a.start2+a.length1),d=0;b.indexOf(c)!=b.lastIndexOf(c)&&c.length<this.Match_MaxBits-this.Patch_Margin-this.Patch_Margin;)d+=this.Patch_Margin,c=b.substring(a.start2-d,a.start2+a.length1+d);d+=this.Patch_Margin;(c=b.substring(a.start2-d,a.start2))&&a.diffs.unshift(new diff_match_patch.Diff(DIFF_EQUAL,c));(d=b.substring(a.start2+a.length1,
+a.start2+a.length1+d))&&a.diffs.push(new diff_match_patch.Diff(DIFF_EQUAL,d));a.start1-=c.length;a.start2-=c.length;a.length1+=c.length+d.length;a.length2+=c.length+d.length}};
+diff_match_patch.prototype.patch_make=function(a,b,c){if("string"==typeof a&&"string"==typeof b&&"undefined"==typeof c){var d=a;b=this.diff_main(d,b,!0);2<b.length&&(this.diff_cleanupSemantic(b),this.diff_cleanupEfficiency(b))}else if(a&&"object"==typeof a&&"undefined"==typeof b&&"undefined"==typeof c)b=a,d=this.diff_text1(b);else if("string"==typeof a&&b&&"object"==typeof b&&"undefined"==typeof c)d=a;else if("string"==typeof a&&"string"==typeof b&&c&&"object"==typeof c)d=a,b=c;else throw Error("Unknown call format to patch_make.");
+if(0===b.length)return[];c=[];a=new diff_match_patch.patch_obj;for(var e=0,f=0,g=0,h=d,l=0;l<b.length;l++){var k=b[l][0],m=b[l][1];e||k===DIFF_EQUAL||(a.start1=f,a.start2=g);switch(k){case DIFF_INSERT:a.diffs[e++]=b[l];a.length2+=m.length;d=d.substring(0,g)+m+d.substring(g);break;case DIFF_DELETE:a.length1+=m.length;a.diffs[e++]=b[l];d=d.substring(0,g)+d.substring(g+m.length);break;case DIFF_EQUAL:m.length<=2*this.Patch_Margin&&e&&b.length!=l+1?(a.diffs[e++]=b[l],a.length1+=m.length,a.length2+=m.length):
+m.length>=2*this.Patch_Margin&&e&&(this.patch_addContext_(a,h),c.push(a),a=new diff_match_patch.patch_obj,e=0,h=d,f=g)}k!==DIFF_INSERT&&(f+=m.length);k!==DIFF_DELETE&&(g+=m.length)}e&&(this.patch_addContext_(a,h),c.push(a));return c};
+diff_match_patch.prototype.patch_deepCopy=function(a){for(var b=[],c=0;c<a.length;c++){var d=a[c],e=new diff_match_patch.patch_obj;e.diffs=[];for(var f=0;f<d.diffs.length;f++)e.diffs[f]=new diff_match_patch.Diff(d.diffs[f][0],d.diffs[f][1]);e.start1=d.start1;e.start2=d.start2;e.length1=d.length1;e.length2=d.length2;b[c]=e}return b};
+diff_match_patch.prototype.patch_apply=function(a,b){if(0==a.length)return[b,[]];a=this.patch_deepCopy(a);var c=this.patch_addPadding(a);b=c+b+c;this.patch_splitMax(a);for(var d=0,e=[],f=0;f<a.length;f++){var g=a[f].start2+d,h=this.diff_text1(a[f].diffs),l=-1;if(h.length>this.Match_MaxBits){var k=this.match_main(b,h.substring(0,this.Match_MaxBits),g);-1!=k&&(l=this.match_main(b,h.substring(h.length-this.Match_MaxBits),g+h.length-this.Match_MaxBits),-1==l||k>=l)&&(k=-1)}else k=this.match_main(b,h,
+g);if(-1==k)e[f]=!1,d-=a[f].length2-a[f].length1;else if(e[f]=!0,d=k-g,g=-1==l?b.substring(k,k+h.length):b.substring(k,l+this.Match_MaxBits),h==g)b=b.substring(0,k)+this.diff_text2(a[f].diffs)+b.substring(k+h.length);else if(g=this.diff_main(h,g,!1),h.length>this.Match_MaxBits&&this.diff_levenshtein(g)/h.length>this.Patch_DeleteThreshold)e[f]=!1;else{this.diff_cleanupSemanticLossless(g);h=0;var m;for(l=0;l<a[f].diffs.length;l++){var p=a[f].diffs[l];p[0]!==DIFF_EQUAL&&(m=this.diff_xIndex(g,h));p[0]===
+DIFF_INSERT?b=b.substring(0,k+m)+p[1]+b.substring(k+m):p[0]===DIFF_DELETE&&(b=b.substring(0,k+m)+b.substring(k+this.diff_xIndex(g,h+p[1].length)));p[0]!==DIFF_DELETE&&(h+=p[1].length)}}}b=b.substring(c.length,b.length-c.length);return[b,e]};
+diff_match_patch.prototype.patch_addPadding=function(a){for(var b=this.Patch_Margin,c="",d=1;d<=b;d++)c+=String.fromCharCode(d);for(d=0;d<a.length;d++)a[d].start1+=b,a[d].start2+=b;d=a[0];var e=d.diffs;if(0==e.length||e[0][0]!=DIFF_EQUAL)e.unshift(new diff_match_patch.Diff(DIFF_EQUAL,c)),d.start1-=b,d.start2-=b,d.length1+=b,d.length2+=b;else if(b>e[0][1].length){var f=b-e[0][1].length;e[0][1]=c.substring(e[0][1].length)+e[0][1];d.start1-=f;d.start2-=f;d.length1+=f;d.length2+=f}d=a[a.length-1];e=d.diffs;
+0==e.length||e[e.length-1][0]!=DIFF_EQUAL?(e.push(new diff_match_patch.Diff(DIFF_EQUAL,c)),d.length1+=b,d.length2+=b):b>e[e.length-1][1].length&&(f=b-e[e.length-1][1].length,e[e.length-1][1]+=c.substring(0,f),d.length1+=f,d.length2+=f);return c};
+diff_match_patch.prototype.patch_splitMax=function(a){for(var b=this.Match_MaxBits,c=0;c<a.length;c++)if(!(a[c].length1<=b)){var d=a[c];a.splice(c--,1);for(var e=d.start1,f=d.start2,g="";0!==d.diffs.length;){var h=new diff_match_patch.patch_obj,l=!0;h.start1=e-g.length;h.start2=f-g.length;""!==g&&(h.length1=h.length2=g.length,h.diffs.push(new diff_match_patch.Diff(DIFF_EQUAL,g)));for(;0!==d.diffs.length&&h.length1<b-this.Patch_Margin;){g=d.diffs[0][0];var k=d.diffs[0][1];g===DIFF_INSERT?(h.length2+=
+k.length,f+=k.length,h.diffs.push(d.diffs.shift()),l=!1):g===DIFF_DELETE&&1==h.diffs.length&&h.diffs[0][0]==DIFF_EQUAL&&k.length>2*b?(h.length1+=k.length,e+=k.length,l=!1,h.diffs.push(new diff_match_patch.Diff(g,k)),d.diffs.shift()):(k=k.substring(0,b-h.length1-this.Patch_Margin),h.length1+=k.length,e+=k.length,g===DIFF_EQUAL?(h.length2+=k.length,f+=k.length):l=!1,h.diffs.push(new diff_match_patch.Diff(g,k)),k==d.diffs[0][1]?d.diffs.shift():d.diffs[0][1]=d.diffs[0][1].substring(k.length))}g=this.diff_text2(h.diffs);
+g=g.substring(g.length-this.Patch_Margin);k=this.diff_text1(d.diffs).substring(0,this.Patch_Margin);""!==k&&(h.length1+=k.length,h.length2+=k.length,0!==h.diffs.length&&h.diffs[h.diffs.length-1][0]===DIFF_EQUAL?h.diffs[h.diffs.length-1][1]+=k:h.diffs.push(new diff_match_patch.Diff(DIFF_EQUAL,k)));l||a.splice(++c,0,h)}}};diff_match_patch.prototype.patch_toText=function(a){for(var b=[],c=0;c<a.length;c++)b[c]=a[c];return b.join("")};
+diff_match_patch.prototype.patch_fromText=function(a){var b=[];if(!a)return b;a=a.split("\n");for(var c=0,d=/^@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@$/;c<a.length;){var e=a[c].match(d);if(!e)throw Error("Invalid patch string: "+a[c]);var f=new diff_match_patch.patch_obj;b.push(f);f.start1=parseInt(e[1],10);""===e[2]?(f.start1--,f.length1=1):"0"==e[2]?f.length1=0:(f.start1--,f.length1=parseInt(e[2],10));f.start2=parseInt(e[3],10);""===e[4]?(f.start2--,f.length2=1):"0"==e[4]?f.length2=0:(f.start2--,f.length2=
+parseInt(e[4],10));for(c++;c<a.length;){e=a[c].charAt(0);try{var g=decodeURI(a[c].substring(1))}catch(h){throw Error("Illegal escape in patch_fromText: "+g);}if("-"==e)f.diffs.push(new diff_match_patch.Diff(DIFF_DELETE,g));else if("+"==e)f.diffs.push(new diff_match_patch.Diff(DIFF_INSERT,g));else if(" "==e)f.diffs.push(new diff_match_patch.Diff(DIFF_EQUAL,g));else if("@"==e)break;else if(""!==e)throw Error('Invalid patch mode "'+e+'" in: '+g);c++}}return b};
+diff_match_patch.patch_obj=function(){this.diffs=[];this.start2=this.start1=null;this.length2=this.length1=0};
+diff_match_patch.patch_obj.prototype.toString=function(){for(var a=["@@ -"+(0===this.length1?this.start1+",0":1==this.length1?this.start1+1:this.start1+1+","+this.length1)+" +"+(0===this.length2?this.start2+",0":1==this.length2?this.start2+1:this.start2+1+","+this.length2)+" @@\n"],b,c=0;c<this.diffs.length;c++){switch(this.diffs[c][0]){case DIFF_INSERT:b="+";break;case DIFF_DELETE:b="-";break;case DIFF_EQUAL:b=" "}a[c+1]=b+encodeURI(this.diffs[c][1])+"\n"}return a.join("").replace(/%20/g," ")};
+this.diff_match_patch=diff_match_patch;this.DIFF_DELETE=DIFF_DELETE;this.DIFF_INSERT=DIFF_INSERT;this.DIFF_EQUAL=DIFF_EQUAL;
+
+/* ===== Application ===== */
+(function () {
+  const dmp = new diff_match_patch();
+  dmp.Diff_Timeout = 2;
+
+  let oldText = "";
+  let newText = "";
+  let oldFileName = "";
+  let newFileName = "";
+  let lastDiffs = null;
+  let isSyncing = false;
+  let isPlainEditing = false;
+  let isDirty = false; // true when re-diff is needed after edit
+  let highlightsCleared = false; // true after focus stripped spans (until restored)
+  let isDiffing = false; // true while doDiff is running
+  // Last caret in edit mode; used when text was edited before returning to diff
+  let lastEditCaretAnchor = null;
+  let pendingRestoreAnchor = null;
+  // Exact scroll tops before entering edit mode (identical layout if !dirty restore)
+  let scrollSnapshotBeforeFocus = null;
+  let pendingScrollSnapshot = null;
+
+  const $ = id => document.getElementById(id);
+  const oldBody = $("old-body");
+  const newBody = $("new-body");
+  const oldInner = $("old-inner");
+  const newInner = $("new-inner");
+  const oldFname = $("old-fname");
+  const newFname = $("new-fname");
+  const btnSave  = $("btn-save");
+  const fontSizeSel = $("font-size");
+  const charWidthInp = $("char-width");
+  const minimap = $("minimap");
+  const minimapWrap = $("minimap-wrap");
+
+  function setDirty(dirty) {
+    isDirty = !!dirty;
+  }
+  setDirty(false);
+
+  function normalize(t) {
+    return (t || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function measureWidth(chars, px) {
+    const c = document.createElement("canvas");
+    const ctx = c.getContext("2d");
+    ctx.font = px + "px 'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',Meiryo,sans-serif";
+    return ctx.measureText("あ".repeat(chars)).width;
+  }
+
+  function getWidthChars() {
+    return parseInt(charWidthInp.value, 10) || 40;
+  }
+
+  function applySettings() {
+    const px = parseInt(fontSizeSel.value, 10) || 14;
+    const chars = getWidthChars();
+    const w = measureWidth(chars, px);
+    [oldInner, newInner].forEach(el => {
+      el.style.fontSize = px + "px";
+      el.style.width = w + "px";
+      el.style.maxWidth = w + "px";
+    });
+    // Heights depend on wrap width — rebuild if we have a current diff
+    // and the right pane is not mid-plain-edit.
+    if (lastDiffs && !isPlainEditing && !isDirty) {
+      render(lastDiffs);
+      return;
+    }
+    requestAnimationFrame(drawMinimap);
+  }
+
+  // Display width units: fullwidth ≈ 1, ASCII/halfwidth ≈ 0.5 (novel-oriented).
+  function charDisplayWidth(ch) {
+    const code = ch.codePointAt(0);
+    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return 0;
+    if (code < 0x1100) return 0.5;
+    if (
+      (code >= 0x1100 && code <= 0x115f) ||
+      (code >= 0x2329 && code <= 0x232a) ||
+      (code >= 0x2e80 && code <= 0xa4cf) ||
+      (code >= 0xac00 && code <= 0xd7a3) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xfe10 && code <= 0xfe19) ||
+      (code >= 0xfe30 && code <= 0xfe6f) ||
+      (code >= 0xff00 && code <= 0xff60) ||
+      (code >= 0xffe0 && code <= 0xffe6) ||
+      (code >= 0x1f300 && code <= 0x1f9ff)
+    ) return 1;
+    return 0.5;
+  }
+
+  function lineDisplayWidth(line) {
+    let w = 0;
+    for (const ch of line) w += charDisplayWidth(ch);
+    return w;
+  }
+
+  /**
+   * Estimate visual line count under pre-wrap + break-all + fixed char width.
+   * Used only as initial min-height; refinePairHeights() corrects with DOM.
+   */
+  function countVisualLines(text, widthChars) {
+    if (!text) return 0;
+    const W = Math.max(1, widthChars || getWidthChars());
+    const parts = text.split("\n");
+    let total = 0;
+    for (let i = 0; i < parts.length; i++) {
+      const seg = parts[i];
+      const isLast = i === parts.length - 1;
+      if (seg.length === 0) {
+        // Trailing empty from final \n: terminator, not an extra blank line.
+        // "a\n\n".split => middle "" is a blank line; last is terminator.
+        if (isLast) continue;
+        total += 1;
+        continue;
+      }
+      const dw = lineDisplayWidth(seg);
+      total += Math.max(1, Math.ceil(dw / W));
+    }
+    return total;
+  }
+
+  function emForText(text, widthChars) {
+    const n = Math.min(Math.max(countVisualLines(text, widthChars), 0), 400);
+    if (n <= 0) return 0;
+    return n * 1.75;
+  }
+
+  /** Read plain text: drop spacers; use textContent to avoid block-induced extra newlines. */
+  function readPlain(el) {
+    if (!el) return "";
+    if (!el.querySelector || !el.querySelector(".gap, .seg, .seg-fill, span.del, span.add, span.chg")) {
+      return normalize(el.innerText || el.textContent || "");
+    }
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll(".gap, .seg-fill").forEach(g => g.remove());
+    return normalize(clone.textContent || "");
+  }
+
+  /** Char-level highlight for a single change pair (no alignment gaps). */
+  function buildCharSides(delTx, addTx) {
+    let o = "", n = "";
+    if (!delTx && !addTx) return { o, n };
+    const diffs = dmp.diff_main(delTx || "", addTx || "");
+    dmp.diff_cleanupSemantic(diffs);
+    for (let i = 0; i < diffs.length; i++) {
+      const op = diffs[i][0];
+      const tx = diffs[i][1];
+      if (!tx) continue;
+      if (op === 0) {
+        const e = escapeHtml(tx);
+        o += e; n += e;
+      } else if (op === -1) {
+        o += '<span class="del">' + escapeHtml(tx) + "</span>";
+      } else if (op === 1) {
+        const prev = i > 0 ? diffs[i - 1][0] : null;
+        const cls = prev === -1 ? "chg" : "add";
+        n += '<span class="' + cls + '">' + escapeHtml(tx) + "</span>";
+      }
+    }
+    return { o, n };
+  }
+
+  const FILL = '<span class="seg-fill" aria-hidden="true"></span>';
+
+  /** Content segment with trailing gray fill (fill grows when min-height > body). */
+  function segHtml(hid, bodyHtml, minEm) {
+    const style = minEm > 0 ? ' style="min-height:' + minEm.toFixed(2) + 'em"' : "";
+    return '<span class="seg" data-hid="' + hid + '"' + style + ">" +
+      '<span class="seg-body">' + bodyHtml + "</span>" + FILL + "</span>";
+  }
+
+  /** Pure spacer segment (no real text on this side). */
+  function gapHtml(hid, minEm) {
+    const style = minEm > 0
+      ? ' style="min-height:' + minEm.toFixed(2) + "em;height:" + minEm.toFixed(2) + 'em"'
+      : "";
+    return '<span class="seg gap" data-hid="' + hid + '" aria-hidden="true"' + style + ">" +
+      FILL + "</span>";
+  }
+
+  /** Split text into lines, keeping trailing \\n on each line (except final line without \\n). */
+  function splitLinesKeep(text) {
+    if (!text) return [];
+    const parts = text.split("\n");
+    const lines = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (i < parts.length - 1) lines.push(parts[i] + "\n");
+      else if (parts[i].length > 0) lines.push(parts[i]);
+    }
+    return lines;
+  }
+
+  /**
+   * Similarity of two lines in [0,1] via equal-char ratio from char diff.
+   * Used to pair "mostly the same" rewritten lines for vertical alignment.
+   */
+  function lineSimilarity(a, b) {
+    if (a === b) return 1;
+    if (!a || !b) return 0;
+    const aa = a.endsWith("\n") ? a.slice(0, -1) : a;
+    const bb = b.endsWith("\n") ? b.slice(0, -1) : b;
+    if (aa === bb) return 1;
+    if (!aa.length && !bb.length) return 1;
+    const diffs = dmp.diff_main(aa, bb);
+    let eq = 0;
+    for (let i = 0; i < diffs.length; i++) {
+      if (diffs[i][0] === 0) eq += diffs[i][1].length;
+    }
+    return eq / Math.max(aa.length, bb.length, 1);
+  }
+
+  /**
+   * Align two multi-line change blocks line-by-line using similarity.
+   * Returns [{left, right}, ...] where missing side is null.
+   */
+  function alignChangedLines(delTx, addTx) {
+    const A = splitLinesKeep(delTx);
+    const B = splitLinesKeep(addTx);
+    const n = A.length;
+    const m = B.length;
+    if (!n && !m) return [];
+    if (!n) return B.map(r => ({ left: null, right: r }));
+    if (!m) return A.map(l => ({ left: l, right: null }));
+
+    // "大体同じ" lines pair as one row (char-diff inside).
+    // Novel rewrites often keep ~35–50% of a line; 0.35 catches those.
+    const THRESH = 0.35;
+
+    const dp = new Array(n + 1);
+    const bt = new Array(n + 1);
+    for (let i = 0; i <= n; i++) {
+      dp[i] = new Float64Array(m + 1);
+      bt[i] = new Int8Array(m + 1);
+    }
+    for (let i = 1; i <= n; i++) bt[i][0] = 1;
+    for (let j = 1; j <= m; j++) bt[0][j] = 2;
+
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        const sim = lineSimilarity(A[i - 1], B[j - 1]);
+        const up = dp[i - 1][j];
+        const left = dp[i][j - 1];
+        if (sim >= THRESH) {
+          const diag = dp[i - 1][j - 1] + sim;
+          if (diag >= up && diag >= left) {
+            dp[i][j] = diag;
+            bt[i][j] = 0;
+            continue;
+          }
+        }
+        if (up >= left) {
+          dp[i][j] = up;
+          bt[i][j] = 1;
+        } else {
+          dp[i][j] = left;
+          bt[i][j] = 2;
+        }
+      }
+    }
+
+    const pairs = [];
+    let i = n, j = m;
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && bt[i][j] === 0) {
+        pairs.push({ left: A[i - 1], right: B[j - 1] });
+        i--; j--;
+      } else if (i > 0 && (j === 0 || bt[i][j] === 1)) {
+        pairs.push({ left: A[i - 1], right: null });
+        i--;
+      } else {
+        pairs.push({ left: null, right: B[j - 1] });
+        j--;
+      }
+    }
+    pairs.reverse();
+    return pairs;
+  }
+
+  /** Emit one aligned row (pair of segs). */
+  function emitAlignedRow(pair, widthChars, acc) {
+    const id = acc.hid++;
+    const L = pair.left;
+    const R = pair.right;
+    if (L != null && R != null) {
+      const minEm = Math.max(emForText(L, widthChars), emForText(R, widthChars));
+      const sides = buildCharSides(L, R);
+      acc.o += segHtml(id, sides.o, minEm);
+      acc.n += segHtml(id, sides.n, minEm);
+    } else if (L != null) {
+      const minEm = emForText(L, widthChars);
+      acc.o += segHtml(id, '<span class="del">' + escapeHtml(L) + "</span>", minEm);
+      acc.n += gapHtml(id, minEm);
+    } else if (R != null) {
+      const minEm = emForText(R, widthChars);
+      acc.o += gapHtml(id, minEm);
+      acc.n += segHtml(id, '<span class="add">' + escapeHtml(R) + "</span>", minEm);
+    }
+  }
+
+  /**
+   * Build HTML from LINE-level diffs.
+   * Change hunks are split into similar-line rows so nearly-identical lines line up.
+   * Extra vertical space is always .seg-fill (gray box).
+   */
+  function buildHtml(lineDiffs) {
+    const widthChars = getWidthChars();
+    const acc = { o: "", n: "", hid: 0 };
+
+    for (let i = 0; i < lineDiffs.length; i++) {
+      const op = lineDiffs[i][0];
+      const tx = lineDiffs[i][1];
+      if (!tx) continue;
+
+      if (op === 0) {
+        const id = acc.hid++;
+        const html = escapeHtml(tx);
+        acc.o += segHtml(id, html, 0);
+        acc.n += segHtml(id, html, 0);
+        continue;
+      }
+
+      if (op === -1) {
+        const next = lineDiffs[i + 1];
+        if (next && next[0] === 1 && next[1]) {
+          const rows = alignChangedLines(tx, next[1]);
+          for (let r = 0; r < rows.length; r++) {
+            emitAlignedRow(rows[r], widthChars, acc);
+          }
+          i++;
+        } else {
+          const lines = splitLinesKeep(tx);
+          if (!lines.length) emitAlignedRow({ left: tx, right: null }, widthChars, acc);
+          else {
+            for (let k = 0; k < lines.length; k++) {
+              emitAlignedRow({ left: lines[k], right: null }, widthChars, acc);
+            }
+          }
+        }
+        continue;
+      }
+
+      if (op === 1) {
+        const lines = splitLinesKeep(tx);
+        if (!lines.length) emitAlignedRow({ left: null, right: tx }, widthChars, acc);
+        else {
+          for (let k = 0; k < lines.length; k++) {
+            emitAlignedRow({ left: null, right: lines[k] }, widthChars, acc);
+          }
+        }
+      }
+    }
+    return { o: acc.o, n: acc.n };
+  }
+
+  /** After paint: force each data-hid pair to the same pixel height (gray fill absorbs slack). */
+  function refinePairHeights() {
+    // Drop previous total-height equalizer
+    oldInner.querySelectorAll(":scope > .scroll-eq").forEach(e => e.remove());
+    newInner.querySelectorAll(":scope > .scroll-eq").forEach(e => e.remove());
+
+    const pairs = new Map();
+    oldInner.querySelectorAll(":scope > [data-hid]").forEach(el => {
+      pairs.set(el.getAttribute("data-hid"), { L: el, R: null });
+    });
+    newInner.querySelectorAll(":scope > [data-hid]").forEach(el => {
+      const id = el.getAttribute("data-hid");
+      const p = pairs.get(id);
+      if (p) p.R = el;
+      else pairs.set(id, { L: null, R: el });
+    });
+
+    function naturalHeight(el) {
+      if (!el) return 0;
+      if (el.classList.contains("gap")) return 0;
+      const body = el.querySelector(":scope > .seg-body");
+      if (body) {
+        // getBoundingClientRect is subpixel-accurate for wrap height
+        const h = body.getBoundingClientRect().height;
+        return h > 0 ? h : body.scrollHeight;
+      }
+      return el.scrollHeight;
+    }
+
+    // Measure natural body heights (ignore previous min-height / fill)
+    pairs.forEach(({ L, R }) => {
+      [L, R].forEach(el => {
+        if (!el) return;
+        el.style.minHeight = "0px";
+        el.style.height = "";
+        el.style.maxHeight = "";
+        const fill = el.querySelector(":scope > .seg-fill");
+        if (fill) {
+          fill.style.display = "none";
+          fill.style.minHeight = "0";
+          fill.style.height = "";
+        }
+      });
+    });
+    void oldInner.offsetHeight;
+
+    const natural = new Map();
+    pairs.forEach((p, id) => {
+      const hL = naturalHeight(p.L);
+      const hR = naturalHeight(p.R);
+      // ceil to whole device pixels to avoid 0.5px drift stacking
+      const target = Math.ceil(Math.max(hL, hR));
+      natural.set(id, { hL, hR, target });
+    });
+
+    pairs.forEach((p, id) => {
+      const { hL, hR, target } = natural.get(id);
+      if (target <= 0) return;
+      const px = target + "px";
+
+      function apply(el, naturalH) {
+        if (!el) return;
+        // Lock both sides to the exact same box height
+        el.style.boxSizing = "border-box";
+        el.style.minHeight = px;
+        el.style.height = px;
+        const fill = el.querySelector(":scope > .seg-fill");
+        if (!fill) return;
+        const slack = target - naturalH;
+        if (slack > 0.5) {
+          fill.style.display = "block";
+          fill.style.flex = "1 1 auto";
+          fill.style.minHeight = Math.max(0, slack) + "px";
+          fill.style.height = "";
+          fill.title = "位置揃え用の余白（本文の改行ではありません）";
+        } else {
+          fill.style.display = "none";
+          fill.style.minHeight = "0";
+          fill.style.height = "0";
+        }
+      }
+
+      apply(p.L, hL);
+      apply(p.R, hR);
+    });
+
+    // Final: make total content heights identical (kills mid-document ratio drift)
+    void oldInner.offsetHeight;
+    const totL = oldInner.scrollHeight;
+    const totR = newInner.scrollHeight;
+    const diff = totL - totR;
+    if (Math.abs(diff) >= 0.5) {
+      const pad = document.createElement("span");
+      pad.className = "scroll-eq";
+      pad.style.height = Math.abs(diff) + "px";
+      pad.setAttribute("aria-hidden", "true");
+      if (diff > 0) newInner.appendChild(pad);
+      else oldInner.appendChild(pad);
+    }
+  }
+
+  function render(diffs) {
+    lastDiffs = diffs;
+    // Prefer exact pre-focus scroll (both edit and no-edit). Caret only for fine nudge.
+    const snap = pendingScrollSnapshot;
+    pendingScrollSnapshot = null;
+    const caretN = pendingRestoreAnchor;
+    pendingRestoreAnchor = null;
+    const fallbackN = (!snap && !caretN) ? getTextAnchor(newBody, newInner) : null;
+    const anchorO = getTextAnchor(oldBody, oldInner);
+    const { o, n } = buildHtml(diffs);
+
+    oldInner.innerHTML = o;
+    newInner.innerHTML = n;
+    newInner.contentEditable = "true";
+    isPlainEditing = false;
+    highlightsCleared = false;
+
+    requestAnimationFrame(() => {
+      refinePairHeights();
+      isSyncing = true;
+      applyReturnScroll(snap, caretN, fallbackN, anchorO);
+      requestAnimationFrame(() => {
+        // Second pass after layout settles (gap heights etc.)
+        applyReturnScroll(snap, caretN, fallbackN, anchorO);
+        isSyncing = false;
+        drawMinimap();
+      });
+    });
+  }
+
+  /**
+   * Return-to-diff scroll:
+   * - Always prefer pre-focus scrollTop when available (same feel as no-edit).
+   * - If document height changed a lot, re-anchor by pre-focus viewport text offset.
+   * - If caret exists, only nudge so it stays inside the viewport (no big jumps).
+   */
+  function applyReturnScroll(snap, caretAnchor, fallbackAnchor, anchorO) {
+    const maxN = () => Math.max(0, newBody.scrollHeight - newBody.clientHeight);
+    const maxO = () => Math.max(0, oldBody.scrollHeight - oldBody.clientHeight);
+
+    if (snap) {
+      const hNow = newBody.scrollHeight;
+      const hWas = snap.newHeight || hNow;
+      const heightDelta = Math.abs(hNow - hWas);
+
+      if (heightDelta < 80 || snap.topOffset == null) {
+        // Near-identical layout (one-char edit etc.): restore absolute scroll
+        newBody.scrollTop = Math.max(0, Math.min(maxN(), snap.new));
+        oldBody.scrollTop = Math.max(0, Math.min(maxO(), snap.old));
+      } else if (snap.topOffset != null) {
+        // Large height change: put the same text that was at the top, back at the top
+        restoreTextAnchor(newBody, newInner, {
+          type: "char",
+          offset: snap.topOffset,
+          ratio: snap.newRatio || 0
+        });
+        // Pin that character to viewport top
+        try {
+          const range = rangeFromCharOffset(newInner, snap.topOffset);
+          const r = range.getBoundingClientRect();
+          const parentTop = newBody.getBoundingClientRect().top;
+          if (r && (r.height > 0 || r.top !== 0)) {
+            newBody.scrollTop = Math.max(
+              0,
+              Math.min(maxN(), newBody.scrollTop + (r.top - parentTop - 12))
+            );
+          }
+        } catch (_) { /* keep ratio-ish position */ }
+        // Left: preserve pre-focus ratio relative to right
+        if (maxN() > 0 && maxO() > 0) {
+          oldBody.scrollTop = (newBody.scrollTop / maxN()) * maxO();
+        } else {
+          oldBody.scrollTop = Math.max(0, Math.min(maxO(), snap.old));
+        }
+      }
+    } else if (fallbackAnchor) {
+      restoreTextAnchor(newBody, newInner, fallbackAnchor);
+      restoreTextAnchor(oldBody, oldInner, anchorO);
+    }
+
+    // Caret: only ensure visible — do not recenter the whole pane on it
+    if (caretAnchor && caretAnchor.type === "caret") {
+      ensureCharVisible(newBody, newInner, caretAnchor.offset, 24);
+      if (maxN() > 0 && maxO() > 0) {
+        // Keep left in sync after any nudge
+        oldBody.scrollTop = (newBody.scrollTop / maxN()) * maxO();
+      }
+    } else if (!snap && maxN() > 0 && maxO() > 0) {
+      oldBody.scrollTop = (newBody.scrollTop / maxN()) * maxO();
+    }
+  }
+
+  /** Nudge scroll so char offset is inside viewport; no-op if already visible. */
+  function ensureCharVisible(scrollEl, root, offset, margin) {
+    if (offset == null || !root) return;
+    const m = margin == null ? 16 : margin;
+    try {
+      const range = rangeFromCharOffset(root, offset);
+      const r = range.getBoundingClientRect();
+      const pr = scrollEl.getBoundingClientRect();
+      if (!r || (r.height === 0 && r.top === 0 && r.bottom === 0)) return;
+      const max = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+      if (r.top < pr.top + m) {
+        scrollEl.scrollTop = Math.max(0, Math.min(max, scrollEl.scrollTop + (r.top - pr.top - m)));
+      } else if (r.bottom > pr.bottom - m) {
+        scrollEl.scrollTop = Math.max(0, Math.min(max, scrollEl.scrollTop + (r.bottom - pr.bottom + m)));
+      }
+    } catch (_) { /* ignore */ }
+  }
+
+  /** Viewport-top character offset (stable across highlight ↔ plain height changes). */
+  function charOffsetInRoot(root, node, nodeOffset) {
+    if (!root || !node) return 0;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(n) {
+        const p = n.parentElement;
+        if (p && p.closest && p.closest(".gap, .seg-fill")) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let count = 0;
+    let n;
+    while ((n = walker.nextNode())) {
+      if (n === node) {
+        return count + Math.min(Math.max(0, nodeOffset), n.nodeValue.length);
+      }
+      count += n.nodeValue.length;
+    }
+    return count;
+  }
+
+  function rangeFromCharOffset(root, offset) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(n) {
+        const p = n.parentElement;
+        if (p && p.closest && p.closest(".gap, .seg-fill")) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let remain = Math.max(0, offset | 0);
+    let n;
+    while ((n = walker.nextNode())) {
+      const len = n.nodeValue.length;
+      if (remain <= len) {
+        const range = document.createRange();
+        range.setStart(n, remain);
+        range.collapse(true);
+        return range;
+      }
+      remain -= len;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(root);
+    range.collapse(false);
+    return range;
+  }
+
+  function getTextAnchor(scrollEl, root) {
+    const max = scrollEl.scrollHeight - scrollEl.clientHeight;
+    const ratio = max > 0 ? scrollEl.scrollTop / max : 0;
+    if (!root || !(root.textContent || "").length) {
+      return { type: "ratio", ratio, offset: 0 };
+    }
+    try {
+      const rect = scrollEl.getBoundingClientRect();
+      const x = rect.left + Math.min(48, Math.max(12, rect.width * 0.15));
+      const y = rect.top + 12;
+      let startNode = null;
+      let startOff = 0;
+      if (document.caretRangeFromPoint) {
+        const r = document.caretRangeFromPoint(x, y);
+        if (r) {
+          startNode = r.startContainer;
+          startOff = r.startOffset;
+        }
+      } else if (document.caretPositionFromPoint) {
+        const p = document.caretPositionFromPoint(x, y);
+        if (p) {
+          startNode = p.offsetNode;
+          startOff = p.offset;
+        }
+      }
+      if (startNode && root.contains(startNode)) {
+        // If landed on non-text / spacer, fall back to ratio
+        if (startNode.nodeType === Node.ELEMENT_NODE) {
+          const el = startNode;
+          if (el.classList && (el.classList.contains("gap") || el.classList.contains("seg-fill"))) {
+            return { type: "ratio", ratio, offset: 0 };
+          }
+        }
+        const offset = charOffsetInRoot(root, startNode, startOff);
+        return { type: "char", offset, ratio };
+      }
+    } catch (_) { /* ignore */ }
+    return { type: "ratio", ratio, offset: 0 };
+  }
+
+  function restoreTextAnchor(scrollEl, root, anchor) {
+    if (!anchor || !scrollEl) return;
+    const max = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+    if (anchor.type === "char" && root) {
+      try {
+        const range = rangeFromCharOffset(root, anchor.offset);
+        const r = range.getBoundingClientRect();
+        const parentTop = scrollEl.getBoundingClientRect().top;
+        if (r && (r.height > 0 || r.width > 0 || r.top !== 0)) {
+          scrollEl.scrollTop = Math.max(0, Math.min(max, scrollEl.scrollTop + (r.top - parentTop - 12)));
+          return;
+        }
+      } catch (_) { /* fall through */ }
+      // Approximate by text fraction if geometry failed
+      const len = Math.max(1, (root.textContent || "").length);
+      scrollEl.scrollTop = (anchor.offset / len) * max;
+      return;
+    }
+    scrollEl.scrollTop = (anchor.ratio || 0) * max;
+  }
+
+  /** Restore last highlight view without recomputing (no edits). */
+  function restoreHighlights() {
+    if (!lastDiffs || isDirty) return false;
+    // Keep SoT in sync with plain pane before re-applying HTML
+    const plain = readPlain(newInner);
+    if (plain) newText = plain;
+    render(lastDiffs);
+    return true;
+  }
+
+  /** Line-level diff (structure for alignment), not pure char-level. */
+  function computeLineDiffs(a, b) {
+    const line = dmp.diff_linesToChars_(a || "", b || "");
+    const diffs = dmp.diff_main(line.chars1, line.chars2, false);
+    dmp.diff_charsToLines_(diffs, line.lineArray);
+    // Merge consecutive insert/delete ops so a rewrite block pairs as one change hunk
+    // (otherwise: del,del,ins,ins stacks gaps and drifts badly).
+    const out = [];
+    for (let i = 0; i < diffs.length; i++) {
+      const op = diffs[i][0];
+      const tx = diffs[i][1];
+      if (!tx) continue;
+      const prev = out.length ? out[out.length - 1] : null;
+      if (prev && prev[0] === op && op !== 0) {
+        prev[1] += tx;
+      } else {
+        out.push([op, tx]);
+      }
+    }
+    return out;
+  }
+
+  function doDiff() {
+    if (isDiffing) return;
+    const curOld = readPlain(oldInner);
+    const curNew = readPlain(newInner);
+    if (curOld) oldText = curOld;
+    if (curNew) newText = curNew;
+
+    if (!oldText && !newText) {
+      alert("テキストがありません。");
+      return;
+    }
+
+    isDiffing = true;
+
+    setTimeout(() => {
+      try {
+        const diffs = computeLineDiffs(oldText || "", newText || "");
+        render(diffs);
+        setDirty(false);
+      } catch (err) {
+        console.error(err);
+        alert("エラー: " + (err.message || err));
+        setDirty(true);
+      } finally {
+        isDiffing = false;
+      }
+    }, 40);
+  }
+
+  // Drag & Drop
+  function setupDrop(panel, isOld) {
+    panel.addEventListener("dragover", e => { e.preventDefault(); panel.classList.add("drag-over"); });
+    panel.addEventListener("dragleave", e => {
+      if (!panel.contains(e.relatedTarget)) panel.classList.remove("drag-over");
+    });
+    panel.addEventListener("drop", e => {
+      e.preventDefault();
+      panel.classList.remove("drag-over");
+      const file = e.dataTransfer.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = normalize(reader.result || "");
+        if (isOld) {
+          oldText = text;
+          oldFileName = file.name;
+          oldFname.textContent = file.name;
+          oldInner.textContent = text;
+        } else {
+          newText = text;
+          newFileName = file.name;
+          newFname.textContent = file.name;
+          newInner.textContent = text;
+        }
+        // Auto diff whenever both sides have text
+        if (oldText && newText) {
+          doDiff();
+        } else {
+          setDirty(true);
+        }
+      };
+      reader.readAsText(file, "UTF-8");
+    });
+  }
+  setupDrop($("panel-old"), true);
+  setupDrop($("panel-new"), false);
+
+  // Click position before focus strips highlights (gray gaps change layout)
+  let pendingCaretAnchor = null;
+
+  function captureCaretAnchorAtPoint(root, clientX, clientY) {
+    if (!root) return null;
+    function hit(x, y) {
+      try {
+        if (document.caretRangeFromPoint) {
+          const r = document.caretRangeFromPoint(x, y);
+          if (r) return { node: r.startContainer, offset: r.startOffset };
+        } else if (document.caretPositionFromPoint) {
+          const p = document.caretPositionFromPoint(x, y);
+          if (p) return { node: p.offsetNode, offset: p.offset };
+        }
+      } catch (_) { /* ignore */ }
+      return null;
+    }
+    function usable(node) {
+      if (!node || !root.contains(node)) return false;
+      if (node.nodeType === Node.TEXT_NODE) {
+        const p = node.parentElement;
+        if (p && p.closest && p.closest(".gap, .seg-fill")) return false;
+        return true;
+      }
+      return false;
+    }
+    let hitInfo = hit(clientX, clientY);
+    if (!hitInfo || !usable(hitInfo.node)) {
+      // Gray spacer / padding: probe nearby for real text
+      const probes = [0, -6, 6, -14, 14, -28, 28, -48, 48];
+      hitInfo = null;
+      for (let i = 0; i < probes.length; i++) {
+        const h = hit(clientX, clientY + probes[i]);
+        if (h && usable(h.node)) { hitInfo = h; break; }
+      }
+    }
+    if (!hitInfo || !usable(hitInfo.node)) return null;
+    const offset = charOffsetInRoot(root, hitInfo.node, hitInfo.offset);
+    return {
+      type: "caret",
+      offset: offset,
+      clientY: clientY,
+      clientX: clientX
+    };
+  }
+
+  function captureCaretAnchorFromSelection(root) {
+    try {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount < 1) return null;
+      const r = sel.getRangeAt(0);
+      if (!root.contains(r.startContainer)) return null;
+      if (r.startContainer.nodeType === Node.TEXT_NODE) {
+        const p = r.startContainer.parentElement;
+        if (p && p.closest && p.closest(".gap, .seg-fill")) return null;
+      }
+      const br = r.getBoundingClientRect();
+      return {
+        type: "caret",
+        offset: charOffsetInRoot(root, r.startContainer, r.startOffset),
+        clientY: (br && br.top) ? br.top : (newBody.getBoundingClientRect().top + 12),
+        clientX: (br && br.left) ? br.left : 0
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /** Refresh clientY/X for a char-offset anchor from current layout (before DOM swap). */
+  function refreshAnchorScreenY(root, anchor) {
+    if (!anchor || anchor.type !== "caret" || !root) return anchor;
+    try {
+      const range = rangeFromCharOffset(root, anchor.offset);
+      const r = range.getBoundingClientRect();
+      if (r && (r.height > 0 || r.top !== 0)) {
+        return {
+          type: "caret",
+          offset: anchor.offset,
+          clientY: r.top,
+          clientX: r.left
+        };
+      }
+    } catch (_) { /* ignore */ }
+    return anchor;
+  }
+
+  function noteEditCaret(anchor) {
+    if (anchor && anchor.type === "caret") {
+      lastEditCaretAnchor = anchor;
+    }
+  }
+
+  function updateLastEditCaretFromSelection() {
+    if (document.activeElement !== newInner) return;
+    const a = captureCaretAnchorFromSelection(newInner);
+    if (a) lastEditCaretAnchor = a;
+  }
+
+  /** Keep the same character under the cursor after layout height changes. */
+  function restoreCaretAnchor(scrollEl, root, anchor) {
+    if (!anchor) return;
+    if (anchor.type !== "caret") {
+      restoreTextAnchor(scrollEl, root, anchor);
+      return;
+    }
+    const max = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+    const place = () => {
+      const range = rangeFromCharOffset(root, anchor.offset);
+      try {
+        const sel = window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      } catch (_) { /* ignore */ }
+      return range;
+    };
+    let range = place();
+    try {
+      const r = range.getBoundingClientRect();
+      if (r && typeof anchor.clientY === "number") {
+        // Move scroll so caret stays at the same screen Y as the click
+        scrollEl.scrollTop = Math.max(
+          0,
+          Math.min(max, scrollEl.scrollTop + (r.top - anchor.clientY))
+        );
+      }
+    } catch (_) {
+      const len = Math.max(1, (root.textContent || "").length);
+      scrollEl.scrollTop = (anchor.offset / len) * max;
+    }
+    // Selection can be lost after scrollTop change
+    place();
+  }
+
+  newInner.addEventListener("pointerdown", e => {
+    if (isPlainEditing) return;
+    if (!newInner.querySelector("span")) {
+      pendingCaretAnchor = null;
+      return;
+    }
+    // Capture before focus handler strips DOM (gaps disappear)
+    pendingCaretAnchor = captureCaretAnchorAtPoint(newInner, e.clientX, e.clientY);
+    noteEditCaret(pendingCaretAnchor);
+  }, true);
+
+  // When user starts editing the right side, convert highlighted HTML
+  // back to plain text. This prevents freezes caused by the browser
+  // trying to split many <span> elements when pressing Enter.
+  newInner.addEventListener("focus", () => {
+    if (isPlainEditing) return;
+    // Only convert if there are highlight / alignment spans
+    if (newInner.querySelector("span")) {
+      // Remember exact scroll before layout changes (for return-to-diff)
+      const topA = getTextAnchor(newBody, newInner);
+      scrollSnapshotBeforeFocus = {
+        new: newBody.scrollTop,
+        old: oldBody.scrollTop,
+        newHeight: newBody.scrollHeight,
+        oldHeight: oldBody.scrollHeight,
+        topOffset: (topA && topA.type === "char") ? topA.offset : null,
+        newRatio: (topA && typeof topA.ratio === "number")
+          ? topA.ratio
+          : (newBody.scrollHeight > newBody.clientHeight
+            ? newBody.scrollTop / (newBody.scrollHeight - newBody.clientHeight)
+            : 0)
+      };
+
+      // Prefer click/caret position over viewport-top (gray boxes shift layout)
+      let anchor = pendingCaretAnchor;
+      pendingCaretAnchor = null;
+      if (!anchor) anchor = captureCaretAnchorFromSelection(newInner);
+      if (!anchor) anchor = getTextAnchor(newBody, newInner);
+      noteEditCaret(anchor);
+
+      const plain = readPlain(newInner);
+      newInner.textContent = plain;   // remove all spans → single text node
+      newText = plain;
+      isPlainEditing = true;
+      highlightsCleared = true;
+
+      requestAnimationFrame(() => {
+        isSyncing = true;
+        // Right only: left stays at pre-focus scroll (still has gaps/highlights)
+        restoreCaretAnchor(newBody, newInner, anchor);
+        if (scrollSnapshotBeforeFocus) {
+          const maxO = Math.max(0, oldBody.scrollHeight - oldBody.clientHeight);
+          oldBody.scrollTop = Math.max(0, Math.min(maxO, scrollSnapshotBeforeFocus.old));
+        }
+        requestAnimationFrame(() => {
+          // Second pass: layout may settle after first scroll
+          restoreCaretAnchor(newBody, newInner, anchor);
+          noteEditCaret(refreshAnchorScreenY(newInner, anchor));
+          // Keep left locked — do not ratio-sync from collapsed plain right pane
+          if (scrollSnapshotBeforeFocus) {
+            const maxO = Math.max(0, oldBody.scrollHeight - oldBody.clientHeight);
+            oldBody.scrollTop = Math.max(0, Math.min(maxO, scrollSnapshotBeforeFocus.old));
+          }
+          isSyncing = false;
+          drawMinimap();
+        });
+      });
+    }
+  });
+
+  newInner.addEventListener("blur", () => {
+    isPlainEditing = false;
+    // Snapshot caret (for edited return) before selection is cleared
+    let anchor =
+      captureCaretAnchorFromSelection(newInner) ||
+      lastEditCaretAnchor ||
+      getTextAnchor(newBody, newInner);
+    anchor = refreshAnchorScreenY(newInner, anchor);
+    noteEditCaret(anchor);
+
+    // Leave the pane → auto restore or re-diff (no manual button)
+    setTimeout(() => {
+      if (document.activeElement === newInner) return;
+      if (isDiffing) return;
+
+      if (isDirty) {
+        // Edited: same base as no-edit (pre-focus scroll), caret only nudges if off-screen
+        pendingScrollSnapshot = scrollSnapshotBeforeFocus
+          ? {
+              new: scrollSnapshotBeforeFocus.new,
+              old: scrollSnapshotBeforeFocus.old,
+              newHeight: scrollSnapshotBeforeFocus.newHeight,
+              oldHeight: scrollSnapshotBeforeFocus.oldHeight,
+              topOffset: scrollSnapshotBeforeFocus.topOffset,
+              newRatio: scrollSnapshotBeforeFocus.newRatio
+            }
+          : null;
+        pendingRestoreAnchor = (anchor && anchor.type === "caret") ? anchor : null;
+        doDiff();
+      } else if (highlightsCleared && lastDiffs) {
+        // No edit: restore identical diff DOM + exact pre-focus scroll
+        pendingRestoreAnchor = null;
+        pendingScrollSnapshot = scrollSnapshotBeforeFocus
+          ? {
+              new: scrollSnapshotBeforeFocus.new,
+              old: scrollSnapshotBeforeFocus.old,
+              newHeight: scrollSnapshotBeforeFocus.newHeight,
+              oldHeight: scrollSnapshotBeforeFocus.oldHeight,
+              topOffset: scrollSnapshotBeforeFocus.topOffset,
+              newRatio: scrollSnapshotBeforeFocus.newRatio
+            }
+          : null;
+        restoreHighlights();
+      } else {
+        pendingRestoreAnchor = null;
+        pendingScrollSnapshot = null;
+      }
+    }, 0);
+  });
+
+  // Escape: leave edit mode (blur → auto restore / re-diff)
+  newInner.addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      updateLastEditCaretFromSelection();
+      newInner.blur();
+      return;
+    }
+    // Track caret while typing / moving
+    if (highlightsCleared || isPlainEditing) {
+      // keyup is better for arrows after move; also schedule here
+      setTimeout(updateLastEditCaretFromSelection, 0);
+    }
+  });
+
+  newInner.addEventListener("keyup", updateLastEditCaretFromSelection);
+  newInner.addEventListener("mouseup", updateLastEditCaretFromSelection);
+  document.addEventListener("selectionchange", () => {
+    if (document.activeElement === newInner) updateLastEditCaretFromSelection();
+  });
+
+  // Any real edit makes the diff dirty (recomputed on blur)
+  newInner.addEventListener("input", () => {
+    setDirty(true);
+    updateLastEditCaretFromSelection();
+  });
+
+  // Paste
+  newInner.addEventListener("paste", () => {
+    setTimeout(() => {
+      newText = normalize(newInner.innerText || "");
+      if (!newFileName) { newFileName = "pasted_new.txt"; newFname.textContent = newFileName; }
+      setDirty(true);
+      updateLastEditCaretFromSelection();
+    }, 20);
+  });
+
+  async function saveNewText() {
+    const text = readPlain(newInner) || newText;
+    if (!text) {
+      alert("保存するテキストがありません。");
+      return;
+    }
+
+    let suggested = (newFileName || "novel_revised.txt").trim() || "novel_revised.txt";
+    if (!/\.[a-z0-9]+$/i.test(suggested)) suggested += ".txt";
+
+    // Native OS save dialog (Chrome / Edge など). フォルダとファイル名を選べる。
+    if (typeof window.showSaveFilePicker === "function") {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: suggested,
+          types: [
+            {
+              description: "テキストファイル",
+              accept: { "text/plain": [".txt"] },
+            },
+          ],
+          excludeAcceptAllOption: false,
+        });
+        const writable = await handle.createWritable();
+        await writable.write(new Blob([text], { type: "text/plain;charset=utf-8" }));
+        await writable.close();
+        if (handle.name) {
+          newFileName = handle.name;
+          newFname.textContent = handle.name;
+        }
+        return;
+      } catch (err) {
+        // ユーザーがキャンセルした場合は何もしない
+        if (err && (err.name === "AbortError" || err.name === "NotAllowedError")) return;
+        console.error(err);
+        // 権限エラー等はフォールバックへ
+      }
+    }
+
+    // Fallback: ブラウザ標準のダウンロード（保存先はブラウザ設定依存）
+    let name = suggested;
+    if (typeof window.showSaveFilePicker !== "function") {
+      const typed = prompt("ファイル名を入力してください（このブラウザはOS保存ダイアログ非対応）", suggested);
+      if (typed === null || !typed.trim()) return;
+      name = typed.trim();
+      if (!/\.[a-z0-9]+$/i.test(name)) name += ".txt";
+    }
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    newFileName = name;
+    newFname.textContent = name;
+  }
+
+  btnSave.addEventListener("click", () => {
+    saveNewText().catch(err => {
+      console.error(err);
+      alert("保存に失敗しました: " + (err && err.message ? err.message : err));
+    });
+  });
+
+  // Settings
+  fontSizeSel.addEventListener("change", applySettings);
+  charWidthInp.addEventListener("change", applySettings);
+  charWidthInp.addEventListener("input", applySettings);
+
+  // Scroll sync — prefer 1:1 pixels when heights match (avoids mid-doc 1-line drift)
+  function sync(from, to) {
+    if (isSyncing) return;
+    isSyncing = true;
+    const maxF = from.scrollHeight - from.clientHeight;
+    const maxT = to.scrollHeight - to.clientHeight;
+    if (maxF <= 0) {
+      to.scrollTop = 0;
+    } else if (Math.abs(from.scrollHeight - to.scrollHeight) <= 2 || Math.abs(maxF - maxT) <= 2) {
+      // Same scroll range → lock pixel-for-pixel
+      to.scrollTop = Math.max(0, Math.min(maxT, from.scrollTop));
+    } else {
+      to.scrollTop = (from.scrollTop / maxF) * maxT;
+    }
+    requestAnimationFrame(() => { isSyncing = false; drawMinimap(); });
+  }
+  oldBody.addEventListener("scroll", () => sync(oldBody, newBody));
+  newBody.addEventListener("scroll", () => sync(newBody, oldBody));
+
+  // Minimap (character-level dots via binning)
+  function drawMinimap() {
+    const canvas = minimap;
+    const wrap = minimapWrap;
+    const dpr = window.devicePixelRatio || 1;
+    const w = wrap.clientWidth;
+    const h = wrap.clientHeight;
+    if (w < 1 || h < 1) return;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = "#eceff1";
+    ctx.fillRect(0, 0, w, h);
+
+    if (lastDiffs && lastDiffs.length) {
+      let total = 0;
+      for (const d of lastDiffs) total += d[1].length;
+      if (total > 0) {
+        const bins = Math.max(h * 2, 1);
+        const binSize = total / bins;
+        const col = new Uint8Array(bins);
+        let pos = 0;
+        for (const d of lastDiffs) {
+          const len = d[1].length;
+          const c = d[0] === -1 ? 1 : (d[0] === 1 ? 2 : 0);
+          if (c) {
+            const s = Math.floor(pos / binSize);
+            const e = Math.floor((pos + len) / binSize);
+            for (let b = s; b <= e && b < bins; b++) col[b] = c;
+          }
+          pos += len;
+        }
+        const dw = Math.max(2, Math.floor(w * 0.55));
+        const x0 = Math.floor((w - dw) / 2);
+        for (let b = 0; b < bins; b++) {
+          if (!col[b]) continue;
+          ctx.fillStyle = col[b] === 1 ? "#e57373" : "#81c784";
+          ctx.fillRect(x0, (b / bins) * h, dw, Math.max(1, h / bins + 0.5));
+        }
+      }
+    }
+
+    // viewport
+    const panel = oldBody.scrollHeight > 0 ? oldBody : newBody;
+    const maxS = panel.scrollHeight - panel.clientHeight;
+    if (maxS > 0) {
+      const vt = (panel.scrollTop / panel.scrollHeight) * h;
+      const vh = (panel.clientHeight / panel.scrollHeight) * h;
+      ctx.strokeStyle = "rgba(33,150,243,0.85)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, vt, w - 2, Math.max(vh, 4));
+      ctx.fillStyle = "rgba(33,150,243,0.12)";
+      ctx.fillRect(1, vt, w - 2, Math.max(vh, 4));
+    }
+  }
+
+  function scrollToMinimapY(clientY) {
+    const rect = minimap.getBoundingClientRect();
+    if (rect.height <= 0) return;
+    const p = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+    isSyncing = true;
+    const maxO = oldBody.scrollHeight - oldBody.clientHeight;
+    const maxN = newBody.scrollHeight - newBody.clientHeight;
+    // Prefer 1:1 when heights match
+    if (Math.abs(oldBody.scrollHeight - newBody.scrollHeight) <= 2) {
+      const top = p * Math.max(maxO, maxN, 0);
+      oldBody.scrollTop = Math.max(0, Math.min(Math.max(0, maxO), top));
+      newBody.scrollTop = Math.max(0, Math.min(Math.max(0, maxN), top));
+    } else {
+      oldBody.scrollTop = p * Math.max(0, maxO);
+      newBody.scrollTop = p * Math.max(0, maxN);
+    }
+    drawMinimap();
+    requestAnimationFrame(() => { isSyncing = false; });
+  }
+
+  let minimapDragging = false;
+
+  minimap.addEventListener("pointerdown", e => {
+    if (e.button != null && e.button !== 0) return;
+    minimapDragging = true;
+    try { minimap.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    minimap.style.cursor = "grabbing";
+    scrollToMinimapY(e.clientY);
+    e.preventDefault();
+  });
+
+  minimap.addEventListener("pointermove", e => {
+    if (!minimapDragging) return;
+    scrollToMinimapY(e.clientY);
+    e.preventDefault();
+  });
+
+  function endMinimapDrag(e) {
+    if (!minimapDragging) return;
+    minimapDragging = false;
+    minimap.style.cursor = "grab";
+    try {
+      if (e && e.pointerId != null) minimap.releasePointerCapture(e.pointerId);
+    } catch (_) { /* ignore */ }
+  }
+
+  minimap.addEventListener("pointerup", endMinimapDrag);
+  minimap.addEventListener("pointercancel", endMinimapDrag);
+  minimap.addEventListener("lostpointercapture", () => {
+    minimapDragging = false;
+    minimap.style.cursor = "grab";
+  });
+
+  // Keep click as jump (also covered by pointerdown)
+  minimap.style.cursor = "grab";
+  minimap.style.touchAction = "none";
+
+  window.addEventListener("resize", () => { applySettings(); drawMinimap(); });
+
+  // Init
+  applySettings();
+  drawMinimap();
+})();
+</script>
+</body>
+</html>
