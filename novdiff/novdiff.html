@@ -8,8 +8,8 @@
   :root {
     --deleted-bg: #ffebee;
     --deleted-text: #c62828;
-    --added-bg: #e8f5e9;
-    --added-text: #2e7d32;
+    --added-bg: #c8e6c9;
+    --added-text: #1b5e20;
     --changed-bg: #fff8e1;
     --changed-text: #f9a825;
     --toolbar-h: 48px;
@@ -85,6 +85,22 @@
   #toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
   #toolbar button.primary { background: #2e7d32; }
   #toolbar button.primary:hover { background: #388e3c; }
+  #toolbar button.nav-diff {
+    padding: 6px 10px;
+    min-width: 36px;
+    font-size: 14px;
+    line-height: 1;
+  }
+  #toolbar .nav-diff-group {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .seg.diff-jump-flash {
+    outline: 2px solid #ff9800;
+    outline-offset: 1px;
+    border-radius: 2px;
+  }
   #toolbar label { font-size: 13px; display: flex; align-items: center; gap: 6px; }
   #toolbar input[type="number"], #toolbar select {
     width: 64px;
@@ -283,10 +299,14 @@
         <input type="number" id="char-width" value="40" min="10" max="120">
         文字
       </label>
+      <span class="nav-diff-group" title="差分箇所へ移動">
+        <button type="button" id="btn-prev-diff" class="nav-diff" aria-label="前の差分へ">▲</button>
+        <button type="button" id="btn-next-diff" class="nav-diff" aria-label="次の差分へ">▼</button>
+      </span>
       <button id="btn-save">保存</button>
     </div>
     <div class="app-meta">
-      <span class="ver">v1.01</span>
+      <span class="ver">v1.1</span>
       · <a class="credit" href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a>
     </div>
   </div>
@@ -395,6 +415,8 @@ this.diff_match_patch=diff_match_patch;this.DIFF_DELETE=DIFF_DELETE;this.DIFF_IN
   // Exact scroll tops before entering edit mode (identical layout if !dirty restore)
   let scrollSnapshotBeforeFocus = null;
   let pendingScrollSnapshot = null;
+  // After blur→restore/doDiff, jump to prev/next change (-1 / +1)
+  let pendingJumpDir = 0;
 
   const $ = id => document.getElementById(id);
   const oldBody = $("old-body");
@@ -404,6 +426,8 @@ this.diff_match_patch=diff_match_patch;this.DIFF_DELETE=DIFF_DELETE;this.DIFF_IN
   const oldFname = $("old-fname");
   const newFname = $("new-fname");
   const btnSave  = $("btn-save");
+  const btnPrevDiff = $("btn-prev-diff");
+  const btnNextDiff = $("btn-next-diff");
   const fontSizeSel = $("font-size");
   const charWidthInp = $("char-width");
   const minimap = $("minimap");
@@ -870,8 +894,156 @@ this.diff_match_patch=diff_match_patch;this.DIFF_DELETE=DIFF_DELETE;this.DIFF_IN
         applyReturnScroll(snap, caretN, fallbackN, anchorO);
         isSyncing = false;
         drawMinimap();
+        if (pendingJumpDir) {
+          const d = pendingJumpDir;
+          pendingJumpDir = 0;
+          jumpToDiff(d, true);
+        }
       });
     });
+  }
+
+  /** Ordered change segment ids (hunk rows with del/add/chg or gap). */
+  function collectChangeHids() {
+    const ids = [];
+    const seen = new Set();
+    const segs = oldInner.querySelectorAll(":scope > .seg[data-hid]");
+    for (let i = 0; i < segs.length; i++) {
+      const seg = segs[i];
+      const id = seg.getAttribute("data-hid");
+      if (!id || seen.has(id)) continue;
+      const other = newInner.querySelector(':scope > .seg[data-hid="' + id + '"]');
+      const isChange =
+        seg.classList.contains("gap") ||
+        (other && other.classList.contains("gap")) ||
+        !!seg.querySelector(".del, .add, .chg") ||
+        !!(other && other.querySelector(".del, .add, .chg"));
+      if (isChange) {
+        seen.add(id);
+        ids.push(id);
+      }
+    }
+    // hids only on new side (defensive)
+    newInner.querySelectorAll(":scope > .seg[data-hid]").forEach(seg => {
+      const id = seg.getAttribute("data-hid");
+      if (!id || seen.has(id)) return;
+      if (
+        seg.classList.contains("gap") ||
+        seg.querySelector(".del, .add, .chg")
+      ) {
+        seen.add(id);
+        ids.push(id);
+      }
+    });
+    return ids;
+  }
+
+  function flashDiffSeg(el) {
+    if (!el) return;
+    el.classList.remove("diff-jump-flash");
+    void el.offsetWidth;
+    el.classList.add("diff-jump-flash");
+    clearTimeout(el._flashTimer);
+    el._flashTimer = setTimeout(() => {
+      el.classList.remove("diff-jump-flash");
+    }, 900);
+  }
+
+  /**
+   * Scroll both panes so the change row is near the top of the viewport.
+   * dir: -1 previous, +1 next. Wraps at ends.
+   * fromPending: skip edit-mode defer (already restored).
+   */
+  function jumpToDiff(dir, fromPending) {
+    if (!dir) return;
+    if (!lastDiffs || isDiffing) return;
+
+    // Need highlighted DOM; if editing, leave pane then jump after restore/doDiff
+    if (!fromPending && (isPlainEditing || highlightsCleared)) {
+      pendingJumpDir = dir;
+      if (document.activeElement === newInner || newInner.contains(document.activeElement)) {
+        newInner.blur();
+      } else if (isDirty) {
+        doDiff();
+      } else if (highlightsCleared && lastDiffs) {
+        pendingScrollSnapshot = scrollSnapshotBeforeFocus
+          ? {
+              new: scrollSnapshotBeforeFocus.new,
+              old: scrollSnapshotBeforeFocus.old,
+              newHeight: scrollSnapshotBeforeFocus.newHeight,
+              oldHeight: scrollSnapshotBeforeFocus.oldHeight,
+              topOffset: scrollSnapshotBeforeFocus.topOffset,
+              newRatio: scrollSnapshotBeforeFocus.newRatio
+            }
+          : null;
+        restoreHighlights();
+      } else {
+        pendingJumpDir = 0;
+      }
+      return;
+    }
+
+    const ids = collectChangeHids();
+    if (!ids.length) return;
+
+    // Y in scroll content coords (use the scroll container — not inner+scrollTop)
+    function segScrollTop(el, scrollEl) {
+      if (!el) return 0;
+      const er = el.getBoundingClientRect();
+      const br = scrollEl.getBoundingClientRect();
+      return er.top - br.top + scrollEl.scrollTop;
+    }
+
+    const margin = 12;
+    const viewTop = newBody.scrollTop;
+    const maxN = Math.max(0, newBody.scrollHeight - newBody.clientHeight);
+    const maxO = Math.max(0, oldBody.scrollHeight - oldBody.clientHeight);
+    const viewBot = viewTop + newBody.clientHeight;
+    const tops = ids.map(id => {
+      const nEl = newInner.querySelector(':scope > .seg[data-hid="' + id + '"]');
+      const oEl = oldInner.querySelector(':scope > .seg[data-hid="' + id + '"]');
+      const top = nEl
+        ? segScrollTop(nEl, newBody)
+        : segScrollTop(oEl, oldBody);
+      return { id, top, nEl, oEl };
+    });
+    const n = tops.length;
+
+    // Current change = last one at or above the pin line (viewport top + margin).
+    // Near document end, scroll clamps so last tops stay > pin — also treat the
+    // last change still inside the viewport as current (enables ▼ wrap to first).
+    const pin = viewTop + margin;
+    let cur = -1;
+    for (let i = 0; i < n; i++) {
+      if (tops[i].top <= pin + 8) cur = i;
+    }
+    if (viewTop >= maxN - 2) {
+      for (let i = 0; i < n; i++) {
+        if (tops[i].top < viewBot - 4) cur = i;
+      }
+    }
+
+    let idx;
+    if (dir > 0) {
+      idx = (cur + 1) % n; // cur=-1 → 0; last → 0 (wrap)
+    } else {
+      idx = cur <= 0 ? n - 1 : cur - 1; // at/before first → last (wrap)
+    }
+
+    const target = tops[idx];
+    const nextTop = Math.max(0, Math.min(maxN, target.top - margin));
+
+    isSyncing = true;
+    newBody.scrollTop = nextTop;
+    if (Math.abs(newBody.scrollHeight - oldBody.scrollHeight) <= 2 || Math.abs(maxN - maxO) <= 2) {
+      oldBody.scrollTop = Math.max(0, Math.min(maxO, nextTop));
+    } else {
+      oldBody.scrollTop = maxN > 0 ? (nextTop / maxN) * maxO : 0;
+    }
+    isSyncing = false;
+    flashDiffSeg(target.nEl);
+    flashDiffSeg(target.oEl);
+    drawMinimap();
   }
 
   /**
@@ -1520,6 +1692,9 @@ this.diff_match_patch=diff_match_patch;this.DIFF_DELETE=DIFF_DELETE;this.DIFF_IN
       alert("保存に失敗しました: " + (err && err.message ? err.message : err));
     });
   });
+
+  if (btnPrevDiff) btnPrevDiff.addEventListener("click", () => jumpToDiff(-1));
+  if (btnNextDiff) btnNextDiff.addEventListener("click", () => jumpToDiff(1));
 
   // Settings
   fontSizeSel.addEventListener("change", applySettings);
