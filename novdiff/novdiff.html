@@ -99,6 +99,7 @@
     display: grid;
     grid-template-columns: var(--minimap-w) 1fr 1fr;
     height: calc(100% - var(--toolbar-h));
+    position: relative;
   }
   #minimap-wrap {
     background: #eceff1;
@@ -237,6 +238,30 @@
     z-index: 10;
   }
   .panel.drag-over #drop-hint { opacity: 1; }
+  /* Same-content banner (center of viewport over both panels) */
+  #same-banner {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    pointer-events: none;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    grid-column: 1 / -1;
+    grid-row: 1 / -1;
+  }
+  #same-banner.visible { display: flex; }
+  #same-banner span {
+    padding: 14px 28px;
+    border-radius: 8px;
+    background: rgba(38, 50, 56, 0.82);
+    color: #eceff1;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+    white-space: nowrap;
+  }
 </style>
 </head>
 <body>
@@ -261,7 +286,7 @@
       <button id="btn-save">保存</button>
     </div>
     <div class="app-meta">
-      <span class="ver">v1.0</span>
+      <span class="ver">v1.01</span>
       · <a class="credit" href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a>
     </div>
   </div>
@@ -288,6 +313,7 @@
         <div id="drop-hint">新しいテキストをドロップ</div>
       </div>
     </div>
+    <div id="same-banner" aria-live="polite"><span>内容は同じ</span></div>
   </div>
 
 <script>
@@ -382,6 +408,13 @@ this.diff_match_patch=diff_match_patch;this.DIFF_DELETE=DIFF_DELETE;this.DIFF_IN
   const charWidthInp = $("char-width");
   const minimap = $("minimap");
   const minimapWrap = $("minimap-wrap");
+  const sameBanner = $("same-banner");
+
+  function updateSameBanner() {
+    if (!sameBanner) return;
+    const same = !!(oldText && newText && oldText === newText);
+    sameBanner.classList.toggle("visible", same);
+  }
 
   function setDirty(dirty) {
     isDirty = !!dirty;
@@ -826,6 +859,7 @@ this.diff_match_patch=diff_match_patch;this.DIFF_DELETE=DIFF_DELETE;this.DIFF_IN
     newInner.contentEditable = "true";
     isPlainEditing = false;
     highlightsCleared = false;
+    updateSameBanner();
 
     requestAnimationFrame(() => {
       refinePairHeights();
