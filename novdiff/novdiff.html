@@ -22,6 +22,9 @@
     font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", Meiryo, sans-serif;
     background: #f5f5f5;
     overflow: hidden;
+    /* iOS Safari: prevent auto text inflation (left pane was growing vs contenteditable right) */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
   #toolbar {
     height: var(--toolbar-h);
@@ -183,15 +186,30 @@
     overflow-wrap: anywhere;
     min-height: 100%;
     outline: none;
+    font-size: 14px; /* JS applySettings overrides; keep explicit for iOS */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
   #old-inner {
     user-select: text;
     cursor: default;
+    -webkit-user-select: text;
+  }
+  /* Keep highlight/segment nodes on the same computed size as the pane (iOS) */
+  .panel-inner .seg,
+  .panel-inner .seg-body,
+  .panel-inner .del,
+  .panel-inner .add,
+  .panel-inner .chg {
+    font-size: inherit;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
   .panel-inner:empty::before {
     content: attr(data-placeholder);
     color: #90a4ae;
     pointer-events: none;
+    font-size: inherit;
   }
   .del { background: var(--deleted-bg); color: var(--deleted-text); }
   .add { background: var(--added-bg); color: var(--added-text); }
