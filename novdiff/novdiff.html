@@ -98,6 +98,42 @@
     display: inline-flex;
     gap: 4px;
     align-items: center;
+    flex-shrink: 0;
+  }
+  /* Phone landscape / narrow: single row; hide credit so ▲▼ don't collide */
+  @media (max-width: 900px) {
+    #toolbar {
+      gap: 10px;
+      padding: 0 10px;
+    }
+    #toolbar .toolbar-controls {
+      gap: 10px;
+    }
+    #toolbar .app-meta a.credit,
+    #toolbar .app-meta .credit-sep {
+      display: none;
+    }
+  }
+  @media (max-width: 700px) {
+    #toolbar .app-title {
+      max-width: 7.5em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #toolbar {
+      gap: 8px;
+      padding: 0 8px;
+    }
+    #toolbar .toolbar-controls {
+      gap: 8px;
+    }
+    #toolbar label {
+      font-size: 12px;
+      gap: 4px;
+    }
+    #toolbar button {
+      padding: 6px 10px;
+    }
   }
   .seg.diff-jump-flash {
     outline: 2px solid #ff9800;
@@ -362,7 +398,7 @@
     </div>
     <div class="app-meta">
       <span class="ver">v1.2</span>
-      · <a class="credit" href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a>
+      <span class="credit-sep"> · </span><a class="credit" href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a>
     </div>
   </div>
 
