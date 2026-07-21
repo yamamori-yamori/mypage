@@ -245,15 +245,38 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    text-align: center;
+    padding: 24px;
     background: rgba(38,50,56,0.7);
     color: #fff;
     font-size: 18px;
+    line-height: 1.6;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
     z-index: 10;
+    user-select: none;
   }
-  .panel.drag-over #drop-hint { opacity: 1; }
+  /* Empty pane: always show click/drop affordance */
+  .panel.is-empty #drop-hint {
+    opacity: 1;
+    pointer-events: auto;
+    cursor: pointer;
+    background: transparent;
+    color: #90a4ae;
+  }
+  .panel.is-empty #drop-hint:hover {
+    background: rgba(38,50,56,0.06);
+    color: #607d8b;
+  }
+  .panel.drag-over #drop-hint {
+    opacity: 1;
+    pointer-events: none;
+    background: rgba(38,50,56,0.7);
+    color: #fff;
+  }
+  .panel.is-empty .panel-inner { cursor: pointer; }
+  .panel.is-empty .panel-inner:empty::before { content: none; }
   /* Same-content banner (center of viewport over both panels) */
   #same-banner {
     position: absolute;
@@ -320,7 +343,7 @@
       <button id="btn-save">保存</button>
     </div>
     <div class="app-meta">
-      <span class="ver">v1.1</span>
+      <span class="ver">v1.2</span>
       · <a class="credit" href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a>
     </div>
   </div>
@@ -329,22 +352,23 @@
     <div id="minimap-wrap">
       <canvas id="minimap"></canvas>
     </div>
-    <div class="panel" id="panel-old">
+    <input type="file" id="file-picker" accept=".txt,.md,.text,text/plain,text/*" hidden>
+    <div class="panel is-empty" id="panel-old">
       <div class="panel-header">
         <span>古いテキスト: <span class="fname" id="old-fname">（未設定）</span></span>
       </div>
       <div class="panel-body" id="old-body">
-        <div class="panel-inner" id="old-inner" data-placeholder="ここに古いテキストをドロップ（または貼り付け）"></div>
-        <div id="drop-hint">古いテキストをドロップ</div>
+        <div class="panel-inner" id="old-inner" data-placeholder="ここに古いテキストをドロップ／クリック／貼り付け"></div>
+        <div id="drop-hint" class="drop-hint" data-side="old">古いテキストを<br>ドロップまたはクリックで選択</div>
       </div>
     </div>
-    <div class="panel" id="panel-new">
+    <div class="panel is-empty" id="panel-new">
       <div class="panel-header">
         <span>新しいテキスト: <span class="fname" id="new-fname">（未設定）</span></span>
       </div>
       <div class="panel-body" id="new-body">
-        <div class="panel-inner" id="new-inner" contenteditable="true" data-placeholder="ここに新しいテキストをドロップ（または貼り付け）"></div>
-        <div id="drop-hint">新しいテキストをドロップ</div>
+        <div class="panel-inner" id="new-inner" contenteditable="true" data-placeholder="ここに新しいテキストをドロップ／クリック／貼り付け"></div>
+        <div id="drop-hint" class="drop-hint" data-side="new">新しいテキストを<br>ドロップまたはクリックで選択</div>
       </div>
     </div>
     <div id="same-banner" aria-live="polite"><span>内容は同じ</span></div>
@@ -891,6 +915,7 @@ this.diff_match_patch=diff_match_patch;this.DIFF_DELETE=DIFF_DELETE;this.DIFF_IN
     const fallbackN = (!snap && !caretN) ? getTextAnchor(newBody, newInner) : null;
     const anchorO = getTextAnchor(oldBody, oldInner);
     const { o, n } = buildHtml(diffs);
+    if (typeof updateEmptyState === "function") updateEmptyState();
 
     oldInner.innerHTML = o;
     newInner.innerHTML = n;
@@ -1313,9 +1338,71 @@ this.diff_match_patch=diff_match_patch;this.DIFF_DELETE=DIFF_DELETE;this.DIFF_IN
     }, 40);
   }
 
-  // Drag & Drop
+  // File load (drop / click when empty)
+  const panelOld = $("panel-old");
+  const panelNew = $("panel-new");
+  const filePicker = $("file-picker");
+  let filePickTarget = null; // "old" | "new"
+
+  function updateEmptyState() {
+    const oldEmpty = !(oldText && oldText.length);
+    const newEmpty = !(newText && newText.length);
+    panelOld.classList.toggle("is-empty", oldEmpty);
+    panelNew.classList.toggle("is-empty", newEmpty);
+  }
+
+  function applyLoadedFile(isOld, file, text) {
+    const t = normalize(text || "");
+    if (isOld) {
+      oldText = t;
+      oldFileName = file && file.name ? file.name : oldFileName;
+      oldFname.textContent = oldFileName || "（未設定）";
+      oldInner.textContent = t;
+    } else {
+      newText = t;
+      newFileName = file && file.name ? file.name : newFileName;
+      newFname.textContent = newFileName || "（未設定）";
+      newInner.textContent = t;
+    }
+    updateEmptyState();
+    // Auto diff whenever both sides have text
+    if (oldText && newText) {
+      doDiff();
+    } else {
+      setDirty(true);
+    }
+  }
+
+  function readTextFile(file, isOld) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => applyLoadedFile(isOld, file, reader.result || "");
+    reader.onerror = () => alert("ファイルを読めませんでした: " + (file.name || ""));
+    reader.readAsText(file, "UTF-8");
+  }
+
+  function openFilePicker(side) {
+    if (!filePicker) return;
+    filePickTarget = side;
+    filePicker.value = "";
+    filePicker.click();
+  }
+
+  if (filePicker) {
+    filePicker.addEventListener("change", () => {
+      const file = filePicker.files && filePicker.files[0];
+      const side = filePickTarget;
+      filePickTarget = null;
+      if (!file || !side) return;
+      readTextFile(file, side === "old");
+    });
+  }
+
   function setupDrop(panel, isOld) {
-    panel.addEventListener("dragover", e => { e.preventDefault(); panel.classList.add("drag-over"); });
+    panel.addEventListener("dragover", e => {
+      e.preventDefault();
+      panel.classList.add("drag-over");
+    });
     panel.addEventListener("dragleave", e => {
       if (!panel.contains(e.relatedTarget)) panel.classList.remove("drag-over");
     });
@@ -1324,32 +1411,44 @@ this.diff_match_patch=diff_match_patch;this.DIFF_DELETE=DIFF_DELETE;this.DIFF_IN
       panel.classList.remove("drag-over");
       const file = e.dataTransfer.files[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const text = normalize(reader.result || "");
-        if (isOld) {
-          oldText = text;
-          oldFileName = file.name;
-          oldFname.textContent = file.name;
-          oldInner.textContent = text;
-        } else {
-          newText = text;
-          newFileName = file.name;
-          newFname.textContent = file.name;
-          newInner.textContent = text;
-        }
-        // Auto diff whenever both sides have text
-        if (oldText && newText) {
-          doDiff();
-        } else {
-          setDirty(true);
-        }
-      };
-      reader.readAsText(file, "UTF-8");
+      readTextFile(file, isOld);
     });
   }
-  setupDrop($("panel-old"), true);
-  setupDrop($("panel-new"), false);
+  setupDrop(panelOld, true);
+  setupDrop(panelNew, false);
+
+  // Empty pane click → native file picker (content already present: no-op on overlay)
+  function setupEmptyClick(panel, side) {
+    const hint = panel.querySelector(".drop-hint");
+    if (hint) {
+      hint.addEventListener("click", e => {
+        if (!panel.classList.contains("is-empty")) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openFilePicker(side);
+      });
+    }
+    // Left pane is not contenteditable; click on empty body also opens picker
+    if (side === "old") {
+      panel.addEventListener("click", e => {
+        if (!panel.classList.contains("is-empty")) return;
+        if (e.target.closest && e.target.closest(".panel-header")) return;
+        openFilePicker("old");
+      });
+    } else {
+      // Right: intercept mousedown on empty so contenteditable doesn't steal focus first
+      newInner.addEventListener("mousedown", e => {
+        if (!panelNew.classList.contains("is-empty")) return;
+        // Allow middle/right click defaults
+        if (e.button !== 0) return;
+        e.preventDefault();
+        openFilePicker("new");
+      }, true);
+    }
+  }
+  setupEmptyClick(panelOld, "old");
+  setupEmptyClick(panelNew, "new");
+  updateEmptyState();
 
   // Click position before focus strips highlights (gray gaps change layout)
   let pendingCaretAnchor = null;
@@ -1630,6 +1729,9 @@ this.diff_match_patch=diff_match_patch;this.DIFF_DELETE=DIFF_DELETE;this.DIFF_IN
   // Any real edit makes the diff dirty (recomputed on blur)
   newInner.addEventListener("input", () => {
     setDirty(true);
+    // Keep SoT loosely in sync so empty-state (click-to-open) tracks clear/type
+    newText = normalize(readPlain(newInner) || "");
+    updateEmptyState();
     updateLastEditCaretFromSelection();
   });
 
@@ -1639,8 +1741,34 @@ this.diff_match_patch=diff_match_patch;this.DIFF_DELETE=DIFF_DELETE;this.DIFF_IN
       newText = normalize(newInner.innerText || "");
       if (!newFileName) { newFileName = "pasted_new.txt"; newFname.textContent = newFileName; }
       setDirty(true);
+      updateEmptyState();
       updateLastEditCaretFromSelection();
     }, 20);
+  });
+
+  // Empty pane: paste while pointer is over an empty panel (overlay blocks editor focus)
+  let emptyPasteSide = null; // "old" | "new" | null
+  function trackEmptyHover(panel, side) {
+    panel.addEventListener("pointerenter", () => {
+      emptyPasteSide = panel.classList.contains("is-empty") ? side : null;
+    });
+    panel.addEventListener("pointerleave", () => {
+      if (emptyPasteSide === side) emptyPasteSide = null;
+    });
+  }
+  trackEmptyHover(panelOld, "old");
+  trackEmptyHover(panelNew, "new");
+  document.addEventListener("paste", e => {
+    if (!emptyPasteSide) return;
+    const panel = emptyPasteSide === "old" ? panelOld : panelNew;
+    if (!panel.classList.contains("is-empty")) return;
+    const clip = e.clipboardData || window.clipboardData;
+    if (!clip) return;
+    const text = clip.getData("text/plain");
+    if (text == null || text === "") return;
+    e.preventDefault();
+    const isOld = emptyPasteSide === "old";
+    applyLoadedFile(isOld, { name: isOld ? "pasted_old.txt" : "pasted_new.txt" }, text);
   });
 
   async function saveNewText() {
