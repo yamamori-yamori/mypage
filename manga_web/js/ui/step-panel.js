@@ -629,7 +629,7 @@ window.ME.UI = window.ME.UI || {};
     var applyBtn = document.createElement('button');
     applyBtn.type = 'button';
     applyBtn.className = 'paper-apply-btn';
-    applyBtn.textContent = 'このサイズにする';
+    applyBtn.textContent = 'サイズ設定';
     applyBtn.addEventListener('click', function() {
       var w = parseFloat(wInput.value);
       var h = parseFloat(hInput.value);
@@ -672,12 +672,6 @@ window.ME.UI = window.ME.UI || {};
     cropBtn.textContent = '🗺 アイテムに合わせて余白を削除';
     cropBtn.addEventListener('click', function() { onCrop(); });
     container.appendChild(cropBtn);
-
-    // DnDガイド
-    var dndHint = document.createElement('div');
-    dndHint.className = 'step-panel-hint';
-    dndHint.textContent = '初期状態で画像をドラッグ・アンド・ドロップすると、その画像のサイズになります。';
-    container.appendChild(dndHint);
   }
 
   function presetToSize(preset, landscape) {

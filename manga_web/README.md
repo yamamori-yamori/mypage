@@ -1,7 +1,7 @@
-# マンガページエディタ 開発仕様書 Ver.4.4.1
+# マンガページエディタ 開発仕様書 Ver.4.4.2
 copyright 2026 やまもりやもり
 
-ローカルAI向け開発仕様書。現行実装（プロジェクトJSON `version: "1.3"` / アプリ仕様 Ver.4.4.1）を基準とする。
+ローカルAI向け開発仕様書。現行実装（プロジェクトJSON `version: "1.3"` / アプリ仕様 Ver.4.4.2）を基準とする。
 
 ### バージョン単一ソース（必読）
 
@@ -15,6 +15,8 @@ copyright 2026 やまもりやもり
 
 手順: `VERSION` を編集 → `node scripts/sync-version.js` → 変更履歴・実装を README に書く → commit → `node scripts/sync-version.js --tag`。  
 JSON フォーマット破壊時のみ `JSON=` を上げる（読込互換は serializer）。仕様だけの変更は `APP=` のみ。
+
+Ver.4.4.1 の主変更: **線・心理エフェクト拡充 + UI/運用の小修正**。JSON は **1.3 のまま**。(1) 効果 kind — `horrorLines` / `dropLines` / `wavyLines` / `crackLines` を追加。既定・判定は `ME.Effects`（`effect-presets.js`。スタンプ UI なし）。(2) 集中線/スピード線 — `lengthVariation` 連続（最大で概ね ±50%）、`params.seed`（UI「乱数」0–999）で模様固定。(3) ドロップ線 — `bandWidth` + `offsetX`、横ずれ `drift` 既定 0、間隔パラメータなし。(4) UI — 起動中 `loading...` オーバーレイ、プロパティ短スライダ（100px）、吹き出し風 favicon（`icon.svg`）。(5) その他 — セリフ袋 outline の baseline を `fontBounding` 系に、Google Analytics は **https のみ**（`file://` では無効）。
 
 Ver.4.4 の主変更: **安定性・信頼性の一斉修正（バグフィックスリリース、機能追加なし）**。JSON は **1.3 のまま**。主な修正: (1) Undo/Redo — 一括削除を1コマンド化（`DeleteObjects`）・履歴上限 10→50・`recalcZIndices` を重ね順保存の連番化・スナップショット書き戻しの deep copy 徹底・`RemovePage.redo` のページ index 計算修正・Ctrl+Shift+Z / CapsLock 時のショートカット不動作修正。(2) 描画 — 吹き出し短集中線/ケバケバ線をシード付き乱数化（描画のたびに変化しない）・スクリーントーン density のクランプ（0 でのクラッシュ防止）と `scale` の実効化・削除済みコマのクリップキャッシュ掃除・hue 単独指定の無視修正・PNG 出力側 colorAdjust の NaN 防止・編集/出力のクリップ判定統一。(3) ツール — `**` 演算子の ES5 化・回転ハンドルの角度ジャンプ修正（相対回転化）・微小ドラッグの位置ズレ復元・ウィンドウ外 mouseup の取りこぼし対策（全ツール）。(4) IO/UI — 印刷のポップアップブロック対策とページサイズ混在対応・保存ダイアログの `.manga.json` 拡張子問題修正・カスタム用紙サイズの単位/dpi 既定の適正化。(5) 低優先改善 — ペースト時の画像アセット重複排除と連続ペーストの累積オフセット・ページサイズ変更/余白削除の Undo 対応（`EditPageSize` / `CropPage`）・下書き/メモの重ね順変更対応・確認ダイアログの Enter フォーカス尊重・数値入力の入力途中 0 反映防止・no-op コマンドの Undo 履歴浪費抑止・ハンドル判定のズーム補正・画像ドロップのコマ判定改善（最前面優先 + 多角形判定）・テキスト輪郭キャッシュ LRU 化・画像キャッシュ上限/破棄 API・マウス座標の CSS スケール対応・`getNextZIndex` 防御・`sync-version.js` の MANUAL 欠落ガード。
 
@@ -38,7 +40,7 @@ Ver.3.0 の主変更（継承）: **下書きレイヤー（draft）完成** —
 7. [ファイル構成](#7-ファイル構成)
 8. [localAI開発ルール](#8-localai開発ルール)
 9. [既知の制限・今後の課題](#9-既知の制限今後の課題)
-10. [Ver.3.0〜Ver.4.4 変更サマリ](#10-ver30ver40ver41ver411ver42-変更サマリ)
+10. [Ver.3.0〜Ver.4.4.1 変更サマリ](#10-ver30--ver40--ver41--ver411--ver42--ver43--ver44--ver441-変更サマリ)
 
 ---
 
@@ -611,8 +613,8 @@ manga/
 ├ index.html                         DOM+script順（先頭で app-version.js）
 ├ icon.svg                           ファビコン（グレージ地＋吹き出し）
 ├ css/style.css
-├ README.md                          本仕様（Ver.4.4.1）
-├ MANUAL.html                        図解マニュアル（Ver.4.4.1）
+├ README.md                          本仕様（Ver.4.4.2）
+├ MANUAL.html                        図解マニュアル（Ver.4.4.2）
 ├ AGENTS.md                          Hermes 向け作業ルール
 ├ docs/
 │  ├ requirements-multi-page.md      複数ページ要件
@@ -679,8 +681,9 @@ manga/
 - [ ] 融合は **同 type 内**（コマ同士 / 吹き出し同士 / 下書き同士）。type 跨ぎ不可
 - [x] 吹き出し・下書きのコマクロップは panelId（既定 OFF）。推定は最寄りまで緩和
 - [x] 集中線/スピード線: 本数・長さ・向き・太さ(%)・回転・揺らぎ
-- [x] 線・心理エフェクト: ホラー/ドロップ/揺れ/ヒビ（`effect_add`）
+- [x] 線・心理エフェクト: ホラー/ドロップ/揺れ/ヒビ（Ver.4.4.1・`ME.Effects` / `effect-presets`）
 - [ ] エフェクトのページ全体配置は非対応（コマ限定が主）
+- [ ] エフェクトのスタンプ UI（却下済み方針。既定のみ）
 - [x] **複数ページ** `Project.pages` + PageManager + ナビ/サムネ/印刷/PNG `-n`（Ver.4.0）
 - [x] ページ追加モード: 白紙 / 前ページと同じ台紙 / 前ページのコピー（サムネ UI・Ver.4.1）
 - [x] Ctrl/Cmd+A 全選択 + 別ページ Ctrl/Cmd+V は位置そのまま（同一ページは +20px・Ver.4.1）
@@ -695,23 +698,33 @@ manga/
 
 ---
 
-## 10. Ver.3.0 / Ver.4.0 / Ver.4.1 / Ver.4.1.1 / Ver.4.2 / Ver.4.3 / Ver.4.4 変更サマリ
+## 10. Ver.3.0 / Ver.4.0 / Ver.4.1 / Ver.4.1.1 / Ver.4.2 / Ver.4.3 / Ver.4.4 / Ver.4.4.1 変更サマリ
 
 ### 10.1 アプリ仕様バージョン
 
 | 項目 | 値 |
 |---|---|
-| 仕様書（現行） | **Ver.4.4.1** |
+| 仕様書（現行） | **Ver.4.4.2** |
 | プロジェクト JSON | **1.3**（1.2 読込可） |
 | 正本 | ルート `VERSION`（`APP` / `JSON`）→ `scripts/sync-version.js` |
-| git tag | **`v{APP}`**（例: `v4.2`）。`sync-version.js --tag` |
-| 実装世代メモ | … + Ver.4.2 校閲メモ + Ver.4.3 線ガサつき + **Ver.4.4 バグフィックス** |
+| git tag | **`v{APP}`**（例: `v4.4.1`）。`sync-version.js --tag` |
+| 実装世代メモ | … + Ver.4.3 線ガサつき + Ver.4.4 バグフィックス + **Ver.4.4.1 線・心理エフェクト** |
 
-### 10.2 Ver.4.4 の修正内容（機能追加なし）
+### 10.2 Ver.4.4.1 で確定した仕様（現行）
+
+1. **線・心理 kind** — ステップ UI: `concentration` / `speedLines` / `horrorLines` / `dropLines` / `wavyLines` / `crackLines`（`ME.Effects.STEP_KINDS`）  
+2. **`ME.Effects`** — 既定 params・`hasOriginHandle` / `isLinePsychKind` / `usesRotateClip` のみ。**スタンプ辞書・スタンプ UI なし**  
+3. **共通** — `params.seed`（UI「乱数」0–999）。線長ばらつきは `lengthVariation`（集中・スピードは最大で概ね ±50%）  
+4. **ドロップ** — `bandWidth`・`offsetX`・`drift` 既定 0。間隔 gap なし  
+5. **焦点ハンドル** — concentration / crackLines  
+6. **UI/運用** — 起動 `loading...`、プロパティ短スライダ、`icon.svg` favicon、GA は https のみ（`file://` 無効）  
+7. **JSON** — 任意フィールドのみ。**version は 1.3 のまま**
+
+### 10.3 Ver.4.4 の修正内容（機能追加なし）
 
 Undo/Redo の信頼性（一括削除 `DeleteObjects` / 履歴上限 50 / `recalcZIndices` 重ね順保存 / deep copy 徹底 / `RemovePage.redo` index 修正 / Ctrl+Shift+Z・CapsLock 対応）、描画の決定論と安定性（吹き出し短集中線のシード乱数化 / トーン density クランプ / トーン scale 実効化 / 削除コマのクリップキャッシュ掃除 / hue 単独調整 / 出力側 colorAdjust の NaN 防止 / クリップ判定の編集・出力統一）、ツール操作（`**` の ES5 化 / 回転ハンドル相対回転化 / 微小ドラッグ復元 / ウィンドウ外 mouseup 対策）、IO/UI（印刷ポップアップ対策・サイズ混在対応 / 保存ダイアログ拡張子修正 / カスタム用紙サイズの単位・dpi 既定適正化）。加えて低優先の使い勝手・性能改善 15 件（アセット重複排除 / ページサイズ Undo / ハンドルズーム補正 / キャッシュ LRU・上限 / ほか）も収録。データ構造・JSON フォーマットの変更なし。
 
-### 10.3 Ver.4.3 で確定した仕様
+### 10.4 Ver.4.3 で確定した仕様
 
 1. **セリフ袋** — `outline.roughness` 0–10（袋縁の粗い歪み。太さ 1–10）  
 2. **吹き出し** — `strokeRoughness` 0–10（線レイヤー縁歪み。最大強度は控えめ）  
@@ -719,7 +732,7 @@ Undo/Redo の信頼性（一括削除 `DeleteObjects` / 履歴上限 50 / `recal
 4. **コマ線幅 UI** — 吹き出しと同様の −/＋ステッパー（0–50）  
 5. **JSON** — 任意フィールド追加のみ。**version は 1.3 のまま**  
 
-### 10.4 Ver.4.2 で確定した仕様（継承）
+### 10.5 Ver.4.2 で確定した仕様（継承）
 
 1. **メモ object type `memo`** — `page.memos[]`。kind: `freehand` | `string`  
 2. **見た目** — 同一スタイル（赤 `#cc2222` + 白縁）。融合・リサイズなし  
@@ -728,7 +741,7 @@ Undo/Redo の信頼性（一括削除 `DeleteObjects` / 履歴上限 50 / `recal
 5. **一括削除** — このページ / 全ページ + Confirm + Undo（下書きと同様）  
 6. **UI** — 左ナビ「メモ」ステップ（赤系）、MANUAL / README は仕様 Ver.4.2  
 
-### 10.5 Ver.4.1.1 で確定した仕様（継承）
+### 10.6 Ver.4.1.1 で確定した仕様（継承）
 
 1. **ヘルプ** — topbar `？` → 同フォルダ `MANUAL.html` を別タブ  
 2. **しっぽ type** — `normal` | `normalThick` | `thought` | `thoughtFew` | `jagged` | `jaggedThick` | `lightning` | `spiral`。`*Thick` は根元半幅×2。UI セレクト先頭 **なし**（`none`→tail null）。チェックボックス廃止  
@@ -737,7 +750,7 @@ Undo/Redo の信頼性（一括削除 `DeleteObjects` / 履歴上限 50 / `recal
 5. **プロパティ見出し** — 冗長セクション名削減（コマ/回転/袋文字/吹き出し設定/テキスト設定など）  
 6. **UI アイコン** — セリフ `A`、下書き形状 ○□／A  
 
-### 10.6 Ver.4.1 で確定した仕様（継承）
+### 10.7 Ver.4.1 で確定した仕様（継承）
 
 1. **ページ追加モード** — `addEmptyPage({ mode: 'blank'|'backing'|'copy', fromIndex })`。サムネで選択、セッション保持  
 2. **backing** — オブジェクトなし。`backgroundColor` / `backingImage` / `trimMarks` のみ基準ページから  
@@ -745,7 +758,7 @@ Undo/Redo の信頼性（一括削除 `DeleteObjects` / 履歴上限 50 / `recal
 4. **Ctrl/Cmd+A** — カレントページ全選択（select モードへ）。**Ver.4.2 以降 memos は除外**  
 5. **クリップボード** — `sourcePageId` 記録。別ページ貼り付けは位置オフセット 0。同一ページは +20px。未同梱 panelId は別ページ時 null  
 
-### 10.7 Ver.4.0 で確定した仕様（継承）
+### 10.8 Ver.4.0 で確定した仕様（継承）
 
 1. **`pages[]` + `currentPageIndex`** — 単一 `page` キーは保存しない  
 2. **PageManager** — 追加/削除/並べ替え/MAX 64。最後の1枚は削除不可  
@@ -757,7 +770,7 @@ Undo/Redo の信頼性（一括削除 `DeleteObjects` / 履歴上限 50 / `recal
 8. **Command pageId** — push 時刻印。getObjectById は全ページ検索  
 9. **切替** — 選択クリア、ツール/ステップ維持、Undo スタック共有。キー `[` `]`  
 
-### 10.8 Ver.3.0 で確定した仕様（継承）
+### 10.9 Ver.3.0 で確定した仕様（継承）
 
 1. **下書き object type `draft`** — `page.drafts[]`  
 2. **kind**: `circle` | `rect` | `line` | `string`（UI「文字列」）  
@@ -766,7 +779,7 @@ Undo/Redo の信頼性（一括削除 `DeleteObjects` / 履歴上限 50 / `recal
 5. **融合 / コマクロップ既定 OFF / typeFilter draft**  
 6. **BatchEdit 部分スナップ / evaluateSelectMode setTimeout / IME ガード**  
 
-### 10.9 開発時の必読ピットフォール（短縮）
+### 10.10 開発時の必読ピットフォール（短縮）
 
 - overlay コールバックは disable で remove + setDirty  
 - draft kind は main 側で永続化  
@@ -778,4 +791,4 @@ Undo/Redo の信頼性（一括削除 `DeleteObjects` / 履歴上限 50 / `recal
 
 ---
 
-*本ドキュメントは実装（`js/`）を正とする。現行アプリ仕様は **Ver.4.4.1**。差異があればコードを優先し、本 README を更新すること。*
+*本ドキュメントは実装（`js/`）を正とする。現行アプリ仕様は **Ver.4.4.2**。差異があればコードを優先し、本 README を更新すること。*

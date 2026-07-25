@@ -1105,3 +1105,34 @@ body {
   margin: 0;
 }
 .effect-delete-btn { display: block; width: 100%; margin-top: 10px; padding: 7px; cursor: pointer; }
+
+/* --- DnD ガイド風船（紙未決定時のみ表示） --- */
+#dnd-guide-bubble {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #fff;
+  color: #333;
+  padding: 12px 18px;
+  border-radius: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 400px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  pointer-events: none;
+  z-index: 100;
+}
+
+#dnd-guide-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  box-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+}

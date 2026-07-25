@@ -46,6 +46,10 @@
   var isPanning = false;
   var panStartX = 0, panStartY = 0, panScrollLeft = 0, panScrollTop = 0;
 
+  // --- DnD ガイド風船 ---
+  var dndGuideBubbleEl = null;
+  var paperSizeSet = false; // ユーザーが紙サイズを明示的に選択したか
+
   var STEP_TOOL = {
     paper: 'select',
     panel: 'panel',
@@ -584,6 +588,7 @@
   }
 
   function onStepChange(stepId) {
+    hideDndGuideBubble();
     currentStep = stepId;
     // select-tool / draft-tool が下書きステップ時の選択制限に参照
     ME.currentStep = stepId;
@@ -617,6 +622,16 @@
   }
 
   function renderStepPanel() {
+    // キャンバス上 DnD ガイド風船: paperステップかつ未操作時のみ表示
+    if (currentStep === 'paper' && !paperSizeSet) {
+      showDndGuideBubble();
+    } else {
+      hideDndGuideBubble();
+    }
+    // 一度でも他のステップに遷移したら二度と出ない
+    if (currentStep !== 'paper') {
+      paperSizeSet = true;
+    }
     if (!ME.UI.StepPanel) return;
     ME.UI.StepPanel.render(currentStep, {
       page: project.page,
@@ -978,6 +993,8 @@
   }
 
   function applyPaperSize(size) {
+    hideDndGuideBubble();
+    paperSizeSet = true;
     var oldSize = JSON.parse(JSON.stringify(project.page.size));
     project.page.size.preset = size.preset;
     project.page.size.widthMm = size.widthMm;
@@ -1555,6 +1572,8 @@
   }
 
   function handleImageDrop(file, pt) {
+    hideDndGuideBubble();
+    paperSizeSet = true;
     loadImageFileToProject(file, function(assetId, nw, nh) {
       var panel = topmostPanelAt(pt.x, pt.y);
       if (panel) placeImageInPanel(panel, assetId, nw, nh);
@@ -1562,6 +1581,25 @@
       renderEngine.setDirty();
       updatePropertyPanel();
     });
+  }
+
+  // --- キャンバス上 DnD ガイド風船 ---
+  function showDndGuideBubble() {
+    if (dndGuideBubbleEl) return; // 既に表示中
+    var container = document.getElementById('canvas-container');
+    if (!container) return;
+    dndGuideBubbleEl = document.createElement('div');
+    dndGuideBubbleEl.id = 'dnd-guide-bubble';
+    dndGuideBubbleEl.textContent = '初期状態で画像をドラッグ・アンド・ドロップすると、その画像のサイズになります。';
+    container.appendChild(dndGuideBubbleEl);
+  }
+
+  function hideDndGuideBubble() {
+    if (!dndGuideBubbleEl) return;
+    if (dndGuideBubbleEl.parentNode) {
+      dndGuideBubbleEl.parentNode.removeChild(dndGuideBubbleEl);
+    }
+    dndGuideBubbleEl = null;
   }
 
   function setupDragAndDrop(container) {
