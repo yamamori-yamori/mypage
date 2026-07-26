@@ -1,7 +1,7 @@
-# マンガページエディタ 開発仕様書 Ver.4.4.2
+# マンガページエディタ 開発仕様書 Ver.4.4.1
 copyright 2026 やまもりやもり
 
-ローカルAI向け開発仕様書。現行実装（プロジェクトJSON `version: "1.3"` / アプリ仕様 Ver.4.4.2）を基準とする。
+ローカルAI向け開発仕様書。現行実装（プロジェクトJSON `version: "1.3"` / アプリ仕様 Ver.4.4.1）を基準とする。
 
 ### バージョン単一ソース（必読）
 
@@ -613,8 +613,8 @@ manga/
 ├ index.html                         DOM+script順（先頭で app-version.js）
 ├ icon.svg                           ファビコン（グレージ地＋吹き出し）
 ├ css/style.css
-├ README.md                          本仕様（Ver.4.4.2）
-├ MANUAL.html                        図解マニュアル（Ver.4.4.2）
+├ README.md                          本仕様（Ver.4.4.1）
+├ MANUAL.html                        図解マニュアル（Ver.4.4.1）
 ├ AGENTS.md                          Hermes 向け作業ルール
 ├ docs/
 │  ├ requirements-multi-page.md      複数ページ要件
@@ -704,7 +704,7 @@ manga/
 
 | 項目 | 値 |
 |---|---|
-| 仕様書（現行） | **Ver.4.4.2** |
+| 仕様書（現行） | **Ver.4.4.1** |
 | プロジェクト JSON | **1.3**（1.2 読込可） |
 | 正本 | ルート `VERSION`（`APP` / `JSON`）→ `scripts/sync-version.js` |
 | git tag | **`v{APP}`**（例: `v4.4.1`）。`sync-version.js --tag` |
@@ -791,4 +791,4 @@ Undo/Redo の信頼性（一括削除 `DeleteObjects` / 履歴上限 50 / `recal
 
 ---
 
-*本ドキュメントは実装（`js/`）を正とする。現行アプリ仕様は **Ver.4.4.2**。差異があればコードを優先し、本 README を更新すること。*
+*本ドキュメントは実装（`js/`）を正とする。現行アプリ仕様は **Ver.4.4.1**。差異があればコードを優先し、本 README を更新すること。*
