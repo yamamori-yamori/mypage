@@ -226,7 +226,11 @@
   }
   .pane-body::-webkit-scrollbar { width: 0; height: 0; }
   .pane-inner {
-    margin: 0 auto; padding: 16px 18px 60vh;
+    margin: 0 auto;
+    /* rev39: 左右同幅にして max-width + margin:auto の中心がズレないようにする
+       （rev37 の MM側6/反対12 は中身が右へ寄って見えた）
+       MM との隙間は両側 6px のまま狭く保つ */
+    padding: 16px 6px 60vh;
     white-space: pre-wrap; word-break: break-word;
     line-height: 1.9; font-size: 15px; color: #212121; font-family: inherit;
   }
@@ -252,9 +256,10 @@
      余白を .dl 自身の padding にしておけば、そこから普通に選択を始められる。 */
   /* 「変更」タブは行頭にマーカーの溝が必要だが、本文の折り返しは通常タブと
      完全に一致させたい。そこで .dl には padding を持たせず、
-     #ref-inner の左右パディングの【合計を 36px のまま】左へ寄せて溝を作る。
-     本文の幅（= 内容ボックスの幅）が通常タブと同じになるので折り返しが揃う。 */
-  #ref-inner.diff-view { padding-left: 30px; padding-right: 6px; }
+     #ref-inner の左右パディングの【合計を通常タブと同じ 12px】左へ寄せて溝を作る。
+     本文の幅（= 内容ボックスの幅）が通常タブと同じになるので折り返しが揃う。
+     通常: 左右 6+6=12 ／ 変更: 左10+右2=12 */
+  #ref-inner.diff-view { padding-left: 10px; padding-right: 2px; }
 
   .dl {
     display: block; position: relative; padding-left: 0;
@@ -270,9 +275,10 @@
   .dl.same.cur-line { background: #f1f8e9; color: #33691e; }
   .dl .mk {
     /* right:100% で本文の左端より外側へ出す。本文の幅を1pxも削らない。
-       置き場所は #ref-inner の左パディング（30px）の中 */
-    position: absolute; right: 100%; top: 0; margin-right: .25em;
-    font-size: .85em; white-space: nowrap;
+       置き場所は #ref-inner の左パディング（変更タブ 10px）の中
+       rev37–39: 溝が狭くなったので字号・余白を抑える */
+    position: absolute; right: 100%; top: 0; margin-right: 2px;
+    font-size: .75em; white-space: nowrap;
     user-select: none; pointer-events: none;     /* マーカー自身でクリックを受けない */
     color: #b0bec5; text-align: right; font-weight: 700;
   }
@@ -325,7 +331,9 @@
 
   #edit-area {
     position: relative; z-index: 1;
-    display: block; margin: 0 auto; padding: 16px 18px 60vh;
+    display: block; margin: 0 auto;
+    /* rev39: 左右とも 6px（rev37 の非対称は中央が右へ寄って見えた） */
+    padding: 16px 6px 60vh;
     width: 100%; border: none; resize: none; outline: none; background: transparent;
     font-family: inherit; font-size: 15px; line-height: 1.9; color: #212121;
     white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word; overflow: hidden;
@@ -440,7 +448,7 @@
   <span class="sep"></span>
 
   <div class="tb-group">
-    <label>文字<select id="opt-font"><option>13</option><option selected>15</option><option>17</option><option>19</option><option>22</option></select></label>
+    <label title="本文の文字サイズ（px・1px刻み）">文字<input type="number" id="opt-font" value="15" min="10" max="28" step="1"></label>
     <label title="本文1行の全角文字数。ペインに入る範囲までしか上げられません">幅<input type="number" id="opt-width" value="40" min="16" max="120" step="1"></label>
   </div>
 
@@ -483,7 +491,7 @@
     </div>
   </div>
 
-  <div id="splitter" title="ドラッグでペイン比率を変更"></div>
+  <div id="splitter" title="ドラッグでペイン比率を変更（ダブルクリックで 1:1）"></div>
 
   <!-- 右ペイン（執筆） -->
   <div class="pane" id="pane-edit">
@@ -885,9 +893,17 @@
   function loadSettings() {
     try {
       const s = JSON.parse(localStorage.getItem(LS_SETTINGS) || "{}");
-      if (s.fontSize) $("opt-font").value = s.fontSize;
+      if (s.fontSize) {
+        const fs = Math.round(+s.fontSize);
+        $("opt-font").value = Math.max(10, Math.min(28, fs || 15));
+      }
       if (s.widthChars) state.widthPref = Math.max(16, Math.min(120, +s.widthChars));
-      if (typeof s.ratio === "number") state.ratio = Math.min(.85, Math.max(.15, s.ratio));
+      if (typeof s.ratio === "number") {
+        let r = Math.min(.85, Math.max(.15, s.ratio));
+        // rev40 以前の半幅ズレや round 片寄りで 0.5 近傍に残った値は 1:1 に戻す
+        if (Math.abs(r - 0.5) < 0.012) r = 0.5;
+        state.ratio = r;
+      }
       if (typeof s.showHead === "boolean") { state.showHead = s.showHead; $("opt-head").checked = s.showHead; }
       if (s.headCfg && typeof s.headCfg === "object") {
         state.headCfg = {
@@ -912,7 +928,7 @@
   /* ---- 表示幅の上限（仕様 5.1B） ----
      本文の最大幅は fontSize × 文字数 + PAD。これが実際のペイン幅を超えると
      指定しただけ無駄になるので、狭いほうのペインに収まる文字数を上限にする。 */
-  const WIDTH_PAD = 36;          // .pane-inner / textarea の左右パディング合計
+  const WIDTH_PAD = 12;          // .pane-inner / textarea の左右パディング合計（rev39: 左右6+6）
   const WIDTH_MIN = 16, WIDTH_HARD_MAX = 120;
 
   function maxWidthChars() {
@@ -960,9 +976,22 @@
     applySettings();
   }
   function applyRatio() {
-    const avail = $("main").clientWidth - MM * 2 - SPL;
-    const l = Math.round(avail * state.ratio);
-    $("main").style.gridTemplateColumns = MM + "px " + l + "px " + SPL + "px " + (avail - l) + "px " + MM + "px";
+    const main = $("main");
+    const total = main.clientWidth;
+    if (total < 1) return;
+    const avail = total - MM * 2 - SPL;
+    if (avail < 1) return;
+    let l;
+    // 1:1 のときはスプリッタの中心＝#main の中心に合わせる。
+    // avail*0.5 を round すると奇数幅で 1px 片寄り、初期から「右に寄ってる」ように見える。
+    if (Math.abs(state.ratio - 0.5) < 1e-6) {
+      l = Math.floor((total - SPL) / 2) - MM;
+    } else {
+      l = Math.round(avail * state.ratio);
+    }
+    l = Math.max(0, Math.min(avail, l));
+    main.style.gridTemplateColumns =
+      MM + "px " + l + "px " + SPL + "px " + (avail - l) + "px " + MM + "px";
   }
 
   /* =======================================================
@@ -2132,8 +2161,10 @@
     // 左右も canvas 内余白。本文に接する側を厚くして、色棒・青枠・キャレットが
     // 隣ペインに張り付いて「はみ出してる」ように見えないようにする
     // （左MMの右端＝左ペイン本文、右MMの左端＝右ペイン本文）
+    // rev35: 左右 3px 枠＋全幅赤で本文側に 1px にじむ報告 → X_NEAR を 4 に、
+    // マーカーも本文側 inset を 2 にして端を避ける
     const MM_OUT_Y = 1;
-    const X_NEAR = 3;   // 本文に接する側（ここが薄いと溢れて見える）
+    const X_NEAR = 4;   // 本文に接する側（ここが薄いと溢れて見える）
     const X_FAR  = 2;   // ウィンドウ端側
     const padL = isL ? X_FAR : X_NEAR;
     const padR = isL ? X_NEAR : X_FAR;
@@ -2148,6 +2179,8 @@
     canvas.style.height = "";
     const ctx = canvas.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // 半ピクセルにじみを抑える（特に全幅の赤棒）
+    ctx.imageSmoothingEnabled = false;
     const t0 = activeTabObj();
     // 下地は wrap 全体（余白帯も同色で、にじみを隠す）
     ctx.fillStyle = isL ? (t0 && t0.kind === SYS.ORIGIN ? MM_BG_ORIGIN : MM_BG_L) : "#eceff1";
@@ -2179,8 +2212,14 @@
       return lo;
     };
 
+    // 描画矩形内の左右 inset。本文側を厚く（左MM→右、右MM→左）
+    const IN_FAR = 1;
+    const IN_BODY = 2;
+    const xMark0 = isL ? IN_FAR : IN_BODY;     // 棒の開始 x（窓端 or 本文側）
+    const markMaxW = Math.max(1, w - IN_FAR - IN_BODY);
+
     if (total > 0) {
-      const rowH = Math.max(.6, h / n), x0 = 3, maxW = w - 6;
+      const rowH = Math.max(.6, h / n), x0 = xMark0 + 2, maxW = Math.max(1, markMaxW - 4);
       // 本文density
       // 「変更」タブでは描かない。変更行だけを見せたい場所に灰色の縞を敷くと、
       // 行数が多いときに色が埋もれて見えなくなる。
@@ -2199,9 +2238,16 @@
         for (const hd of (isL ? tabHeads(t) : edHeads())) {
           if (hd.lv === 3) continue;
           const y = (hd.line / n) * h;
-          // 左右 1px 空けて clip 端・本文境界に色が乗らないようにする
-          if (hd.lv === 1) { ctx.fillStyle = "#b71c1c"; ctx.fillRect(1, y - 1.5, Math.max(1, w - 2), 3); }
-          else { ctx.fillStyle = "#2e7d32"; ctx.fillRect(1, y - 1, Math.max(8, (w - 2) * .55), 2); }
+          // 整数座標で塗り、本文側に 2px・窓端に 1px 空けて隣ペインへにじませない
+          const yy = Math.round(y);
+          if (hd.lv === 1) {
+            ctx.fillStyle = "#b71c1c";
+            ctx.fillRect(xMark0, yy - 1, markMaxW, 3);
+          } else {
+            ctx.fillStyle = "#2e7d32";
+            const gw = Math.max(8, Math.round(markMaxW * .55));
+            ctx.fillRect(xMark0, yy - 1, Math.min(gw, markMaxW), 2);
+          }
         }
       }
 
@@ -2238,13 +2284,11 @@
       }
 
       if (isDiffTab) {
-        // 「変更」タブ：左右とも 1px 空けて描く（枠・窓端・本文境界のどれにも張り付かない）
+        // 「変更」タブ：本文側 2px・窓端 1px（枠・窓端・本文境界のどれにも張り付かない）
         if (state.diffStale || !t.marks) computeDiff();
-        const inset = 1;
-        const markW = Math.max(1, w - inset * 2);
         for (const b of packMarks(t.marks || [], n)) {
           ctx.fillStyle = DC[b.k];
-          ctx.fillRect(inset, b.y, markW, b.h);
+          ctx.fillRect(xMark0, b.y, markMaxW, b.h);
         }
       }
       // 右ミニマップには変更マーカーを描かない（rev30）。変更の分布は左「変更」タブのみ。
@@ -2254,20 +2298,22 @@
       hits.forEach((hit, i) => {
         const y = (lineOf(hit.start) / n) * h;
         ctx.fillStyle = i === cur ? "#f57c00" : "#ffb300";
-        // 左右 1px 空けて端のにじみを防ぐ（右はキャレット帯を少し避ける）
-        const hx = isL ? 1 : 7;
-        const hw = Math.max(1, w - hx - 1);
-        ctx.fillRect(hx, y - 1, hw, i === cur ? 3 : 2);
+        // 右はキャレット帯を少し避ける（本文側＝左から）
+        const hx = isL ? xMark0 : Math.max(xMark0, 7);
+        const hw = Math.max(1, (xMark0 + markMaxW) - hx);
+        ctx.fillRect(hx, Math.round(y) - 1, hw, i === cur ? 3 : 2);
       });
       // キャレット（常時表示・rev31）— 白縁の黒三角（本文側）。全幅線なし
       // 行数が増えてもサイズは固定。density・見出しに埋もれないよう縁取り必須
       if (!isL) {
         const y = (lineOf(state.caret) / n) * h;
+        // 本文側 inset 内に収める（ox=-1 の白縁が clip 外へ出ないよう基点を +1）
+        const bx = IN_BODY + 1;
         const tri = (ox, oy) => {
           ctx.beginPath();
-          ctx.moveTo(1 + ox, y - 6 + oy);
-          ctx.lineTo(9 + ox, y + oy);
-          ctx.lineTo(1 + ox, y + 6 + oy);
+          ctx.moveTo(bx + ox, y - 6 + oy);
+          ctx.lineTo(bx + 8 + ox, y + oy);
+          ctx.lineTo(bx + ox, y + 6 + oy);
           ctx.closePath();
         };
         // 白縁：周囲にオフセット塗りで疑似 stroke（lineJoin より輪郭が安定）
@@ -2282,7 +2328,7 @@
 
     ctx.restore(); // clip 解除
 
-    // ビューポート枠（rev31/32）：塗りなし。最小高さ 12px。左右 2px・上下 1px
+    // ビューポート枠（rev31–35）：塗りなし。最小高さ 8px。左右 3px・上下 1px
     // 下限で伸ばすときは「真の表示範囲の中心」に枠の中心を合わせる（上端固定だとズレて見える）
     if (!refEmpty && total > 0 && pane.scrollHeight - pane.clientHeight > 0) {
       const vr = visibleLineRange(isL, lineOf, n);
@@ -2291,8 +2337,8 @@
       const y1 = MM_OUT_Y + (a / n) * h;
       const y2 = MM_OUT_Y + ((b + 1) / n) * h;
       const lwTB = 1;   // 上下
-      const lwLR = 2;   // 左右を太く（狭い MM でも位置が掴める）
-      const MIN_VP = 12;
+      const lwLR = 3;   // 左右を太く（狭い MM でも位置が掴める）
+      const MIN_VP = 8;
       const fx = padL + lwLR / 2;
       const fw = Math.max(1, w0 - padL - padR - lwLR);
       const trueH = Math.max(1, y2 - y1);
@@ -2389,7 +2435,19 @@
       }
       const x = r.left + Math.min(30, Math.max(4, r.width / 2));
       const o1 = refOffsetAt(x, r.top + 2), o2 = refOffsetAt(x, r.bottom - 2);
-      return { top: o1 == null ? 0 : lineOf(o1), bot: o2 == null ? n - 1 : lineOf(o2) };
+      // 両方取れたときだけヒットテストを採用。
+      // 片方でも null のとき 0 / n-1 にすると、起動直後や #overlay 表示中に
+      // 青枠がミニマップ全高になる（ドラッグで scroll が変わると直って見える）。
+      if (o1 != null && o2 != null) {
+        const top = lineOf(o1), bot = lineOf(o2);
+        return { top: top, bot: Math.max(top, bot) };
+      }
+      // lineDocY はヒットテスト不要（Range のレイアウト座標）。復元ダイアログ中でも可
+      const byY = visibleLinesByLineDocY(true, n);
+      if (byY) return byY;
+      // 最終手段：まだレイアウトが無いときだけ先頭付近の仮枠（全高にはしない）
+      const viewLines = Math.max(1, Math.min(n, Math.round(n * rb.clientHeight / Math.max(1, rb.scrollHeight))));
+      return { top: 0, bot: Math.max(0, viewLines - 1) };
     }
     // 右ペインは textarea なのでミラー（5.6B）経由で求める。
     // style の同期は refreshOverlay 側で済んでいるので、ここでは本文だけ合わせる
@@ -2398,6 +2456,34 @@
     syncMirrorText();
     const x = r.left + Math.min(30, Math.max(4, r.width / 2));
     return { top: lineOf(offsetFromPoint(x, r.top + 2)), bot: lineOf(offsetFromPoint(x, r.bottom - 2)) };
+  }
+
+  /**
+   * 行のドキュメント Y（lineDocY）から、いまのスクロールで見えている行範囲を二分探索。
+   * caretRangeFromPoint が使えないときの左ペイン用。失敗時は null。
+   */
+  function visibleLinesByLineDocY(isL, n) {
+    if (n < 1) return { top: 0, bot: 0 };
+    const y0 = lineDocY(isL, 0);
+    if (y0 == null) return null;
+    const pane = isL ? $("ref-body") : body();
+    const yTop = pane.scrollTop;
+    const yBot = pane.scrollTop + Math.max(0, pane.clientHeight - 1);
+    // targetY 以下の最大行
+    const find = targetY => {
+      let lo = 0, hi = n - 1, ans = 0;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const y = lineDocY(isL, mid);
+        if (y == null) { hi = mid - 1; continue; }
+        if (y <= targetY) { ans = mid; lo = mid + 1; }
+        else hi = mid - 1;
+      }
+      return ans;
+    };
+    const top = find(yTop);
+    const bot = find(yBot);
+    return { top: top, bot: Math.max(top, bot) };
   }
 
   /** 指定した論理行の、スクロールコンテンツ内でのY座標（px）。取れなければ null */
@@ -2476,11 +2562,19 @@
       try { sp.setPointerCapture(e.pointerId); } catch (_) {}
       e.preventDefault();
     });
+    // ダブルクリックで 1:1 に戻す（誤って右寄りに保存された ratio の救済）
+    sp.addEventListener("dblclick", () => {
+      state.ratio = 0.5;
+      applyRatio(); reflowWidth(); refreshOverlay(); drawMinimap("left"); updateTabNav();
+      saveSettings();
+      toast("ペイン比率を 1:1 に戻しました");
+    });
     sp.addEventListener("pointermove", e => {
       if (!dragging) return;
       const r = $("main").getBoundingClientRect();
       const avail = r.width - MM * 2 - SPL;
-      state.ratio = Math.min(.85, Math.max(.15, (e.clientX - r.left - MM) / avail));
+      // マウス位置＝スプリッタの【中心】とみなす（半幅を引かないと中央で離しても右へ寄る）
+      state.ratio = Math.min(.85, Math.max(.15, (e.clientX - r.left - MM - SPL / 2) / avail));
       applyRatio(); reflowWidth(); refreshOverlay(); drawMinimap("left"); updateTabNav();
     });
     const end = () => { if (dragging) { dragging = false; sp.classList.remove("dragging"); saveSettings(); refreshOverlay(); } };
@@ -2619,7 +2713,17 @@
   // 右ペインのスクロールでは追従しない（カーソルが動いたときだけ）
   body().addEventListener("scroll", () => drawMinimap("right"));
 
-  $("opt-font").addEventListener("change", () => { applySettings(); saveSettings(); });   // 文字を大きくすると上限が下がる
+  $("opt-font").addEventListener("input", () => {
+    const v = +$("opt-font").value;
+    if (!v) return;                                   // 入力途中の空欄は無視
+    $("opt-font").value = Math.max(10, Math.min(28, Math.round(v)));
+    applySettings(); saveSettings();                  // 文字を大きくすると上限が下がる
+  });
+  $("opt-font").addEventListener("change", () => {
+    const v = +$("opt-font").value || 15;
+    $("opt-font").value = Math.max(10, Math.min(28, Math.round(v)));
+    applySettings(); saveSettings();
+  });
   $("opt-width").addEventListener("input", () => {
     const v = +$("opt-width").value;
     if (!v) return;                                   // 入力途中の空欄は無視
@@ -2762,6 +2866,10 @@
   runEdSearch();
   refreshOverlay();
   drawAll();
+  // レイアウト確定後にもう一度（起動直後の clientWidth が不安定な環境向け）
+  requestAnimationFrame(() => {
+    applyRatio(); reflowWidth(); refreshOverlay(); drawAll();
+  });
   setTimeout(() => { reflowWidth(); refreshOverlay(); }, 60);   // フォント確定後に幅の上限を測り直す
 
   try {
