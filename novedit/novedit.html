@@ -1,0 +1,2713 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>novedit — 資料を読みながら書くエディタ</title>
+<style>
+  :root {
+    --toolbar-h: 48px;
+    --tabbar-h: 30px;
+    --header-h: 28px;
+    --searchbar-h: 32px;
+    --minimap-w: 28px;
+    --splitter-w: 6px;
+    --ink: #263238;
+    --ink2: #37474f;
+    --ink3: #455a64;
+    --line: #cfd8dc;
+    --panel-bg: #eceff1;
+    /* 左ペイン＝参照専用であることを色で示す（仕様 5.2C） */
+    --ref-bg: #FAF4E4;      /* 左ペイン本文：クリーム（編集不可の合図） */
+    --ref-line: #c9c0a4;    /* クリーム背景の上で使う罫線・破線 */
+    --ref-mut: #857e6a;     /* クリーム背景の上で使う文字色（暖色系グレー） */
+    --mm-bg-left: #EFE7D2;  /* 左ミニマップの下地（本文より一段濃い） */
+    --origin-bg: #E9ECEE;   /* 「初期」タブの本文：グレー（凍結された内容） */
+    --hit: #ffe082;
+    --hit-cur: #ffab40;
+    --caret: #2e7d32;
+    --hd1: #5c6bc0;
+    --hd1-bg: #e8eaf6;
+    --hd1-fg: #283593;
+    --hd2: #26a69a;
+    --hd2-bg: #e0f2f1;
+    --hd2-fg: #00695c;
+    /* Lv3＝本文中の ** / *** 強調（行頭見出しではない） */
+    --hd3r: #c62828;
+    --hd3r-bg: rgba(198, 40, 40, .10);
+    --hd3b: #1565c0;
+    --hd3b-bg: rgba(21, 101, 192, .10);
+    /* 差分表示（novdiff 準拠） */
+    --deleted-bg: #ffebee;
+    --deleted-text: #c62828;
+    --added-bg: #c8e6c9;
+    --added-text: #1b5e20;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", Meiryo, sans-serif;
+    background: #f5f5f5;
+    overflow: hidden;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* ---------- toolbar ---------- */
+  #toolbar {
+    height: var(--toolbar-h);
+    background: var(--ink); color: #fff;
+    display: flex; align-items: center; gap: 14px; padding: 0 14px; flex-shrink: 0;
+  }
+  #toolbar .app-title { font-size: 12px; color: #cfd8dc; white-space: nowrap; }
+  #toolbar .app-title .app-name { color: #eceff1; font-weight: 700; font-size: 14px; }
+  #toolbar .tb-group { display: flex; align-items: center; gap: 6px; }
+  #toolbar .sep { width: 1px; height: 22px; background: #455a64; }
+  #toolbar button { background: var(--ink3); color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  #toolbar button:hover { background: #546e7a; }
+  #toolbar button.primary { background: var(--caret); }
+  #toolbar button.primary:hover { background: #388e3c; }
+  #toolbar label { font-size: 12px; display: flex; align-items: center; gap: 5px; color: #cfd8dc; cursor: pointer; }
+  #toolbar select, #toolbar input[type="number"] { padding: 4px 6px; border-radius: 3px; border: 1px solid #546e7a; background: var(--ink2); color: #fff; font-size: 13px; }
+  #toolbar input.capped { border-color: #ef6c00; background: #4e342e; }
+  #toolbar input[type="number"] { width: 58px; }
+  #toolbar .app-meta { font-size: 11px; color: #90a4ae; white-space: nowrap; }
+  #toolbar .tb-group.push { margin-left: auto; }   /* ここから右がメニュー */
+  /* 自動保存の状態表示（5.8）。一瞬ではなく【出したままにする】。
+     「いつ保存されたか」が常に見えていれば、閉じるときに不安にならない。 */
+  #autosave-note {
+    font-size: 11px; color: #9fc9a2; white-space: nowrap;
+    border: 1px solid #3f5540; border-radius: 3px; padding: 2px 8px;
+    pointer-events: none; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* 一度も保存していないうちは枠も出さない */
+  #autosave-note:empty { border: 0; padding: 0; }
+  /* 保存できていないときは目立たせる。ここが唯一の合図になるので弱くしない */
+  #autosave-note.failed { color: #ffcc80; border-color: #8a5a20; background: #4e342e; }
+  #toolbar .app-meta a { color: #90a4ae; text-decoration: none; }
+  #toolbar .app-meta a:hover { color: #cfd8dc; text-decoration: underline; }
+
+  /* ---------- layout ---------- */
+  #main {
+    display: grid;
+    grid-template-columns: var(--minimap-w) 1fr var(--splitter-w) 1fr var(--minimap-w);
+    height: calc(100% - var(--toolbar-h));
+    position: relative;
+  }
+  .minimap-wrap { background: var(--panel-bg); position: relative; overflow: hidden; }
+  #mm-left-wrap  { border-right: 1px solid #b0bec5; }
+  #mm-right-wrap { border-left: 1px solid #b0bec5; }
+  .minimap-wrap canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+
+  #splitter { background: var(--line); cursor: col-resize; position: relative; }
+  #splitter:hover, #splitter.dragging { background: #90a4ae; }
+  #splitter::after { content: ""; position: absolute; top: 50%; left: 50%; width: 2px; height: 28px; margin: -14px 0 0 -1px; background: #78909c; border-radius: 1px; }
+
+  .pane { display: flex; flex-direction: column; overflow: hidden; background: #fff; min-width: 0; position: relative; }
+
+  /* ---------- left tabs ---------- */
+  #tabbar-wrap {
+    height: var(--tabbar-h); background: var(--panel-bg);
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: stretch; flex-shrink: 0; overflow: hidden;
+  }
+  #tabbar {
+    display: flex; align-items: stretch;
+    flex: 1; min-width: 0;
+    overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  #tabbar::-webkit-scrollbar { height: 0; }
+  .tab-nav {
+    display: none; flex-shrink: 0; width: 20px; padding: 0;
+    align-items: center; justify-content: center;
+    background: #dde5e8; border: none; border-right: 1px solid var(--line);
+    color: #546e7a; font-size: 14px; line-height: 1; cursor: pointer;
+  }
+  #tab-right { border-right: none; border-left: 1px solid var(--line); }
+  .tab-nav.show { display: flex; }
+  .tab-nav:hover:not(:disabled) { background: #c9d4d9; }
+  .tab-nav:disabled { color: #b0bec5; cursor: default; }
+  .tab {
+    display: flex; align-items: center; gap: 5px;
+    padding: 0 7px 0 12px; font-size: 12px; color: #546e7a;
+    border-right: 1px solid var(--line); background: #e0e4e6;
+    cursor: pointer; white-space: nowrap; flex-shrink: 0; max-width: 190px;
+  }
+  .tab:hover { background: #dfe6e9; }
+  .tab.active { background: #fff; color: var(--ink); font-weight: 600; box-shadow: inset 0 -2px 0 var(--caret); }
+  .tab .name { overflow: hidden; text-overflow: ellipsis; }
+  /* 誤操作防止: × は hover / active のときだけ出す */
+  .tab .x {
+    visibility: hidden; color: #90a4ae; font-size: 12px; line-height: 1;
+    padding: 2px 4px; border-radius: 3px; flex-shrink: 0;
+  }
+  .tab:hover .x, .tab.active .x { visibility: visible; }
+  .tab .x:hover { background: #b0bec5; color: #fff; }
+  /* 常設タブは役割ごとに色を分ける。「初期」＝動かない基準（グレー）／
+     「変更」＝いま何が変わっているか（橙）。資料タブとも見分けられるようにする。 */
+  .tab.sys { padding-right: 12px; }
+  .tab.sys .pin { font-size: 9px; flex-shrink: 0; }
+
+  .tab.sys-origin { background: #d5dbde; color: #55606a; }
+  .tab.sys-origin:hover { background: #cbd2d5; }
+  .tab.sys-origin .pin { color: #90a4ae; }
+  .tab.sys-origin.active { background: #fff; color: #37474f; box-shadow: inset 0 -2px 0 #78909c; }
+  .tab.sys-origin.active .pin { color: #78909c; }
+
+  .tab.sys-diff { background: #f6e2cf; color: #8a5320; }
+  .tab.sys-diff:hover { background: #f0d6bc; }
+  .tab.sys-diff .pin { color: #d7a06a; }
+  .tab.sys-diff.active { background: #fff; color: #a1521a; box-shadow: inset 0 -2px 0 #ef6c00; }
+  .tab.sys-diff.active .pin { color: #ef6c00; }
+  .tab .x.armed { visibility: visible; background: #e53935; color: #fff; font-weight: 700; animation: pulse .7s ease-in-out infinite alternate; }
+  @keyframes pulse { from { opacity: .6 } to { opacity: 1 } }
+  #tab-add { flex-shrink: 0; padding: 0 12px; font-size: 15px; color: #607d8b; background: transparent; border: none; cursor: pointer; }
+  #tab-add:hover { background: #dfe6e9; }
+  #tab-undo {
+    flex-shrink: 0; display: none; align-items: center; gap: 4px;
+    padding: 0 10px; font-size: 11px; color: #00695c; background: #d7f0ec;
+    border: none; border-left: 1px solid var(--line); cursor: pointer;
+  }
+  #tab-undo.show { display: flex; }
+  #tab-undo:hover { background: #b2dfdb; }
+
+  /* ---------- pane header ---------- */
+  .pane-header {
+    height: var(--header-h); background: var(--panel-bg);
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 10px; font-size: 12px; color: #546e7a; flex-shrink: 0; gap: 8px; white-space: nowrap;
+  }
+  .pane-header .fname { color: var(--ink); font-weight: 600; }
+  .pane-header .dirty { color: #ef6c00; font-weight: 700; }
+  .pane-header .stat { color: #78909c; font-size: 11px; }
+  .pane-header .caretpos { color: var(--caret); font-size: 11px; font-weight: 600; }
+
+  /* ---------- search / replace ---------- */
+  .searchbar {
+    height: var(--searchbar-h); flex-shrink: 0;
+    display: flex; align-items: center; gap: 5px;
+    padding: 0 8px; background: #f7f9fa; border-bottom: 1px solid var(--line);
+  }
+  .searchbar.replacebar { background: #f1f8e9; }
+  .searchbar.replacebar[hidden] { display: none; }
+  .searchbar input[type="text"] { flex: 1; min-width: 0; font-size: 12px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 3px; background: #fff; }
+  .searchbar input:focus { outline: none; border-color: #4db6ac; }
+  .searchbar input:disabled { background: #eceff1; color: #b0bec5; }
+  .searchbar button { border: 1px solid var(--line); background: #fff; color: #546e7a; border-radius: 3px; padding: 3px 8px; font-size: 12px; cursor: pointer; line-height: 1.4; white-space: nowrap; flex-shrink: 0; }
+  .searchbar button:hover { background: var(--panel-bg); }
+  .searchbar button.on { background: #dcedc8; border-color: #aed581; color: #33691e; }
+  .searchbar .count { font-size: 11px; color: #78909c; min-width: 52px; text-align: right; flex-shrink: 0; }
+  .searchbar .count .p { color: var(--added-text); font-weight: 700; }
+  .searchbar .count .m { color: var(--deleted-text); font-weight: 700; }
+  /* 左検索窓は半分まで。残りをコンテキストボタンに使う */
+  #ref-q { flex: 1 1 40%; max-width: 50%; }
+  #ref-act {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    background: #e8f0e9; border-color: #a5c9a8; color: #2e5c33; font-weight: 600;
+  }
+  #ref-act:hover { background: #d7e8d9; }
+  #ref-act[hidden] { display: none; }
+  .searchbar .lbl { font-size: 11px; color: #7cb342; flex-shrink: 0; }
+
+  /* ---------- bodies ---------- */
+  .pane-body {
+    flex: 1; overflow-y: auto; overflow-x: hidden; position: relative;
+    /* ミニマップが位置と全体量を示すのでスクロールバーは出さない。
+       本文の幅をその分だけ広く使える（ホイール・ドラッグ操作は従来どおり） */
+    scrollbar-width: none;
+  }
+  .pane-body::-webkit-scrollbar { width: 0; height: 0; }
+  .pane-inner {
+    margin: 0 auto; padding: 16px 18px 60vh;
+    white-space: pre-wrap; word-break: break-word;
+    line-height: 1.9; font-size: 15px; color: #212121; font-family: inherit;
+  }
+  /* 左ペイン本文＝クリーム（編集できないことを色で示す／仕様 5.2C） */
+  #ref-body { background: var(--ref-bg); transition: background .12s; }
+  /* 「初期」タブ＝開いた時点で凍結された内容。グレーにして「もう動かないもの」に見せる */
+  #ref-body.origin-view { background: var(--origin-bg); }
+  #ref-inner { cursor: text; user-select: text; }
+  #ref-inner mark { background: var(--hit); color: inherit; border-radius: 2px; }
+  #ref-inner mark.cur { background: var(--hit-cur); box-shadow: 0 0 0 1px #f57c00; }
+  /* 見出し行 */
+  #ref-inner .hd { border-radius: 2px; padding: 1px 3px; }
+  #ref-inner .hd1 { background: var(--hd1-bg); color: var(--hd1-fg); font-weight: 700; box-shadow: -3px 0 0 var(--hd1); }
+  #ref-inner .hd2 { background: var(--hd2-bg); color: var(--hd2-fg); font-weight: 600; box-shadow: -3px 0 0 var(--hd2); }
+  /* Lv3：背景帯ではなく文字色＋太字（本文中の短い強調向け） */
+  #ref-inner .hd3r { color: var(--hd3r); font-weight: 700; background: transparent; box-shadow: none; }
+  #ref-inner .hd3b { color: var(--hd3b); font-weight: 700; background: transparent; box-shadow: none; }
+
+  /* ---------- 差分ビュー（左ペインのシステムタブ） ---------- */
+  /* 行マーカー（− ＋）は行の中に置かず、絶対配置で外に出す。
+     インラインの箱として行頭に置くと、その 1.5em が user-select:none の領域になり、
+     「本文の左の余白からドラッグしても選択が始まらない」という状態になる。
+     余白を .dl 自身の padding にしておけば、そこから普通に選択を始められる。 */
+  /* 「変更」タブは行頭にマーカーの溝が必要だが、本文の折り返しは通常タブと
+     完全に一致させたい。そこで .dl には padding を持たせず、
+     #ref-inner の左右パディングの【合計を 36px のまま】左へ寄せて溝を作る。
+     本文の幅（= 内容ボックスの幅）が通常タブと同じになるので折り返しが揃う。 */
+  #ref-inner.diff-view { padding-left: 30px; padding-right: 6px; }
+
+  .dl {
+    display: block; position: relative; padding-left: 0;
+    white-space: pre-wrap; word-break: break-word; border-radius: 2px;
+    /* 空行の高さを確保する。マーカーを絶対配置にしたので、
+       空行には in-flow の中身が1つも無く、放っておくと高さ0に潰れる。
+       line-height は 1.9（単位なし）なので 1.9em が1行ぶんと一致する。 */
+    min-height: 1.9em;
+    min-height: 1lh;        /* 対応環境では line-height をそのまま使う */
+  }
+  /* 右ペインのカーソル行に対応する行 */
+  .dl.cur-line { box-shadow: inset 3px 0 0 var(--caret); }
+  .dl.same.cur-line { background: #f1f8e9; color: #33691e; }
+  .dl .mk {
+    /* right:100% で本文の左端より外側へ出す。本文の幅を1pxも削らない。
+       置き場所は #ref-inner の左パディング（30px）の中 */
+    position: absolute; right: 100%; top: 0; margin-right: .25em;
+    font-size: .85em; white-space: nowrap;
+    user-select: none; pointer-events: none;     /* マーカー自身でクリックを受けない */
+    color: #b0bec5; text-align: right; font-weight: 700;
+  }
+  /* 検索ヒットの行（5.13.6B）。文字単位ではなく行を示す */
+  .dl.hit-line { box-shadow: inset 0 0 0 1px #ffb300; background-image: linear-gradient(rgba(255,179,0,.20), rgba(255,179,0,.20)); }
+  .dl.hit-cur  { box-shadow: inset 0 0 0 2px #f57c00; background-image: linear-gradient(rgba(255,152,0,.34), rgba(255,152,0,.34)); }
+  .dl.hit-cur.cur-line { box-shadow: inset 0 0 0 2px #f57c00, inset 3px 0 0 var(--caret); }
+  .dl.same { color: #78909c; }
+  .dl.del { background: var(--deleted-bg); color: var(--deleted-text); }
+  .dl.del .mk { color: #ef9a9a; }
+  .dl.add { background: var(--added-bg); color: var(--added-text); }
+  .dl.add .mk { color: #66bb6a; }
+  .dl.del .ci { background: #ef9a9a; border-radius: 2px; }
+  .dl.add .ci { background: #81c784; border-radius: 2px; }
+  .dsame-all {
+    user-select: none; color: #00695c; background: #e0f2f1; border-radius: 3px;
+    font-size: 12px; padding: 8px 10px; margin-bottom: 12px; text-align: center;
+  }
+
+  /* ---------- right pane layers ---------- */
+  #edit-body { overflow-y: auto; }
+  #mirror {
+    position: absolute; z-index: 0; visibility: hidden; pointer-events: none;
+    white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word; border: 0; margin: 0;
+  }
+  #hd-layer, #hit-layer { position: absolute; inset: 0; pointer-events: none; }
+  #hd-layer { z-index: 0; }
+  #hit-layer { z-index: 0; }
+  #hd-layer .hdr { position: absolute; border-radius: 2px; }
+  #hd-layer .hdr.l1 { background: var(--hd1-bg); box-shadow: -3px 0 0 var(--hd1); }
+  #hd-layer .hdr.l2 { background: var(--hd2-bg); box-shadow: -3px 0 0 var(--hd2); }
+  /* 右ペインは textarea のため文字色を変えられない。薄い帯だけで位置を示す */
+  #hd-layer .hdr.l3r { background: var(--hd3r-bg); box-shadow: none; }
+  #hd-layer .hdr.l3b { background: var(--hd3b-bg); box-shadow: none; }
+  #hit-layer .hit { position: absolute; background: var(--hit); border-radius: 2px; }
+  #hit-layer .hit.cur { background: var(--hit-cur); box-shadow: 0 0 0 1px #f57c00; }
+
+  .caret-mark { position: absolute; z-index: 3; pointer-events: none; width: 2px; }
+  #ghost-caret { background: var(--caret); opacity: .45; display: none; }
+  #ghost-caret::before { content: ""; position: absolute; left: -3px; top: -5px; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid var(--caret); }
+  #ghost-caret.show { display: block; }
+  #drop-caret { background: var(--caret); display: none; animation: blink .8s steps(1) infinite; }
+  #drop-caret::before { content: ""; position: absolute; left: -4px; top: -6px; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid var(--caret); }
+  #drop-caret::after { content: "ここに挿入"; position: absolute; left: 6px; top: -4px; background: var(--caret); color: #fff; font-size: 10px; padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
+  #drop-caret.linewise::after { content: "行として挿入"; background: #1565c0; }
+  #drop-caret.linewise { background: #1565c0; }
+  #drop-caret.linewise::before { border-top-color: #1565c0; }
+  #drop-caret.show { display: block; }
+  @keyframes blink { 0%,50%{opacity:1} 51%,100%{opacity:.25} }
+
+  #edit-area {
+    position: relative; z-index: 1;
+    display: block; margin: 0 auto; padding: 16px 18px 60vh;
+    width: 100%; border: none; resize: none; outline: none; background: transparent;
+    font-family: inherit; font-size: 15px; line-height: 1.9; color: #212121;
+    white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word; overflow: hidden;
+  }
+  #edit-body.drop-active { background: #f9fbf7; }
+  #pane-edit.drop-active { box-shadow: inset 0 0 0 2px #66bb6a; }
+
+  /* ---------- 空状態ヒント（仕様 5.2B / 5.6C） ---------- */
+  .empty-hint {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; text-align: center; line-height: 1.8; padding: 24px;
+  }
+  .empty-hint .hint-box {
+    max-width: 24em; padding: 24px 32px; border-radius: 6px;
+    border: 1px dashed var(--line); font-size: 13px; color: #90a4ae;
+    transition: border-color .15s, background .15s, color .15s;
+  }
+  .empty-hint .hint-note { font-size: 11px; color: #b0bec5; }
+  .empty-hint .hint-sub  { font-size: 11px; color: #b0bec5; }
+
+  /* 左：全面クリック可（編集不可なので誤爆しない） */
+  #ref-empty { cursor: pointer; }
+  #ref-empty .hint-box { border-color: var(--ref-line); color: var(--ref-mut); }
+  #ref-empty .hint-note { color: #b3ac97; }
+  #ref-empty:hover .hint-box { border-color: #b8ae90; background: rgba(255,255,255,.55); }
+
+  /* 右：オーバーレイは透過、破線枠の中だけクリック可（枠外は textarea に素通し） */
+  #edit-empty { pointer-events: none; }
+  #edit-empty .hint-box { pointer-events: auto; cursor: pointer; }
+  #edit-empty .hint-box:hover { border-color: #90a4ae; background: #fafcfd; }
+  #edit-empty.dim  { opacity: .35; transition: opacity .15s; }
+  #edit-empty.hide { display: none; }
+
+  /* ドラッグ中は枠を緑の実線に */
+  .pane.drop-active .empty-hint .hint-box,
+  #pane-ref.drop-active .empty-hint .hint-box { border: 2px solid #66bb6a; background: #f3f8f1; color: #2e5c33; }
+  #pane-ref.drop-active #ref-body { background: #f7f8f2; }
+
+  /* ---------- dialog / toast ---------- */
+  #overlay, #overlay-head, #overlay-open { position: fixed; inset: 0; background: rgba(38,50,56,.55); display: none; align-items: center; justify-content: center; z-index: 50; }
+  #overlay.show, #overlay-head.show, #overlay-open.show { display: flex; }
+  .dialog p.sub { font-size: 11.5px; color: #78909c; background: #f5f7f8; border-radius: 4px; padding: 8px 10px; }
+  .dialog button.danger { background: #c62828; border-color: #c62828; color: #fff; }
+  .dialog button.danger:hover { background: #ad1f1f; }
+  /* 上書きになるドロップは緑ではなく橙で予告する */
+  #pane-edit.drop-overwrite { box-shadow: inset 0 0 0 2px #ef6c00; }
+  #edit-body.drop-overwrite { background: #fff8f2; }
+  .dialog { background: #fff; border-radius: 6px; padding: 22px 24px; width: 380px; box-shadow: 0 8px 32px rgba(0,0,0,.3); }
+  .dialog.wide { width: 520px; max-height: 88vh; overflow-y: auto; }
+  .dialog h2 { font-size: 15px; color: var(--ink); margin-bottom: 10px; }
+  .dialog h3 { font-size: 12px; color: var(--ink2); margin: 16px 0 6px; padding-bottom: 3px; border-bottom: 1px solid var(--line); }
+  .dialog p { font-size: 12px; color: #607d8b; line-height: 1.8; margin-bottom: 16px; }
+  .dialog .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 18px; }
+  .dialog button { padding: 7px 16px; border-radius: 4px; border: 1px solid var(--line); background: #fff; color: #546e7a; font-size: 13px; cursor: pointer; }
+  .dialog button.primary { background: var(--caret); border-color: var(--caret); color: #fff; }
+  /* 復元は「失うものが無い側」なので、大きくして迷わせない（5.8）。
+     破棄は通常サイズのまま置き、大きさの差そのものを合図にする。 */
+  #btn-restore {
+    font-size: 20px; padding: 14px 34px; font-weight: 700;
+    border-radius: 6px; line-height: 1.2;
+  }
+  .dialog .ck { display: flex; align-items: flex-start; gap: 7px; font-size: 12px; color: #455a64; margin: 5px 0; line-height: 1.6; cursor: pointer; }
+  .dialog .ck input { margin-top: 3px; flex-shrink: 0; }
+  .dialog .ck .ex { color: #90a4ae; font-size: 11px; }
+  .dialog .fld { margin: 8px 0 4px; }
+  .dialog .fld > span { display: inline-block; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .dialog .fld .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .dialog textarea {
+    width: 100%; min-height: 46px; font-size: 14px; line-height: 1.7;
+    padding: 6px 8px; border: 1px solid var(--line); border-radius: 3px; resize: vertical;
+    font-family: inherit;
+  }
+  .dialog textarea:focus { outline: none; border-color: #4db6ac; }
+  .dialog .hint { font-size: 11px; color: #90a4ae; margin: 3px 0 0; }
+  #cfg-preview { font-size: 11.5px; color: #00695c; background: #e0f2f1; border-radius: 3px; padding: 7px 10px; margin: 14px 0 0; line-height: 1.7; }
+
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: rgba(38,50,56,.92); color: #fff; font-size: 12px; padding: 8px 16px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
+  #toast.show { opacity: 1; }
+
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <span class="app-title"><span class="app-name">novedit</span></span>
+  <span class="app-meta">ver.1.0 / <a href="#" onclick="return false;">by やまもりやもり</a></span>
+
+  <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
+  <span id="autosave-note" aria-live="polite"></span>
+
+  <div class="tb-group push">
+    <button id="btn-open">開く</button>
+    <button id="btn-insert" title="テキストファイルの中身を、いまのカーソル位置に挿入します（原稿は差し替えません）">ファイル挿入</button>
+    <button id="btn-save" class="primary">ファイル保存</button>
+  </div>
+
+  <span class="sep"></span>
+
+  <div class="tb-group">
+    <label>文字<select id="opt-font"><option>13</option><option selected>15</option><option>17</option><option>19</option><option>22</option></select></label>
+    <label title="本文1行の全角文字数。ペインに入る範囲までしか上げられません">幅<input type="number" id="opt-width" value="40" min="16" max="120" step="1"></label>
+  </div>
+
+  <span class="sep"></span>
+
+  <div class="tb-group">
+    <label title="章・話の始まりを色付け表示"><input type="checkbox" id="opt-head" checked> 見出し</label>
+    <button id="btn-head-cfg" title="見出しの検出ルールを設定" style="padding:4px 8px;font-size:12px;">⚙</button>
+  </div>
+</div>
+
+<div id="main">
+
+  <div class="minimap-wrap" id="mm-left-wrap"><canvas id="mm-left"></canvas></div>
+
+  <!-- 左ペイン（参照・読み取り専用） -->
+  <div class="pane" id="pane-ref">
+    <div id="tabbar-wrap">
+      <button id="tab-left" class="tab-nav" title="タブを左へスクロール">‹</button>
+      <div id="tabbar"></div>
+      <button id="tab-right" class="tab-nav" title="タブを右へスクロール">›</button>
+      <button id="tab-add" title="タブを追加">＋</button>
+      <button id="tab-undo" title="閉じたタブを復元">↩ 復元</button>
+    </div>
+    <div class="searchbar">
+      <input type="text" id="ref-q" placeholder="検索">
+      <button id="ref-prev" title="前へ">▲</button>
+      <button id="ref-next" title="次へ">▼</button>
+      <span class="count" id="ref-count">0 / 0</span>
+      <button id="ref-act" class="act" hidden></button>
+    </div>
+    <div class="pane-body" id="ref-body">
+      <div class="pane-inner" id="ref-inner"></div>
+      <div class="empty-hint" id="ref-empty" title="クリックして参照ファイルを選択">
+        <div class="hint-box">
+          参照するテキストファイルを<br>クリックで選択またはドロップしてください
+          <div class="hint-note">.txt / UTF-8　／　複数同時に選べます</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="splitter" title="ドラッグでペイン比率を変更"></div>
+
+  <!-- 右ペイン（執筆） -->
+  <div class="pane" id="pane-edit">
+    <div class="pane-header">
+      <span><span class="fname" id="edit-fname">無題.txt</span><span class="dirty" id="edit-dirty"></span></span>
+      <span><span class="caretpos" id="edit-caretpos">1行 1桁</span>　<span class="stat" id="edit-stat">0 文字</span></span>
+    </div>
+    <div class="searchbar">
+      <input type="text" id="ed-q" placeholder="右ペインを検索">
+      <button id="ed-prev" title="前へ (Shift+Enter)">▲</button>
+      <button id="ed-next" title="次へ (Enter)">▼</button>
+      <span class="count" id="ed-count">0 / 0</span>
+      <button id="ed-rep-toggle" title="置換 (Ctrl+H)">置換 ▾</button>
+    </div>
+    <div class="searchbar replacebar" id="ed-repbar" hidden>
+      <span class="lbl">→</span>
+      <input type="text" id="ed-r" placeholder="置換後の文字列（空で削除）">
+      <button id="ed-rep-one">置換</button>
+      <button id="ed-rep-all">すべて置換</button>
+    </div>
+    <div class="pane-body" id="edit-body">
+      <div id="mirror" aria-hidden="true"></div>
+      <div id="hd-layer"></div>
+      <div id="hit-layer"></div>
+      <div class="caret-mark" id="ghost-caret"></div>
+      <div class="caret-mark" id="drop-caret"></div>
+      <textarea id="edit-area" spellcheck="false"></textarea>
+      <div class="empty-hint" id="edit-empty">
+        <div class="hint-box" title="クリックして編集するファイルを選択">
+          編集するテキストファイルを<br>クリックで選択またはドロップしてください
+        </div>
+        <div class="hint-sub">そのまま書き始めることもできます</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="minimap-wrap" id="mm-right-wrap"><canvas id="mm-right"></canvas></div>
+</div>
+
+<input type="file" id="file-ref" accept=".txt,text/plain" hidden multiple>
+<input type="file" id="file-edit" accept=".txt,text/plain" hidden>
+<input type="file" id="file-insert" accept=".txt,text/plain" hidden>
+
+<div id="overlay">
+  <div class="dialog">
+    <h2>未保存データがあります</h2>
+    <p id="restore-info">前回の自動保存を復元しますか？</p>
+    <div class="row">
+      <button id="btn-discard">破棄</button>
+      <button id="btn-restore" class="primary">復元</button>
+    </div>
+  </div>
+</div>
+
+<div id="overlay-open">
+  <div class="dialog">
+    <h2>編集中のファイルが上書きされます</h2>
+    <p id="open-info"></p>
+    <p class="sub">開くと、いまの原稿は画面から消えます。取り消せません。<br>
+       中身を残したまま読み込みたい場合は、いったんキャンセルして<b>［ファイル挿入］</b>を使ってください。</p>
+    <div class="row">
+      <button id="btn-open-cancel">キャンセル</button>
+      <button id="btn-open-ok" class="danger">上書きして開く</button>
+    </div>
+  </div>
+</div>
+
+<div id="overlay-head">
+  <div class="dialog wide">
+    <h2>見出し設定</h2>
+    <p>行の先頭にある記号・キーワードで「章や話の始まり」を検出し、本文とミニマップに色を付けます。<br>
+       行頭の半角／全角スペース・タブは無視して判定します。</p>
+
+    <h3>組み込みルール</h3>
+    <div id="cfg-builtin"></div>
+
+    <h3>記号（空白か改行で区切って入力）</h3>
+    <div class="fld">
+      <span><span class="sw" style="background:#5c6bc0"></span>レベル1 ／ 章・話</span>
+      <textarea id="cfg-lv1" spellcheck="false"></textarea>
+      <p class="hint">例: <code>#</code> <code>§</code> <code>■</code> ／ その記号で始まる行を章見出しとして扱います</p>
+    </div>
+    <div class="fld">
+      <span><span class="sw" style="background:#26a69a"></span>レベル2 ／ 場面・小見出し</span>
+      <textarea id="cfg-lv2" spellcheck="false"></textarea>
+      <p class="hint">長い記号が優先されます（<code>##</code> はレベル2、<code>#</code> はレベル1 と使い分けられます）</p>
+    </div>
+
+    <h3>レベル3 ／ 本文中の強調（行頭でなくても可）</h3>
+    <p class="hint" style="margin:0 0 8px">Markdown 風の囲み。見出しというより強調表示です。左ペインは文字色＋太字、右ペインは textarea のため薄い帯のみ。ミニマップには出しません（変更の赤と混ざるため）。</p>
+    <div id="cfg-lv3"></div>
+
+    <p id="cfg-preview">—</p>
+
+    <div class="row">
+      <button id="cfg-reset">既定に戻す</button>
+      <span style="flex:1"></span>
+      <button id="cfg-cancel">キャンセル</button>
+      <button id="cfg-apply" class="primary">適用</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const MM = 28, SPL = 6;                 // ミニマップ幅 / スプリッタ幅
+  const LS_DRAFT = "novedit.draft.v1";
+  const LS_SETTINGS = "novedit.settings.v1";
+  const ZWSP = "​";
+
+  const state = {
+    tabs: [],            // {id, name, text, scroll, heads}
+    activeTab: null,
+    closed: [],          // 閉じたタブのスタック（復元用）
+    refHits: [], refIdx: -1,
+    refHitsSrc: null,            // refHits を計算した元テキスト（取り違え検知用）→ 5.4D
+    edHits: [], edIdx: -1,
+    edHitsSrc: null,             // edHits を計算した元テキスト（取り違え検知用）→ 5.4D
+    edHeads: [], edHeadSrc: null,
+    dirty: false, fileName: "無題.txt", ratio: 0.5, caret: 0,
+    widthPref: 40,               // 表示幅の「希望値」。実効値は effWidthChars() で上限を掛ける
+    fileHandle: null,            // 開いたファイルのハンドル（保存ダイアログの初期フォルダに使う）
+    showHead: true,
+    lineWise: true,              // 行単位挿入は常時ON（Ver.1.0 で設定項目を廃止）
+    headCfg: null,               // 見出し検出ルール（起動時に既定値を入れる）
+    origin: { text: "", name: "", at: 0 },  // 右ペインの「初期」
+    diffStale: true,             // 差分の再計算が必要か
+    diffMarks: [],               // 右ミニマップ用の変更マーカー
+    diffMarksLines: 1,           // そのマーカーを計算した時点の原稿の行数 → 5.4D
+    diffFollow: true             // 「変更」タブは常に右のカーソル行へ追従する（固定）
+  };
+  const SYS = { ORIGIN: "origin", DIFF: "diff" };   // システムタブ（閉じられない）
+  const MM_BG_L = "#EFE7D2";                        // 左ミニマップの下地（仕様 5.2C）
+  const MM_BG_ORIGIN = "#DFE4E6";                   // 「初期」タブのときの下地（グレー）
+  const LINEWISE_MIME = "application/x-novedit-linewise";
+  let tabSeq = 0, hitEls = [], armedTab = null, armTimer = null;
+
+  const ta = () => $("edit-area");
+  const body = () => $("edit-body");
+
+  /* =======================================================
+     見出し検出（章・話の始まり）― ユーザー設定式
+     ======================================================= */
+  // 組み込みルール（チェックボックスで ON/OFF）
+  const BUILTIN = {
+    chapterNum: { lv: 1, re: /^第[0-9０-９一二三四五六七八九十百千壱弐参]+[章話節部幕巻回]/,
+      label: "「第○章」「第○話」など", ex: "第一章／第1話／第三幕／第十二回" },
+    chapterWord: { lv: 1, re: /^(?:序章|序|終章|最終話|プロローグ|エピローグ|幕間|間章|閑話|あとがき|まえがき|前書き|後書き)/,
+      label: "章を表す語で始まる行", ex: "序章／終章／プロローグ／エピローグ／幕間／あとがき" },
+    bracket: { lv: 2, re: /^【[^】]*】/,
+      label: "【…】で始まる行", ex: "【全体】／【伏線】" },
+    ruleLine: { lv: 2, re: /^[-=＝─━*＊_＿~〜]{3,}$/,
+      label: "区切り線（同じ記号が3つ以上だけの行）", ex: "───────／＝＝＝／***" }
+  };
+  const BUILTIN_ORDER = ["chapterNum", "chapterWord", "bracket", "ruleLine"];
+  /* Lv3：行頭見出しではなく、本文中の ** / *** 囲み（inline:true） */
+  const BUILTIN_LV3 = {
+    starBlue: {
+      lv: 3, kind: "blue", open: "***", close: "***",
+      label: "「***文字列***」を青の太字",
+      ex: "***注意*** → 青太字（本文の途中でも可）"
+    },
+    starRed: {
+      lv: 3, kind: "red", open: "**", close: "**",
+      label: "「**文字列**」を赤の太字",
+      ex: "**重要** → 赤太字（本文の途中でも可）"
+    }
+  };
+  /* 青（***）を先に処理する。** を先にすると ***foo*** が壊れる */
+  const BUILTIN_LV3_ORDER = ["starBlue", "starRed"];
+
+  const HEAD_DEFAULT = {
+    builtin: {
+      chapterNum: true, chapterWord: true, bracket: true, ruleLine: true,
+      starBlue: true, starRed: true
+    },
+    lv1: "# ＃ § ■",
+    lv2: "## ### ＃＃ ＃＃＃ §§ ◆ ◇ ▼ ▲ ★ ☆ ● ○ ※ ＊"
+  };
+
+  const parseTokens = str => [...new Set(String(str || "").split(/[\s\n]+/).filter(Boolean))];
+
+  /** 設定 → 判定器（長い記号を優先するため長さ降順に並べる） */
+  function compileHead(cfg) {
+    const toks = [
+      ...parseTokens(cfg.lv1).map(t => ({ tok: t, lv: 1 })),
+      ...parseTokens(cfg.lv2).map(t => ({ tok: t, lv: 2 }))
+    ].sort((a, b) => b.tok.length - a.tok.length);
+    return { toks: toks, builtin: cfg.builtin || {} };
+  }
+  let headC = compileHead(HEAD_DEFAULT);
+
+  /** 表示用クラス接尾辞（1 / 2 / 3r / 3b） */
+  function headClassSuffix(h) {
+    if (h.lv === 3) return h.kind === "blue" ? "3b" : "3r";
+    return String(h.lv);
+  }
+
+  /** 1行 → 見出しレベル（0 = 見出しでない）。行頭ルールのみ。Lv3 は findInlineLv3 */
+  function headLevel(raw, comp) {
+    const c = comp || headC;
+    const s = raw.replace(/^[ 　\t]+/, "");
+    if (!s) return 0;
+    for (const t of c.toks) if (s.startsWith(t.tok)) return t.lv;
+    const st = s.replace(/[ 　\t]+$/, "");
+    for (const k of BUILTIN_ORDER) if (c.builtin[k] && BUILTIN[k].re.test(st)) return BUILTIN[k].lv;
+    return 0;
+  }
+
+  /** オフセット → 行番号（0 始まり） */
+  function lineIndexAt(text, off) {
+    let ln = 0;
+    for (let i = 0; i < off && i < text.length; i++) if (text.charCodeAt(i) === 10) ln++;
+    return ln;
+  }
+
+  /**
+   * Lv3：`***…***`（青）と `**…**`（赤）を本文全体から拾う。
+   * - 改行をまたがない（1行内の強調だけ）
+   * - 中身が空なら無視
+   * - *** を ** より先に確定し、確定済み区間は再マッチしない
+   * - `**` 探索時、位置が `***` の先頭ならスキップ（*** の一部を ** と誤認しない）
+   */
+  function findInlineLv3(text, comp) {
+    const c = comp || headC;
+    const out = [];
+    if (!text) return out;
+    const covered = []; // [start, end) 確定済み
+    const overlaps = (s, e) => covered.some(r => s < r[1] && e > r[0]);
+    const mark = (s, e) => { covered.push([s, e]); };
+
+    function scan(open, close, kind) {
+      const olen = open.length, clen = close.length;
+      let i = 0;
+      while (i < text.length) {
+        let s = text.indexOf(open, i);
+        if (s < 0) break;
+        // ** が *** の先頭に重なるときは進めない（青側の担当）
+        if (open === "**" && text.startsWith("***", s)) { i = s + 1; continue; }
+        if (overlaps(s, s + olen)) { i = s + 1; continue; }
+        let eSearch = s + olen;
+        let found = -1;
+        while (eSearch <= text.length - clen) {
+          const j = text.indexOf(close, eSearch);
+          if (j < 0) break;
+          // 閉じ側の ** が *** の一部なら次へ
+          if (close === "**" && text.startsWith("***", j)) { eSearch = j + 1; continue; }
+          const end = j + clen;
+          if (overlaps(s, end)) { eSearch = j + 1; continue; }
+          const inner = text.slice(s + olen, j);
+          if (!inner.length || inner.indexOf("\n") >= 0) { eSearch = j + 1; continue; }
+          found = j;
+          break;
+        }
+        if (found < 0) { i = s + 1; continue; }
+        const end = found + clen;
+        out.push({ start: s, end: end, line: lineIndexAt(text, s), lv: 3, kind: kind });
+        mark(s, end);
+        i = end;
+      }
+    }
+
+    for (const k of BUILTIN_LV3_ORDER) {
+      if (!c.builtin[k]) continue;
+      const b = BUILTIN_LV3[k];
+      scan(b.open, b.close, b.kind);
+    }
+    return out;
+  }
+
+  /** テキスト → [{start, end, line, lv, kind?}]  start 昇順 */
+  function findHeadings(text, comp) {
+    const out = [];
+    if (!text) return out;
+    let pos = 0, ln = 0;
+    for (const raw of text.split("\n")) {
+      const lv = headLevel(raw, comp);
+      if (lv) out.push({ start: pos, end: pos + raw.length, line: ln, lv: lv });
+      pos += raw.length + 1; ln++;
+    }
+    const inline = findInlineLv3(text, comp);
+    // 行頭見出しと重なる inline は行頭側を優先（区間が完全に行見出し内なら inline を落とす）
+    for (const h of inline) {
+      const blocked = out.some(L => L.lv < 3 && h.start >= L.start && h.end <= L.end);
+      if (!blocked) out.push(h);
+    }
+    out.sort((a, b) => a.start - b.start || a.end - b.end);
+    return out;
+  }
+  function invalidateHeads() {
+    state.tabs.forEach(t => { t.heads = null; });
+    state.edHeadSrc = null;
+  }
+  function tabHeads(t) {
+    if (!t) return [];
+    if (!t.heads) t.heads = findHeadings(t.text);
+    return t.heads;
+  }
+  function edHeads() {
+    const v = ta().value;
+    if (state.edHeadSrc !== v) { state.edHeadSrc = v; state.edHeads = findHeadings(v); }
+    return state.edHeads;
+  }
+  const headsOn = () => state.showHead;
+
+  /* =======================================================
+     ミラー（textarea と同一レイアウトの隠し要素）
+     ======================================================= */
+  function syncMirrorStyle() {
+    const t = ta(), m = $("mirror"), cs = getComputedStyle(t);
+    ["fontFamily","fontSize","fontWeight","fontStyle","lineHeight","letterSpacing",
+     "textIndent","textAlign","paddingTop","paddingRight","paddingBottom","paddingLeft",
+     "whiteSpace","wordBreak","overflowWrap","tabSize"].forEach(k => { m.style[k] = cs[k]; });
+    m.style.width = t.offsetWidth + "px";
+    m.style.left = t.offsetLeft + "px";
+    m.style.top = t.offsetTop + "px";
+  }
+  function syncMirrorText() {
+    const m = $("mirror"), v = ta().value + ZWSP;
+    if (m.textContent !== v) m.textContent = v;
+  }
+  function mirrorNode() {
+    const m = $("mirror");
+    if (!m.firstChild) m.textContent = ZWSP;
+    return m.firstChild;
+  }
+  function rectForOffset(off) {
+    const node = mirrorNode(), len = node.length;
+    const i = Math.max(0, Math.min(off, len - 1));
+    const r = document.createRange();
+    r.setStart(node, i); r.setEnd(node, i + 1);
+    const rects = r.getClientRects();
+    if (rects.length) { const q = rects[0]; return { left: q.left, top: q.top, height: q.height || 18 }; }
+    const mr = $("mirror").getBoundingClientRect(), cs = getComputedStyle($("mirror"));
+    return { left: mr.left + parseFloat(cs.paddingLeft), top: mr.top + parseFloat(cs.paddingTop), height: parseFloat(cs.lineHeight) || 18 };
+  }
+  function offsetFromPoint(x, y) {
+    const node = mirrorNode(), len = node.length - 1;
+    if (len <= 0) return 0;
+    const r = document.createRange();
+    const rectOf = i => { r.setStart(node, i); r.setEnd(node, i + 1); const rs = r.getClientRects(); return rs.length ? rs[rs.length - 1] : null; };
+    let lo = 0, hi = len - 1, best = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1, rc = rectOf(mid);
+      if (!rc) { lo = mid + 1; continue; }
+      if (y >= rc.bottom)     { lo = mid + 1; best = mid + 1; }
+      else if (y < rc.top)    { hi = mid - 1; }
+      else if (x >= rc.right) { lo = mid + 1; best = mid + 1; }
+      else if (x < rc.left)   { hi = mid - 1; best = mid; }
+      else return x > (rc.left + rc.right) / 2 ? mid + 1 : mid;
+    }
+    return Math.max(0, Math.min(len, best));
+  }
+  function toContent(rc) {
+    const b = body().getBoundingClientRect();
+    return { left: rc.left - b.left + body().scrollLeft, top: rc.top - b.top + body().scrollTop };
+  }
+  /** ミラー上の [s,e) の矩形群をコンテンツ座標で返す */
+  function rectsForRange(s, e) {
+    const node = mirrorNode();
+    const r = document.createRange();
+    r.setStart(node, Math.max(0, Math.min(s, node.length)));
+    r.setEnd(node, Math.max(0, Math.min(e, node.length)));
+    const b = body().getBoundingClientRect();
+    const sl = body().scrollLeft, st = body().scrollTop;
+    const out = [];
+    for (const q of r.getClientRects()) {
+      if (q.width <= 0 || q.height <= 0) continue;
+      out.push({ left: q.left - b.left + sl, top: q.top - b.top + st, width: q.width, height: q.height });
+    }
+    return out;
+  }
+
+  /* =======================================================
+     キャレット
+     ======================================================= */
+  function updateCaret() {
+    const t = ta();
+    state.caret = t.selectionStart;
+    const rc = rectForOffset(state.caret), p = toContent(rc), g = $("ghost-caret");
+    g.style.left = p.left + "px"; g.style.top = p.top + "px"; g.style.height = rc.height + "px";
+    g.classList.toggle("show", document.activeElement !== t);
+    const before = t.value.slice(0, state.caret);
+    $("edit-caretpos").textContent = before.split("\n").length + "行 " + (state.caret - (before.lastIndexOf("\n") + 1) + 1) + "桁";
+    syncDiffToCaret();      // 「変更」タブを同じ行へ追従させる（リアルタイム）
+  }
+  function showDropCaret(off) {
+    const rc = rectForOffset(off), p = toContent(rc), d = $("drop-caret");
+    d.style.left = p.left + "px"; d.style.top = p.top + "px"; d.style.height = rc.height + "px";
+    d.classList.add("show");
+  }
+  const hideDropCaret = () => $("drop-caret").classList.remove("show");
+
+  /* =======================================================
+     設定
+     ======================================================= */
+  function loadSettings() {
+    try {
+      const s = JSON.parse(localStorage.getItem(LS_SETTINGS) || "{}");
+      if (s.fontSize) $("opt-font").value = s.fontSize;
+      if (s.widthChars) state.widthPref = Math.max(16, Math.min(120, +s.widthChars));
+      if (typeof s.ratio === "number") state.ratio = Math.min(.85, Math.max(.15, s.ratio));
+      if (typeof s.showHead === "boolean") { state.showHead = s.showHead; $("opt-head").checked = s.showHead; }
+      if (s.headCfg && typeof s.headCfg === "object") {
+        state.headCfg = {
+          builtin: Object.assign({}, HEAD_DEFAULT.builtin, s.headCfg.builtin || {}),
+          lv1: typeof s.headCfg.lv1 === "string" ? s.headCfg.lv1 : HEAD_DEFAULT.lv1,
+          lv2: typeof s.headCfg.lv2 === "string" ? s.headCfg.lv2 : HEAD_DEFAULT.lv2
+        };
+      }
+    } catch (_) {}
+    if (!state.headCfg) state.headCfg = JSON.parse(JSON.stringify(HEAD_DEFAULT));
+    headC = compileHead(state.headCfg);
+  }
+  function saveSettings() {
+    try {
+      localStorage.setItem(LS_SETTINGS, JSON.stringify({
+        fontSize: +$("opt-font").value, widthChars: state.widthPref,
+        ratio: state.ratio, showHead: state.showHead,
+        headCfg: state.headCfg
+      }));
+    } catch (_) {}
+  }
+  /* ---- 表示幅の上限（仕様 5.1B） ----
+     本文の最大幅は fontSize × 文字数 + PAD。これが実際のペイン幅を超えると
+     指定しただけ無駄になるので、狭いほうのペインに収まる文字数を上限にする。 */
+  const WIDTH_PAD = 36;          // .pane-inner / textarea の左右パディング合計
+  const WIDTH_MIN = 16, WIDTH_HARD_MAX = 120;
+
+  function maxWidthChars() {
+    const fs = +$("opt-font").value || 15;
+    /* 上限は【右ペイン】の内寸で決める。書くのは右なので、
+       左を狭めたせいで原稿の行長が変わってしまうのはおかしい。
+       左は自分の幅で折り返すだけ（.pane-inner は max-width なので溢れない）。 */
+    const avail = $("edit-body").clientWidth;
+    if (!avail || avail <= 0) return WIDTH_HARD_MAX;             // レイアウト確定前
+    const n = Math.floor((avail - WIDTH_PAD) / fs);
+    return Math.max(WIDTH_MIN, Math.min(WIDTH_HARD_MAX, n));
+  }
+
+  /** 実際に使う表示幅。ユーザーの希望値(state.widthPref)を上限で頭打ちにする。
+   *  希望値そのものは保持するので、ペインを広げれば元の値まで戻る。 */
+  function effWidthChars() {
+    return Math.max(WIDTH_MIN, Math.min(state.widthPref, maxWidthChars()));
+  }
+
+  function applySettings() {
+    const fs = +$("opt-font").value || 15;
+    // 先にレイアウトを確定させてから上限を測る（clientWidth が古い値を返すのを防ぐ）
+    applyRatio();
+    const mx = maxWidthChars();
+    const w = effWidthChars();
+    // 入力欄にも上限を反映する（スピナー・手入力の両方が止まる）
+    const inp = $("opt-width");
+    inp.max = mx;
+    inp.value = w;
+    inp.title = "全角 " + WIDTH_MIN + "〜" + mx + " 文字（いまのペイン幅で表示できる上限は " + mx + "）";
+    inp.classList.toggle("capped", state.widthPref > mx);
+
+    const px = Math.round(fs * w) + WIDTH_PAD;
+    $("ref-inner").style.fontSize = fs + "px";
+    $("ref-inner").style.maxWidth = px + "px";
+    ta().style.fontSize = fs + "px";
+    ta().style.maxWidth = px + "px";
+    refreshOverlay();
+  }
+
+  /** ペイン幅が変わったときの再適用。applyRatio の後に呼ぶ（clientWidth が確定してから） */
+  function reflowWidth() {
+    const inp = $("opt-width"), mx = maxWidthChars(), w = effWidthChars();
+    if (+inp.value === w && +inp.max === mx) return;   // 変化なしなら何もしない
+    applySettings();
+  }
+  function applyRatio() {
+    const avail = $("main").clientWidth - MM * 2 - SPL;
+    const l = Math.round(avail * state.ratio);
+    $("main").style.gridTemplateColumns = MM + "px " + l + "px " + SPL + "px " + (avail - l) + "px " + MM + "px";
+  }
+
+  /* =======================================================
+     右ペイン オーバーレイ更新
+     ======================================================= */
+  let rafPending = false;
+  function refreshOverlay() {
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      autoGrow(); syncMirrorStyle(); syncMirrorText();
+      buildHeadLayer(); buildHitLayer(); updateCaret(); drawMinimap("right");
+      updateEditEmpty();
+    });
+  }
+  /** 右ペインの空状態ヒント（仕様 5.6C）
+   *  空＋非フォーカス → 100%／空＋フォーカス → 35%／1文字でも入ったら消す */
+  let composing = false;
+  function updateEditEmpty() {
+    const hint = $("edit-empty"), t = ta();
+    const empty = t.value.length === 0 && !composing;
+    hint.classList.toggle("hide", !empty);
+    hint.classList.toggle("dim", empty && document.activeElement === t);
+  }
+
+  function autoGrow() {
+    const t = ta();
+    t.style.height = "auto";
+    t.style.height = Math.max(t.scrollHeight, body().clientHeight) + "px";
+  }
+  function buildHeadLayer() {
+    const layer = $("hd-layer");
+    layer.textContent = "";
+    if (!headsOn()) return;
+    const frag = document.createDocumentFragment();
+    for (const h of edHeads()) {
+      for (const q of rectsForRange(h.start, h.end)) {
+        const d = document.createElement("div");
+        d.className = "hdr l" + headClassSuffix(h);
+        d.style.left = q.left + "px"; d.style.top = q.top + "px";
+        d.style.width = q.width + "px"; d.style.height = q.height + "px";
+        frag.appendChild(d);
+      }
+    }
+    layer.appendChild(frag);
+  }
+
+  /* =======================================================
+     差分エンジン（外部ライブラリなし）
+     ======================================================= */
+  const LCS_CELL_CAP = 2000000;   // これを超えたらアンカー分割に切り替える
+
+  function lcsCore(A, B) {
+    const n = A.length, m = B.length;
+    const dp = new Uint32Array((n + 1) * (m + 1));
+    const W = m + 1;
+    for (let i = n - 1; i >= 0; i--) {
+      for (let j = m - 1; j >= 0; j--) {
+        dp[i * W + j] = A[i] === B[j]
+          ? dp[(i + 1) * W + j + 1] + 1
+          : Math.max(dp[(i + 1) * W + j], dp[i * W + j + 1]);
+      }
+    }
+    const out = [];
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (A[i] === B[j]) { out.push({ t: 0, s: A[i] }); i++; j++; }
+      else if (dp[(i + 1) * W + j] >= dp[i * W + j + 1]) { out.push({ t: -1, s: A[i] }); i++; }
+      else { out.push({ t: 1, s: B[j] }); j++; }
+    }
+    while (i < n) out.push({ t: -1, s: A[i++] });
+    while (j < m) out.push({ t: 1, s: B[j++] });
+    return out;
+  }
+
+  /** 両側に1回だけ現れる共通行のうち、A の中央に近いものをアンカーにする */
+  function findAnchor(A, B) {
+    const ca = new Map(), cb = new Map();
+    for (const s of A) ca.set(s, (ca.get(s) || 0) + 1);
+    for (const s of B) cb.set(s, (cb.get(s) || 0) + 1);
+    const mid = A.length >> 1;
+    let best = null, bestD = Infinity;
+    for (let i = 0; i < A.length; i++) {
+      const s = A[i];
+      if (!s.trim()) continue;
+      if (ca.get(s) !== 1 || cb.get(s) !== 1) continue;
+      const d = Math.abs(i - mid);
+      if (d < bestD) { bestD = d; best = [i, B.indexOf(s)]; }
+    }
+    return best && best[1] >= 0 ? best : null;
+  }
+
+  function middleDiff(A, B) {
+    if (!A.length && !B.length) return [];
+    if (!A.length) return B.map(s => ({ t: 1, s: s }));
+    if (!B.length) return A.map(s => ({ t: -1, s: s }));
+    if (A.length * B.length <= LCS_CELL_CAP) return lcsCore(A, B);
+    const an = findAnchor(A, B);
+    if (!an) return [...A.map(s => ({ t: -1, s: s })), ...B.map(s => ({ t: 1, s: s }))];
+    return [
+      ...middleDiff(A.slice(0, an[0]), B.slice(0, an[1])),
+      { t: 0, s: A[an[0]] },
+      ...middleDiff(A.slice(an[0] + 1), B.slice(an[1] + 1))
+    ];
+  }
+
+  /** 行単位の差分。共通の先頭・末尾を切り落としてから中央だけ解く */
+  function diffLines(a, b) {
+    let pre = 0;
+    while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++;
+    let suf = 0;
+    while (suf < a.length - pre && suf < b.length - pre &&
+           a[a.length - 1 - suf] === b[b.length - 1 - suf]) suf++;
+    const out = [];
+    for (let i = 0; i < pre; i++) out.push({ t: 0, s: a[i] });
+    out.push(...middleDiff(a.slice(pre, a.length - suf), b.slice(pre, b.length - suf)));
+    for (let i = a.length - suf; i < a.length; i++) out.push({ t: 0, s: a[i] });
+    return out;
+  }
+
+  /** 文字単位: 共通の前後を除いた中央を「変更部分」として返す */
+  function charSpans(d, a) {
+    let p = 0;
+    const lim = Math.min(d.length, a.length);
+    while (p < lim && d[p] === a[p]) p++;
+    let s = 0;
+    while (s < d.length - p && s < a.length - p && d[d.length - 1 - s] === a[a.length - 1 - s]) s++;
+    return {
+      d: [d.slice(0, p), d.slice(p, d.length - s), d.slice(d.length - s)],
+      a: [a.slice(0, p), a.slice(p, a.length - s), a.slice(a.length - s)]
+    };
+  }
+  function similarity(x, y) {
+    if (!x.length && !y.length) return 1;
+    const c = charSpans(x, y);
+    const same = c.d[0].length + c.d[2].length;
+    return (2 * same) / (x.length + y.length);
+  }
+
+  /** 差分 → 表示用の行配列 */
+  function buildDiffRows(oldText, newText) {
+    const raw = diffLines(oldText.split("\n"), newText.split("\n"));
+    const rows = [];
+    let i = 0;
+    while (i < raw.length) {
+      if (raw[i].t === 0) { rows.push({ k: "same", s: raw[i].s }); i++; continue; }
+      // 連続する削除・追加をまとめて対応付ける
+      const dels = [], adds = [];
+      while (i < raw.length && raw[i].t === -1) dels.push(raw[i++].s);
+      while (i < raw.length && raw[i].t === 1) adds.push(raw[i++].s);
+      const n = Math.max(dels.length, adds.length);
+      for (let k = 0; k < n; k++) {
+        const d = dels[k], a = adds[k];
+        if (d != null && a != null && similarity(d, a) >= 0.5) {
+          rows.push({ k: "chg", d: d, a: a, sp: charSpans(d, a) });
+        } else {
+          if (d != null) rows.push({ k: "del", s: d });
+          if (a != null) rows.push({ k: "add", s: a });
+        }
+      }
+    }
+    return rows;
+  }
+
+  /** 全文を表示する（省略・折り畳みはしない） */
+  function renderDiffHtml(rows) {
+    const changed = rows.filter(r => r.k !== "same").length;
+    let html = "", plain = "";
+    const line = (cls, mk, inner, rawText) =>
+      '<div class="dl ' + cls + '" data-t="' + esc(rawText).replace(/"/g, "&quot;") + '">' +
+      '<span class="mk">' + mk + '</span><span class="tx">' + inner + '</span></div>';
+
+    if (!changed) html += '<div class="dsame-all">変更はありません</div>';
+
+    for (const r of rows) {
+      if (r.k === "same") {
+        html += line("same", "&nbsp;", esc(r.s), r.s); plain += r.s + "\n";
+      } else if (r.k === "del") {
+        html += line("del", "−", esc(r.s), r.s); plain += r.s + "\n";
+      } else if (r.k === "add") {
+        html += line("add", "＋", esc(r.s), r.s); plain += r.s + "\n";
+      } else {
+        const sp = r.sp;
+        const wrap = p => esc(p[0]) + (p[1] ? '<span class="ci">' + esc(p[1]) + "</span>" : "") + esc(p[2]);
+        html += line("del", "−", wrap(sp.d), r.d);
+        html += line("add", "＋", wrap(sp.a), r.a);
+        plain += r.d + "\n" + r.a + "\n";
+      }
+    }
+    return { html: html, plain: plain };
+  }
+
+  /**
+   * 差分からミニマップ用のマーカーを作る。
+   *  marksL … 差分ビューの表示行に対応（削除=赤 / 追加=緑）
+   *  marksR … 右ペイン（現在の原稿）の行に対応（追加=緑 / 変更=橙 / 削除位置=赤）
+   */
+  function buildDiffMarks(rows) {
+    const L = [], R = [], map = [], rev = [];
+    // map[原稿の行番号] = 表示行番号 ／ rev[表示行番号] = 原稿の行番号
+    let li = 0, ni = 0;
+    for (const r of rows) {
+      if (r.k === "same") { map[ni] = li; rev[li] = ni; li++; ni++; }
+      else if (r.k === "del") {
+        L.push({ i: li, k: "del" }); R.push({ i: ni, k: "del" });
+        rev[li] = ni;                   // 削除行は「その位置」の原稿行を指す
+        li++;
+      }
+      else if (r.k === "add") {
+        map[ni] = li; rev[li] = ni;
+        L.push({ i: li, k: "add" }); R.push({ i: ni, k: "add" });
+        li++; ni++;
+      }
+      else {                            // chg: 表示は削除行＋追加行の2行
+        L.push({ i: li, k: "del" });
+        L.push({ i: li + 1, k: "add" });
+        map[ni] = li + 1;               // 原稿の行に対応するのは「追加」側
+        rev[li] = ni; rev[li + 1] = ni;
+        R.push({ i: ni, k: "chg" });
+        li += 2; ni++;
+      }
+    }
+    if (!map.length) map[0] = 0;
+    if (!rev.length) rev[0] = 0;
+    return { L: L, R: R, map: map, rev: rev, lines: li };
+  }
+
+  function computeDiff() {
+    const t = state.tabs.find(x => x.kind === SYS.DIFF);
+    if (!t) return;
+    const rows = buildDiffRows(state.origin.text, ta().value);
+    const del = rows.filter(r => r.k === "del" || r.k === "chg").length;
+    const add = rows.filter(r => r.k === "add" || r.k === "chg").length;
+    const marks = buildDiffMarks(rows);
+    t.marks = marks.L;
+    t.lineMap = marks.map;
+    t.revMap = marks.rev;
+    state.diffMarks = marks.R;
+    // マーカーは「計算した時点の行数」で割る。入力中（デバウンス待ち）に
+    // 新しい行数で割ると、まだ古いマーカーなのに位置だけ動いてずれる（5.4D）
+    state.diffMarksLines = Math.max(1, ta().value.split("\n").length);
+    const r = renderDiffHtml(rows);
+    t.html = r.html;
+    t.text = r.plain;
+    t.heads = [];
+    t.sum = { add: add, del: del };
+    // タブの tooltip に増減行数を出す（検索バーの枠は使わない）。
+    // renderTabs() を呼ぶとタブDOMを作り直して「閉じる武装」状態が消えるので、属性だけ書き換える
+    const tabEl2 = $("tabbar").querySelector('.tab[data-id="' + t.id + '"]');
+    if (tabEl2) tabEl2.title = "初期からの変更（閉じられません）　＋" + add + "行 −" + del + "行";
+    state.diffStale = false;
+    return t.sum;
+  }
+
+  function setOrigin(text, name) {
+    state.origin = { text: text, name: name || state.fileName, at: Date.now() };
+    const o = state.tabs.find(x => x.kind === SYS.ORIGIN);
+    if (o) { o.text = state.origin.text; o.heads = null; o.scroll = 0; }
+    state.diffStale = true;
+    computeDiff();                       // 差分マーカーを即座に更新する
+    // 「初期」「変更」の中身が差し替わったので、検索も必ずやり直す（5.4D）
+    if (isSysActive(SYS.DIFF) || isSysActive(SYS.ORIGIN)) runRefSearch();
+    drawMinimap("right");
+  }
+  const isSysActive = kind => { const t = activeTabObj(); return !!t && t.kind === kind; };
+
+  /* ---- 差分ビューを右ペインのカーソル行に追従させる ---- */
+  let diffLineEls = [];     // renderRef のたびにキャッシュする .dl の配列
+  let curLineEl = null;
+
+  let lastSyncCaret = -1;
+  /* 左→右の位置合わせ（rightToHere）の最中だけ true。
+     このときは左ペインをスクロールさせない。
+     右のスクロールは端で頭打ちになったり端数が出たりするので、
+     「揃ったから左は動かないはず」に頼ると必ずズレて左が飛ぶ。 */
+  let followNoScroll = false;
+
+  /**
+   * 追従の発火条件は「右ペインにフォーカスがあり、かつカーソルが実際に動いたとき」だけ。
+   *  - 左ペインをクリックすると textarea が blur するが、そこで追従すると
+   *    読んでいた位置が奪われる（blur も updateCaret を通るため要注意）
+   *  - 右ペインのスクロールだけでは追従しない（中途半端に動くのを防ぐ）
+   * force = true はタブ切替や「右をここへ」など、明示的な操作のとき。
+   */
+  function syncDiffToCaret(force) {
+    if (!state.diffFollow || !isSysActive(SYS.DIFF)) return;
+    if (!force) {
+      if (document.activeElement !== ta()) return;
+      if (state.caret === lastSyncCaret) return;
+    }
+    const t = activeTabObj();
+    if (!t || !t.lineMap || !diffLineEls.length) return;
+
+    const v = ta().value;
+    const before = v.slice(0, state.caret);
+    const caretLine = before.split("\n").length - 1;
+    const dl = t.lineMap[Math.min(caretLine, t.lineMap.length - 1)];
+    let el = diffLineEls[dl];
+    if (!el) return;
+
+    /* 右ペイン上でのキャレットの画面Y位置に、左の対応行を合わせる。
+       キャレットが右ペインの表示範囲の外にあるときは、キャレットではなく
+       【右ペインでいま見えている先頭行】に合わせる。
+       ファイルを開いた直後は textarea の仕様でキャレットが文末に来るため、
+       キャレットを基準にすると「切り替えた瞬間に左が最下部へ飛ぶ」ことになる。 */
+    const eb = body();
+    const ebR = eb.getBoundingClientRect();
+    const H = $("ref-body").clientHeight;
+    let y0 = rectForOffset(state.caret).top - ebR.top;
+    let y;
+    if (y0 >= 0 && y0 <= eb.clientHeight) {
+      y = y0;                                     // キャレットが見えている → その高さに合わせる
+    } else {
+      // 見えていない → 右ペインの上端にある行を基準にし、左もその行を上端に置く
+      syncMirrorStyle(); syncMirrorText();          // 座標→文字位置の変換にミラーが必要
+      const topOff = offsetFromPoint(ebR.left + 24, ebR.top + 2);
+      const topLine = ta().value.slice(0, topOff).split("\n").length - 1;
+      const dl2 = t.lineMap[Math.min(topLine, t.lineMap.length - 1)];
+      const el2 = diffLineEls[dl2];
+      if (el2) { el = el2; }
+      y = 2;
+    }
+    y = Math.min(Math.max(y, 0), Math.max(0, H - 24));
+
+    const max = Math.max(0, $("ref-body").scrollHeight - H);
+    const top = Math.max(0, Math.min(max, el.offsetTop - y));
+    // 位置合わせ直後は左を動かさない。行の強調だけ更新する
+    if (!followNoScroll && Math.abs($("ref-body").scrollTop - top) > 0.5) $("ref-body").scrollTop = top;
+
+    if (curLineEl !== el) {
+      if (curLineEl) curLineEl.classList.remove("cur-line");
+      el.classList.add("cur-line");
+      curLineEl = el;
+    }
+    lastSyncCaret = state.caret;
+    drawMinimap("left");
+  }
+
+  /** 左（差分ビュー）でいま見ている行に、右ペインの表示とカーソルを合わせる */
+  function rightToHere() {
+    const t = activeTabObj();
+    if (!t || t.kind !== SYS.DIFF || !t.revMap || !diffLineEls.length) return;
+    const rb = $("ref-body"), eb = body();
+
+    // 左ビューの上端付近にある表示行を二分探索で求める
+    const top = rb.scrollTop + 6;
+    let lo = 0, hi = diffLineEls.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (diffLineEls[mid].offsetTop <= top) lo = mid; else hi = mid - 1;
+    }
+    const el = diffLineEls[lo];
+    const ni = Math.min(t.revMap[lo] != null ? t.revMap[lo] : 0, ta().value.split("\n").length - 1);
+
+    // その行の先頭オフセット
+    const v = ta().value;
+    let off = 0;
+    for (let k = 0; k < ni; k++) {
+      const nx = v.indexOf("\n", off);
+      if (nx < 0) break;
+      off = nx + 1;
+    }
+
+    // 左でその行が出ている画面Y位置に、右の同じ行を合わせる
+    const yL = el.offsetTop - rb.scrollTop;
+    const tx = ta();
+    tx.focus();
+    tx.setSelectionRange(off, off);
+    syncMirrorStyle(); syncMirrorText();
+    const cur = rectForOffset(off).top - eb.getBoundingClientRect().top;
+    const max = Math.max(0, eb.scrollHeight - eb.clientHeight);
+    eb.scrollTop = Math.max(0, Math.min(max, eb.scrollTop + (cur - yL)));
+    // 左は動かさない。ここで追従を働かせると、右のスクロールが端で
+    // 頭打ちになった分だけ左が引きずられて「押したら左が飛ぶ」ことになる
+    followNoScroll = true;
+    updateCaret();          // キャレット表示・行桁・対応行の強調は更新する
+    followNoScroll = false;
+    lastSyncCaret = state.caret;   // 直後の blur などでも動かないようにする
+    drawMinimap("right");
+    toast((ni + 1) + "行目に合わせました");
+  }
+
+  let diffTimer = null;
+  function scheduleDiff() {
+    state.diffStale = true;
+    // 右ミニマップの差分マーカーを保つため、非アクティブでも再計算する。
+    // ただし入力が止まってから（「変更」タブ表示中は短め）
+    clearTimeout(diffTimer);
+    const wait = isSysActive(SYS.DIFF) ? 600 : 1200;
+    diffTimer = setTimeout(() => {
+      computeDiff();
+      if (isSysActive(SYS.DIFF)) {
+        runRefSearch();          // 表示テキストが変わったので検索もやり直す（5.4D）
+        // 再描画で位置がずれるので、右を触っている最中だけ位置を取り直す
+        if (document.activeElement === ta()) syncDiffToCaret(true);
+      }
+      drawMinimap("right");
+    }, wait);
+  }
+
+  /* =======================================================
+     左ペイン：タブ
+     ======================================================= */
+  function addTab(name, text, activate, scroll, kind) {
+    const t = { id: "t" + (++tabSeq), name: name, text: text, scroll: scroll || 0, heads: null, kind: kind || null, html: null };
+    state.tabs.push(t);
+    renderTabs();
+    if (activate !== false) setActiveTab(t.id);
+    return t;
+  }
+  const sysCount = () => state.tabs.filter(t => t.kind).length;
+  function rememberScroll() {
+    const t = activeTabObj();
+    if (t) t.scroll = $("ref-body").scrollTop;
+  }
+  function closeTab(id) {
+    const i = state.tabs.findIndex(t => t.id === id);
+    if (i < 0) return;
+    if (state.tabs[i].kind) { toast("このタブは閉じられません"); return; }   // システムタブ
+    rememberScroll();
+    const [t] = state.tabs.splice(i, 1);
+    state.closed.push({ name: t.name, text: t.text, scroll: t.scroll, at: i });
+    if (state.activeTab === id) {
+      const next = state.tabs[Math.min(i, state.tabs.length - 1)];
+      state.activeTab = next ? next.id : null;
+      renderTabs(); runRefSearch(); restoreScroll();
+    } else {
+      renderTabs();
+    }
+    updateUndoChip();
+    toast("「" + t.name + "」を閉じました　→ ↩復元 で戻せます");
+  }
+  function undoClose() {
+    const c = state.closed.pop();
+    if (!c) return;
+    const t = { id: "t" + (++tabSeq), name: c.name, text: c.text, scroll: c.scroll, heads: null, kind: null, html: null };
+    state.tabs.splice(Math.max(sysCount(), Math.min(c.at, state.tabs.length)), 0, t);
+    updateUndoChip();
+    setActiveTab(t.id);
+    toast("「" + c.name + "」を復元しました");
+  }
+  function updateUndoChip() {
+    const chip = $("tab-undo");
+    chip.classList.toggle("show", state.closed.length > 0);
+    if (state.closed.length) {
+      const last = state.closed[state.closed.length - 1];
+      chip.title = "「" + last.name + "」を復元（残り" + state.closed.length + "件）";
+    }
+  }
+  function setActiveTab(id) {
+    if (state.activeTab === id) return;
+    rememberScroll();
+    state.activeTab = id; state.refIdx = -1;
+    const t = state.tabs.find(x => x.id === id);
+    if (t && t.kind === SYS.DIFF && state.diffStale) computeDiff();
+    renderTabs(); runRefSearch(); restoreScroll();
+  }
+  function restoreScroll() {
+    const t = activeTabObj();
+    // 「変更」タブで追従ONのときは、保存位置ではなくカーソル行に合わせる
+    if (t && t.kind === SYS.DIFF && state.diffFollow) {
+      requestAnimationFrame(() => { syncDiffToCaret(true); drawMinimap("left"); });
+      return;
+    }
+    const top = t ? (t.scroll || 0) : 0;
+    // レンダリング確定後に戻す
+    requestAnimationFrame(() => {
+      $("ref-body").scrollTop = top;
+      drawMinimap("left");
+    });
+  }
+  const activeTabObj = () => state.tabs.find(t => t.id === state.activeTab) || null;
+
+  function disarm() {
+    if (armedTab) {
+      const el = $("tabbar").querySelector('.tab[data-id="' + armedTab + '"] .x');
+      if (el) { el.classList.remove("armed"); el.textContent = "×"; }
+    }
+    armedTab = null;
+    clearTimeout(armTimer);
+  }
+  function armClose(id, xEl) {
+    disarm();
+    armedTab = id;
+    xEl.classList.add("armed");
+    xEl.textContent = "×";
+    toast("もう一度「×」をクリックすると閉じます");
+    armTimer = setTimeout(disarm, 2500);
+  }
+
+  function updateTabNav() {
+    const bar = $("tabbar");
+    const ov = bar.scrollWidth - bar.clientWidth > 2;
+    $("tab-left").classList.toggle("show", ov);
+    $("tab-right").classList.toggle("show", ov);
+    if (ov) {
+      $("tab-left").disabled = bar.scrollLeft <= 1;
+      $("tab-right").disabled = bar.scrollLeft >= bar.scrollWidth - bar.clientWidth - 1;
+    }
+  }
+  function scrollActiveTabIntoView() {
+    const el = $("tabbar").querySelector(".tab.active");
+    if (el) el.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }
+
+  function renderTabs() {
+    const bar = $("tabbar");
+    bar.textContent = "";
+    state.tabs.forEach(t => {
+      const el = document.createElement("div");
+      el.className = "tab" + (t.id === state.activeTab ? " active" : "")
+        + (t.kind ? " sys sys-" + (t.kind === SYS.ORIGIN ? "origin" : "diff") : "");
+      el.dataset.id = t.id;
+      el.title = t.kind
+        ? (t.kind === SYS.ORIGIN ? "右ペインを開いた時点の内容（閉じられません）" : "初期からの変更（閉じられません）")
+        : t.name;
+      el.innerHTML = t.kind
+        ? '<span class="pin">◉</span><span class="name"></span>'
+        : '<span class="name"></span><span class="x" title="閉じる（2回クリック）">×</span>';
+      el.querySelector(".name").textContent = t.name;
+      el.addEventListener("mousedown", e => { if (!e.target.classList.contains("x")) { disarm(); setActiveTab(t.id); } });
+      el.addEventListener("mouseleave", () => { if (armedTab === t.id) disarm(); });
+      const x = el.querySelector(".x");
+      if (x) x.addEventListener("click", e => {
+        e.stopPropagation();
+        // 誤操作防止: 1回目は武装、2回目で実際に閉じる
+        if (armedTab === t.id) { disarm(); closeTab(t.id); }
+        else armClose(t.id, e.target);
+      });
+      bar.appendChild(el);
+    });
+    updateUndoChip();
+    updateTabNav();
+    requestAnimationFrame(scrollActiveTabIntoView);
+  }
+
+  /* =======================================================
+     左ペイン：描画（見出し＋検索ハイライト）
+     ======================================================= */
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  /** 左ペインの空状態判定（仕様 5.2B）
+   *  常設タブ「初期」「差分」があるため「資料タブ0件か」では判定できない。
+   *  アクティブタブの「表示内容が空か」で判定する。 */
+  function refIsEmpty() {
+    const t = activeTabObj();
+    if (!t) return true;                                     // タブが選ばれていない
+    if (t.kind === SYS.ORIGIN) return state.origin.text === "";  // 右ペインを開く前
+    if (t.kind === SYS.DIFF)   return state.origin.text === "" && ta().value === "";
+    return t.text === "";                                    // 空の資料タブ
+  }
+
+  function renderRef() {
+    const t = activeTabObj(), inner = $("ref-inner");
+    const empty = refIsEmpty();
+    $("ref-body").classList.toggle("origin-view", !!t && t.kind === SYS.ORIGIN);
+    $("ref-inner").classList.toggle("diff-view", !!t && t.kind === SYS.DIFF);
+    updateRefSearchEnabled();
+    $("ref-empty").style.display = empty ? "flex" : "none";
+    if (empty) { inner.innerHTML = ""; diffLineEls = []; curLineEl = null; drawMinimap("left"); return; }
+    if (!t) { inner.innerHTML = ""; drawMinimap("left"); return; }
+
+    /* 保険：ヒットが「古いテキスト」に対するものだったら作り直す（5.4D）。
+       文字オフセットは元テキストと1対1なので、テキストが差し替わった状態で
+       古いヒットを使うと <mark> の位置がずれる。
+       ここで弾いておけば、再検索を忘れた経路が将来出ても壊れない。
+       比較は文字列の同一性（===）なので、同じ文字列なら実質ノーコスト。 */
+    if (t.kind === SYS.DIFF && (state.diffStale || t.html == null)) computeDiff();
+    if (state.refHitsSrc !== null && state.refHitsSrc !== t.text) {
+      state.refHits = findAll(t.text, $("ref-q").value);
+      state.refHitsSrc = t.text;
+      if (state.refIdx >= state.refHits.length) state.refIdx = state.refHits.length ? 0 : -1;
+      if (state.refHits.length && state.refIdx < 0) state.refIdx = 0;
+      updateCount("ref");
+    }
+
+    // 「変更」タブは専用の色付きHTMLを描く
+    if (t.kind === SYS.DIFF) {
+      inner.innerHTML = t.html || "";
+      diffLineEls = [...inner.querySelectorAll(".dl")];
+      curLineEl = null;
+      markDiffHits();          // 検索ヒットの行に色を付ける（5.13.6B）
+      drawMinimap("left");
+      syncDiffToCaret();
+      return;
+    }
+    diffLineEls = []; curLineEl = null;
+    const text = t.text;
+    const heads = headsOn() ? tabHeads(t) : [];
+    const hits = state.refHits;
+
+    if (!heads.length && !hits.length) {
+      inner.innerHTML = '<div class="rtext"></div>';
+      inner.querySelector(".rtext").textContent = text;
+      drawMinimap("left");
+      return;
+    }
+
+    // 境界点を集めて区間ごとに描画（見出しと検索の入れ子に対応）
+    const pts = new Set([0, text.length]);
+    heads.forEach(h => { pts.add(h.start); pts.add(h.end); });
+    hits.forEach(h => { pts.add(h.start); pts.add(h.end); });
+    const arr = [...pts].sort((a, b) => a - b);
+
+    let html = "", hi = 0, hj = 0;
+    for (let k = 0; k < arr.length - 1; k++) {
+      const s = arr[k], e = arr[k + 1];
+      if (e <= s) continue;
+      while (hi < heads.length && heads[hi].end <= s) hi++;
+      while (hj < hits.length && hits[hj].end <= s) hj++;
+      const hd = (hi < heads.length && heads[hi].start <= s) ? heads[hi] : null;
+      const isHit = (hj < hits.length && hits[hj].start <= s);
+      let frag = esc(text.slice(s, e));
+      if (isHit) frag = '<mark' + (hj === state.refIdx ? ' class="cur"' : '') + '>' + frag + '</mark>';
+      if (hd) frag = '<span class="hd hd' + headClassSuffix(hd) + '">' + frag + '</span>';
+      html += frag;
+    }
+    inner.innerHTML = '<div class="rtext">' + html + "</div>";
+    drawMinimap("left");
+  }
+
+  function findAll(text, q) {
+    const out = [];
+    if (!q) return out;
+    const lc = text.toLowerCase(), lq = q.toLowerCase();
+    let i = lc.indexOf(lq);
+    while (i !== -1 && out.length < 5000) { out.push({ start: i, end: i + q.length }); i = lc.indexOf(lq, i + Math.max(1, q.length)); }
+    return out;
+  }
+
+  function runRefSearch() {
+    const t = activeTabObj();
+    // 「変更」タブは t.text（表示テキスト）が検索対象。古いままだと位置がずれる
+    if (t && t.kind === SYS.DIFF && (state.diffStale || t.text == null)) computeDiff();
+    const searchable = refSearchable();
+    state.refHits = searchable ? findAll(t.text, $("ref-q").value) : [];
+    state.refHitsSrc = searchable ? t.text : null;   // どのテキストに対するヒットか（5.4D）
+    if (state.refIdx >= state.refHits.length) state.refIdx = state.refHits.length ? 0 : -1;
+    if (state.refHits.length && state.refIdx < 0) state.refIdx = 0;
+    updateRefAct();
+    updateCount("ref"); renderRef();
+  }
+
+  /** 「変更」タブの検索ヒットを【行単位】で示す（5.13.6B）。
+      差分ビューは行がブロック要素なので、文字単位の <mark> を入れるには
+      HTML を組み直すことになる（キーストロークごとに数千の div を作り直す）。
+      クラスの付け外しだけで済む行単位にして、DOM は触らない。 */
+  function markDiffHits() {
+    if (!diffLineEls.length) return;
+    for (const el of diffLineEls) el.classList.remove("hit-line", "hit-cur");
+    const t = activeTabObj();
+    if (!t || t.kind !== SYS.DIFF || !state.refHits.length) return;
+    const txt = t.text || "";
+    // 行頭オフセットの表を1回作って二分探索する（ヒット毎に slice すると O(n×件数)）
+    const ls = [0];
+    for (let i = 0; i < txt.length; i++) if (txt.charCodeAt(i) === 10) ls.push(i + 1);
+    const lineOfOff = off => {
+      let lo = 0, hi = ls.length - 1;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (ls[mid] <= off) lo = mid; else hi = mid - 1; }
+      return lo;
+    };
+    state.refHits.forEach((hit, i) => {
+      const li = lineOfOff(hit.start);
+      const el = diffLineEls[li];
+      if (!el) return;
+      el.classList.add("hit-line");
+      if (i === state.refIdx) el.classList.add("hit-cur");
+    });
+  }
+
+  /** 左検索欄の有効・無効。
+      renderRef のたびに呼ぶ。タブ切替のときだけ更新していると、
+      ファイルを開いて「初期」に中身が入っても無効のまま残り、
+      「タブを何度か切り替えると入力できる」という状態になる（仕様 5.4C）。 */
+  function refSearchable() {
+    return !!activeTabObj() && !refIsEmpty();      // 「変更」タブでも検索できる（5.13.6B）
+  }
+  function updateRefSearchEnabled() {
+    const q = $("ref-q"), t = activeTabObj(), ok = refSearchable();
+    q.disabled = !ok;
+    // 使えない理由を欄そのものに書く。黙って無効だと「壊れている」と受け取られる
+    q.placeholder = ok ? "左ペインを検索" : "資料を開くと検索できます";
+    q.title = q.disabled ? q.placeholder : "";
+    if (q.disabled && document.activeElement === q) q.blur();
+  }
+
+  /** 左検索バー右端のコンテキストボタン（システムタブ用） */
+  function updateRefAct() {
+    const b = $("ref-act"), t = activeTabObj();
+    if (t && t.kind === SYS.ORIGIN) {
+      b.hidden = false;
+      b.textContent = "←現状を初期に設定";
+      b.title = "いまの右ペインの内容を新しい「初期」として記録し直します（ここが変更の起点になります）";
+      b.dataset.act = "rebase";
+    } else if (t && t.kind === SYS.DIFF) {
+      b.hidden = false;
+      b.textContent = "カーソル位置を合わせる→";
+      b.title = "左でいま見ている行に、右ペインの表示とカーソルを合わせます";
+      b.dataset.act = "tohere";
+    } else {
+      b.hidden = true;
+      b.dataset.act = "";
+    }
+  }
+  function stepRef(d) {
+    if (!state.refHits.length) return;
+    state.refIdx = (state.refIdx + d + state.refHits.length) % state.refHits.length;
+    updateCount("ref"); renderRef();
+    const rb = $("ref-body");
+    const t = activeTabObj();
+    let target = null;
+    if (t && t.kind === SYS.DIFF) target = $("ref-inner").querySelector(".dl.hit-cur");
+    else target = $("ref-inner").querySelector("mark.cur");
+    if (target) { rb.scrollTop = target.offsetTop - rb.clientHeight / 2; rememberScroll(); drawMinimap("left"); }
+  }
+  function updateCount(which) {
+    if (which === "ref") {
+      // どのタブでも「N / M」に統一する。増減行数は「変更」タブの tooltip に出す
+      $("ref-count").textContent = state.refHits.length ? (state.refIdx + 1) + " / " + state.refHits.length : "0 / 0";
+    }
+    else $("ed-count").textContent = state.edHits.length ? (state.edIdx + 1) + " / " + state.edHits.length : "0 / 0";
+  }
+
+  /* =======================================================
+     右ペイン：検索
+     ======================================================= */
+  const HIT_RENDER_CAP = 1000;
+  function buildHitLayer() {
+    /* 保険：ヒットが古いテキストに対するものなら作り直す（5.4D）。
+       矩形はミラー上の文字位置から求めるので、テキストが変わった状態で
+       古いオフセットを使うとハイライトがずれる。 */
+    if (state.edHitsSrc !== null && state.edHitsSrc !== ta().value) {
+      state.edHits = findAll(ta().value, $("ed-q").value);
+      state.edHitsSrc = ta().value;
+      if (state.edIdx >= state.edHits.length) state.edIdx = state.edHits.length ? 0 : -1;
+      if (state.edHits.length && state.edIdx < 0) state.edIdx = 0;
+      updateCount("ed");
+    }
+    const layer = $("hit-layer");
+    layer.textContent = ""; hitEls = [];
+    if (!state.edHits.length) return;
+    const frag = document.createDocumentFragment();
+    const cap = Math.min(state.edHits.length, HIT_RENDER_CAP);
+    for (let i = 0; i < cap; i++) {
+      const h = state.edHits[i], els = [];
+      for (const q of rectsForRange(h.start, h.end)) {
+        const d = document.createElement("div");
+        d.className = "hit" + (i === state.edIdx ? " cur" : "");
+        d.style.left = q.left + "px"; d.style.top = q.top + "px";
+        d.style.width = q.width + "px"; d.style.height = q.height + "px";
+        frag.appendChild(d); els.push(d);
+      }
+      hitEls.push(els);
+    }
+    layer.appendChild(frag);
+  }
+  const markCurrentHit = () => hitEls.forEach((els, i) => els.forEach(d => d.classList.toggle("cur", i === state.edIdx)));
+
+  function runEdSearch(keepIdx) {
+    state.edHitsSrc = ta().value;      // どのテキストに対するヒットか（5.4D）
+    state.edHits = findAll(ta().value, $("ed-q").value);
+    if (!keepIdx || state.edIdx >= state.edHits.length) state.edIdx = state.edHits.length ? 0 : -1;
+    updateCount("ed");
+    syncMirrorText(); buildHitLayer(); drawMinimap("right");
+  }
+  function stepEd(d) {
+    if (!state.edHits.length) return;
+    state.edIdx = (state.edIdx + d + state.edHits.length) % state.edHits.length;
+    const h = state.edHits[state.edIdx];
+    ta().setSelectionRange(h.start, h.end);
+    state.caret = h.start;
+    scrollToOffset(h.start);
+    markCurrentHit(); updateCount("ed"); updateCaret(); drawMinimap("right");
+  }
+  function scrollToOffset(off) {
+    const p = toContent(rectForOffset(off));
+    const max = Math.max(0, body().scrollHeight - body().clientHeight);
+    body().scrollTop = Math.max(0, Math.min(max, p.top - body().clientHeight / 2));
+  }
+
+  /* =======================================================
+     右ペイン：置換
+     ======================================================= */
+  function insertText(text) {
+    let ok = false;
+    try { ok = document.execCommand("insertText", false, text); } catch (_) { ok = false; }
+    if (!ok) { const t = ta(); t.setRangeText(text, t.selectionStart, t.selectionEnd, "end"); }
+  }
+  function replaceOne() {
+    if (!state.edHits.length) { toast("検索結果がありません"); return; }
+    if (state.edIdx < 0) state.edIdx = 0;
+    const h = state.edHits[state.edIdx], rep = $("ed-r").value, t = ta();
+    t.focus(); t.setSelectionRange(h.start, h.end);
+    insertText(rep);
+    const after = h.start + rep.length;
+    onEdit(true); runEdSearch();
+    const idx = state.edHits.findIndex(x => x.start >= after);
+    state.edIdx = state.edHits.length ? (idx < 0 ? 0 : idx) : -1;
+    markCurrentHit(); updateCount("ed");
+    if (state.edIdx >= 0) { const n = state.edHits[state.edIdx]; t.setSelectionRange(n.start, n.end); scrollToOffset(n.start); }
+    updateCaret(); $("ed-r").focus();
+    toast("1件置換しました");
+  }
+  function replaceAll() {
+    const q = $("ed-q").value;
+    if (!q) { toast("検索文字列を入力してください"); return; }
+    const hits = findAll(ta().value, q);
+    if (!hits.length) { toast("検索結果がありません"); return; }
+    const rep = $("ed-r").value, src = ta().value;
+    let out = "", pos = 0;
+    for (const h of hits) { out += src.slice(pos, h.start) + rep; pos = h.end; }
+    out += src.slice(pos);
+    const keep = body().scrollTop, t = ta();
+    t.focus(); t.select(); insertText(out);
+    body().scrollTop = keep;
+    onEdit(true); runEdSearch(); $("ed-r").focus();
+    toast(hits.length + "件を置換しました（Ctrl+Z で元に戻せます）");
+  }
+
+  /* =======================================================
+     ドラッグ＆ドロップ
+     ======================================================= */
+  /**
+   * 左ペインの選択範囲が「行として完結しているか」を判定し、
+   * 行単位ならば前後の余白まで含めて切り出し、末尾に改行を付けて返す。
+   * これにより連続してドロップしても毎回 Enter を押す必要がなくなる。
+   */
+  function charOffsetInRoot(root, node, nodeOffset) {
+    let off = 0, done = false;
+    (function walk(n) {
+      if (done) return;
+      if (n === node) {
+        if (n.nodeType === 3) { off += nodeOffset; }
+        else { for (let i = 0; i < nodeOffset && i < n.childNodes.length; i++) { const d = done; done = false; walk(n.childNodes[i]); done = d; } }
+        done = true; return;
+      }
+      if (n.nodeType === 3) { off += n.nodeValue.length; return; }
+      for (const c of n.childNodes) { walk(c); if (done) return; }
+    })(root);
+    return off;
+  }
+
+  function buildDragPayload() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+    const raw = sel.toString();
+    if (!raw) return null;
+
+    // 本文だけを含む要素を基準にする（将来ヘッダ等を足しても文字数がずれないように）
+    const t = activeTabObj();
+    const root = $("ref-inner").querySelector(".rtext") || $("ref-inner");
+    const r = sel.getRangeAt(0);
+    if (!state.lineWise || !t || !root.contains(r.startContainer) || !root.contains(r.endContainer)) {
+      return { text: raw, lineWise: false };
+    }
+
+    // 「変更」タブは行がブロック要素なので、行単位で切り出す
+    if (t.kind === SYS.DIFF) {
+      const touched = [...$("ref-inner").querySelectorAll(".dl")].filter(el => r.intersectsNode(el));
+      if (!touched.length) return { text: raw, lineWise: false };
+      if (touched.length === 1) {
+        // 1行だけ。完全に含まれていれば行として、途中までなら文字として扱う
+        const r2 = document.createRange();
+        r2.selectNodeContents(touched[0]);
+        const full = r.compareBoundaryPoints(Range.START_TO_START, r2) <= 0 &&
+                     r.compareBoundaryPoints(Range.END_TO_END, r2) >= 0;
+        return full ? { text: touched[0].dataset.t + "\n", lineWise: true }
+                    : { text: raw, lineWise: false };
+      }
+      // 複数行にまたがる選択は「行の集まり」。端が行の途中でも、その行ごと持っていく
+      return { text: touched.map(el => el.dataset.t).join("\n") + "\n", lineWise: true };
+    }
+
+    const text = t.text;
+    let s = charOffsetInRoot(root, r.startContainer, r.startOffset);
+    let e = charOffsetInRoot(root, r.endContainer, r.endOffset);
+    if (e < s) { const tmp = s; s = e; e = tmp; }
+
+    // 選択の先頭を行頭まで戻す
+    const lineStart = s === 0 ? 0 : text.lastIndexOf("\n", s - 1) + 1;
+    /* 選択の末尾を「行末の改行の直後」まで進める。
+       ただし選択がすでに行頭で終わっている（＝直前が改行）ときは、
+       そこで止める。次の行まで巻き込まないため。 */
+    let sliceEnd;
+    if (e > 0 && text[e - 1] === "\n") sliceEnd = e;
+    else { const nx = text.indexOf("\n", e); sliceEnd = nx < 0 ? text.length : nx + 1; }
+
+    const preOK = text.slice(lineStart, s).trim() === "";                       // 行頭〜選択開始が空白のみ
+    const postOK = text.slice(e, sliceEnd).replace(/\n$/, "").trim() === "";    // 選択終了〜行末が空白のみ
+    const multi = raw.indexOf("\n") >= 0;
+
+    if (!(multi || (preOK && postOK))) return { text: raw, lineWise: false };
+
+    /* 行単位と判定したら、端が行の途中でも【必ず行全体】を切り出す。
+       ここで選択範囲どおりに s / e で切ると、行末の改行から選択が始まった場合に
+       ペイロードが "\n" で始まり、先頭の1行が消えたように見える（5.7B の注意）。 */
+    let out = text.slice(lineStart, sliceEnd);
+    if (!out.endsWith("\n")) out += "\n";
+    return { text: out, lineWise: true };
+  }
+
+  $("ref-inner").addEventListener("dragstart", e => {
+    const p = buildDragPayload();
+    if (!p) { e.preventDefault(); return; }
+    e.dataTransfer.setData("text/plain", p.text);
+    if (p.lineWise) e.dataTransfer.setData(LINEWISE_MIME, "1");
+    e.dataTransfer.effectAllowed = "copy";
+  });
+  ["dragenter", "dragover"].forEach(ev => body().addEventListener(ev, e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    body().classList.add("drop-active");
+    $("pane-edit").classList.add("drop-active");
+    const types = e.dataTransfer.types ? [...e.dataTransfer.types] : [];
+    if (types.includes("Files")) {
+      hideDropCaret();
+      // 上書きになるドロップは緑ではなく橙で予告する（落とす前に気づけるように）
+      const warn = state.dirty;
+      $("pane-edit").classList.toggle("drop-overwrite", warn);
+      body().classList.toggle("drop-overwrite", warn);
+      return;
+    }
+    $("pane-edit").classList.remove("drop-overwrite");
+    body().classList.remove("drop-overwrite");
+    // dragover 中は getData() が使えないため、独自 MIME の有無で行単位かを判別する
+    $("drop-caret").classList.toggle("linewise", state.lineWise && types.includes(LINEWISE_MIME));
+    syncMirrorStyle(); syncMirrorText();
+    showDropCaret(offsetFromPoint(e.clientX, e.clientY));
+  }));
+  body().addEventListener("dragleave", e => {
+    if (e.relatedTarget && body().contains(e.relatedTarget)) return;
+    body().classList.remove("drop-active", "drop-overwrite");
+    $("pane-edit").classList.remove("drop-active", "drop-overwrite");
+    hideDropCaret();
+  });
+  body().addEventListener("drop", e => {
+    e.preventDefault();
+    body().classList.remove("drop-active");
+    $("pane-edit").classList.remove("drop-active");
+    hideDropCaret();
+    $("pane-edit").classList.remove("drop-overwrite");
+    body().classList.remove("drop-overwrite");
+    if (e.dataTransfer.files && e.dataTransfer.files.length) {
+      const f = e.dataTransfer.files[0];
+      // ドロップされたファイルからもハンドルを取れる（保存時の初期フォルダに使う）
+      const item = e.dataTransfer.items && e.dataTransfer.items[0];
+      const hp = (item && item.getAsFileSystemHandle) ? item.getAsFileSystemHandle() : Promise.resolve(null);
+      confirmOverwrite("いま編集中の「" + (state.fileName || "無題.txt") + "」を、ドロップした「" + f.name + "」の内容で置き換えます。",
+        () => hp.then(h => openEditFile(f, h && h.kind === "file" ? h : null)).catch(() => openEditFile(f)));
+      return;
+    }
+    const text = e.dataTransfer.getData("text/plain");
+    if (!text) return;
+    syncMirrorStyle(); syncMirrorText();
+    const off = offsetFromPoint(e.clientX, e.clientY), t = ta();
+
+    // 行単位（末尾が改行）の場合、行の途中に落とされたら先頭にも改行を足して
+    // 独立した行として挿入する。挿入後キャレットは次行の先頭に残る
+    let ins = text;
+    const lineWise = state.lineWise && ins.endsWith("\n");
+    if (lineWise && off > 0 && t.value[off - 1] !== "\n") ins = "\n" + ins;
+
+    t.focus(); t.setSelectionRange(off, off);
+    insertText(ins);
+    onEdit();
+    toast(lineWise
+      ? (ins.split("\n").length - 1) + "行を挿入しました（改行付き）"
+      : "引用を挿入しました（" + ins.length + "文字）");
+  });
+
+  $("pane-ref").addEventListener("dragover", e => {
+    if (e.dataTransfer.types && [...e.dataTransfer.types].includes("Files")) {
+      e.preventDefault();
+      $("pane-ref").classList.add("drop-active");
+    }
+  });
+  $("pane-ref").addEventListener("dragleave", e => {
+    if (e.relatedTarget && $("pane-ref").contains(e.relatedTarget)) return;
+    $("pane-ref").classList.remove("drop-active");
+  });
+  $("pane-ref").addEventListener("drop", e => {
+    $("pane-ref").classList.remove("drop-active");
+    if (!e.dataTransfer.files || !e.dataTransfer.files.length) return;
+    e.preventDefault();
+    [...e.dataTransfer.files].forEach(f => readFile(f, (n, t) => addTab(n, t)));
+  });
+
+  function readFile(file, cb) {
+    const r = new FileReader();
+    r.onload = () => cb(file.name, String(r.result).replace(/\r\n?/g, "\n"));
+    r.onerror = () => toast("読み込みに失敗しました: " + file.name);
+    r.readAsText(file, "UTF-8");
+  }
+
+  /* =======================================================
+     編集 / 保存
+     ======================================================= */
+  let saveTimer = null;
+  function onEdit(skipSearch) {
+    state.dirty = true;
+    updateHeader();
+    if (!skipSearch) runEdSearch(true);
+    refreshOverlay();
+    scheduleDiff();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(autoSave, 3000);
+  }
+  /* 自動保存の状態はトーストではなく、ツールバーの空き領域に出したままにする（5.8）。
+     本文の上に何も重ならないので、書いている最中でも視界を邪魔しない。
+     消さないので「いつ保存されたか」がいつでも確認できる。 */
+  const pad2 = n => (n < 10 ? "0" : "") + n;
+  function setAutosaveNote(ok) {
+    const el = $("autosave-note");
+    if (ok) {
+      const d = new Date();
+      el.textContent = "ブラウザに自動保存しました（" + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()) + "）";
+      el.classList.remove("failed");
+      el.title = "この内容はブラウザ内に控えられています。次に開いたとき復元できます（ファイルには書かれていません）";
+    } else {
+      el.textContent = "⚠ ブラウザに自動保存できません";
+      el.classList.add("failed");
+      el.title = "ブラウザの保存領域に書けませんでした。［ファイル保存］で手元に残してください";
+    }
+  }
+
+  /** 下書きを LocalStorage に保存する。成功したら true を返す（5.8） */
+  function autoSave(quiet) {
+    const payload = { name: state.fileName, text: ta().value, at: Date.now(),
+                      origin: { text: state.origin.text, name: state.origin.name, at: state.origin.at } };
+    try {
+      localStorage.setItem(LS_DRAFT, JSON.stringify(payload));
+      if (!quiet) setAutosaveNote(true);
+      return true;
+    } catch (_) {
+      // 容量超過。原稿を守るほうが優先なので origin を落として入れ直す（5.13.1B）
+      try {
+        delete payload.origin;
+        localStorage.setItem(LS_DRAFT, JSON.stringify(payload));
+        if (!quiet) setAutosaveNote(true);
+        return true;
+      } catch (__) {
+        if (!quiet) { setAutosaveNote(false); toast("ブラウザに自動保存できません。［ファイル保存］で手元に残してください"); }
+        return false;
+      }
+    }
+  }
+  function updateHeader() {
+    $("edit-fname").textContent = state.fileName;
+    $("edit-dirty").textContent = state.dirty ? " ●" : "";
+    const v = ta().value;
+    $("edit-stat").textContent = v.length.toLocaleString() + " 文字 / " + (v ? v.split("\n").length : 0).toLocaleString() + " 行";
+  }
+  function openEditFile(file, handle) {
+    readFile(file, (name, text) => {
+      state.fileName = name; ta().value = text; state.dirty = false;
+      state.fileHandle = handle || null;     // 保存時の初期フォルダに使う（5.9）
+      /* textarea は value を代入すると仕様上キャレットが文末へ行く。
+         開いた直後は先頭から読むので、キャレットと表示を先頭に戻す。 */
+      ta().setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;
+      setOrigin(text, name);                 // 開いた時点を「初期」にする
+      updateHeader(); runEdSearch(); refreshOverlay();
+      toast("「" + name + "」を開きました（この内容を「初期」にしました）");
+    });
+  }
+
+  /* ---- 上書き確認（仕様 5.1C） ----
+     編集中（dirty）に原稿を差し替える操作は、必ず一度止める。
+     ok を押したときだけ fn() を実行する。 */
+  function confirmOverwrite(info, fn) {
+    if (!state.dirty) { fn(); return; }
+    $("open-info").textContent = info;
+    $("overlay-open").classList.add("show");
+    const close = () => {
+      $("overlay-open").classList.remove("show");
+      document.removeEventListener("keydown", onKey, true);
+    };
+    const onKey = e => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+    document.addEventListener("keydown", onKey, true);
+    $("btn-open-cancel").onclick = close;
+    $("btn-open-ok").onclick = () => { close(); fn(); };
+  }
+
+  /* ---- 「開く」：ハンドルが取れる環境では showOpenFilePicker を使う ---- */
+  async function pickAndOpen() {
+    if (typeof window.showOpenFilePicker === "function") {
+      try {
+        const [h] = await window.showOpenFilePicker({ id: "novedit", multiple: false,
+          types: [{ description: "テキスト", accept: { "text/plain": [".txt", ".md", ".text"] } }] });
+        openEditFile(await h.getFile(), h);
+        return;
+      } catch (err) {
+        if (err && err.name === "AbortError") return;
+        // 使えない環境は <input type=file> に落とす
+      }
+    }
+    $("file-edit").click();
+  }
+
+  /* ---- 「ファイル挿入」（仕様 5.9B） ----
+     原稿は差し替えず、いまのカーソル位置に中身を入れる。
+     execCommand を使うので Ctrl+Z 1回で戻せる。 */
+  function insertFileAtCaret(file) {
+    readFile(file, (name, text) => {
+      const t = ta();
+      let ins = text;
+      const off = t.selectionStart;
+      // ファイルは常に「かたまり」なので、行の途中に落とさない
+      if (off > 0 && t.value[off - 1] !== "\n") ins = "\n" + ins;
+      if (!ins.endsWith("\n")) ins += "\n";
+      t.focus(); t.setSelectionRange(off, off);   // 選択があっても消さず、キャレット位置に入れる
+      insertText(ins);
+      onEdit();                                    // dirty・検索・オーバーレイ・変更タブをまとめて更新
+      toast("「" + name + "」を挿入しました（" + text.length.toLocaleString() + "文字）");
+    });
+  }
+  /* ---- 保存（仕様 5.9） ----
+     OS のファイルダイアログを開く。開いたファイルのハンドルを持っていれば
+     そのフォルダ・そのファイル名が既定になる。
+     File System Access API が使えない環境ではダウンロードにフォールバックする。 */
+  const canFSA = () => typeof window.showSaveFilePicker === "function";
+
+  async function saveTxt() {
+    const text = ta().value;
+    const name = state.fileName || "無題.txt";
+    if (canFSA()) {
+      try {
+        const opts = { id: "novedit", suggestedName: name,
+          types: [{ description: "テキスト", accept: { "text/plain": [".txt"] } }] };
+        // 元のファイルのハンドルがあれば、そのフォルダを初期表示にする
+        if (state.fileHandle) opts.startIn = state.fileHandle; else opts.startIn = "documents";
+        const h = await window.showSaveFilePicker(opts);
+        const w = await h.createWritable();
+        await w.write(new Blob([text], { type: "text/plain;charset=utf-8" }));
+        await w.close();
+        state.fileHandle = h;
+        state.fileName = h.name;
+        state.dirty = false; updateHeader();
+        toast("「" + h.name + "」に保存しました");
+        return;
+      } catch (err) {
+        if (err && err.name === "AbortError") return;              // ユーザーがキャンセル
+        // SecurityError / NotAllowedError などはフォールバックへ落とす
+        toast("ダイアログを開けなかったため、ダウンロードで保存します");
+      }
+    }
+    downloadTxt(text, name);
+  }
+
+  function downloadTxt(text, name) {
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    state.dirty = false; updateHeader();
+  }
+
+  /* =======================================================
+     ミニマップ（幅 28px）
+     ======================================================= */
+  const drawAll = () => { drawMinimap("left"); drawMinimap("right"); };
+
+  function drawMinimap(side) {
+    const isL = side === "left";
+    const canvas = isL ? $("mm-left") : $("mm-right");
+    const wrap = canvas.parentElement;
+    const pane = isL ? $("ref-body") : body();
+    const dpr = window.devicePixelRatio || 1;
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    if (w < 1 || h < 1) return;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    canvas.style.width = w + "px"; canvas.style.height = h + "px";
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const t0 = activeTabObj();
+    // 左は本文の色（クリーム／初期はグレー）に合わせた下地にする（仕様 5.2C）
+    ctx.fillStyle = isL ? (t0 && t0.kind === SYS.ORIGIN ? MM_BG_ORIGIN : MM_BG_L) : "#eceff1";
+    ctx.fillRect(0, 0, w, h);
+
+    const t = t0;
+    const refEmpty = isL && refIsEmpty();
+    const text = isL ? (refEmpty || !t ? "" : t.text) : ta().value;
+    const total = text.length;
+
+    const isDiffTab = isL && !!t && t.kind === SYS.DIFF;
+
+    /* ミニマップの縦軸は【行】である。density・見出し・検索・変更行・キャレット・
+       そしてビューポート枠まで、すべて行番号で位置を決める。
+       ピクセル比（scrollTop / scrollHeight）を混ぜると、折り返しのぶんだけ必ずずれる。
+       行頭オフセットの表を1回作り、二分探索で行番号に直す。 */
+    const lines = text.split("\n"), n = Math.max(1, lines.length);
+    const lineStarts = [0];
+    for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) lineStarts.push(i + 1);
+    const lineOf = off => {
+      let lo = 0, hi = lineStarts.length - 1;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (lineStarts[mid] <= off) lo = mid; else hi = mid - 1; }
+      return lo;
+    };
+
+    if (total > 0) {
+      const rowH = Math.max(.6, h / n), x0 = 3, maxW = w - 6;
+      // 本文density
+      // 「変更」タブでは描かない。変更行だけを見せたい場所に灰色の縞を敷くと、
+      // 行数が多いときに色が埋もれて見えなくなる。
+      if (!isDiffTab) {
+        ctx.fillStyle = "#b0bec5";
+        for (let i = 0; i < n; i++) {
+          const len = lines[i].length;
+          if (len) ctx.fillRect(x0, (i / n) * h, Math.max(1, Math.min(maxW, (len / 42) * maxW)), Math.min(rowH, 2));
+        }
+      }
+      // 見出しマーカー（藍系で統一する。赤・緑・橙は「変更」専用の色にする）
+      // Lv3（** / ***）は本文中の強調で件数が多く、赤を使うと変更マーカーと混ざるのでミニマップには出さない
+      if (headsOn() && !isDiffTab) {
+        for (const hd of (isL ? tabHeads(t) : edHeads())) {
+          if (hd.lv === 3) continue;
+          const y = (hd.line / n) * h;
+          // クリーム／グレーの下地でも沈まないよう、濃い藍にして太くする
+          if (hd.lv === 1) { ctx.fillStyle = "#303f9f"; ctx.fillRect(0, y - 1.5, w, 3); }
+          else { ctx.fillStyle = "#5c6bc0"; ctx.fillRect(0, y - 1, Math.max(8, w * .55), 2); }
+        }
+      }
+
+      // 変更マーカー
+      const DC = { del: "#d32f2f", add: "#2e7d32", chg: "#ef6c00" };
+      const MIN_BAR = 2.5;   // これ未満だと 3,000 行クラスで見えなくなる
+
+      /* 重なるマーカーを1本にまとめる。
+         del と add が重なったら（＝chg の2行が潰れたら）橙にする。
+         まとめないと、後から描いたほうが先のものを覆って
+         「赤しか出ない」「色が出ない」という見え方になる。
+
+         固定グリッドに丸める方式は使わない。chg の2行はすぐ隣なのに
+         グリッドの境目をまたぐと別々のままになり、橙にならない。
+         y 順に並べて「直前の棒と重なるか」で判定する。 */
+      function packMarks(marks, nLines) {
+        const pts = marks.map(m => ({ y: (m.i / nLines) * h, k: m.k })).sort((a, b) => a.y - b.y);
+        const out = [];
+        for (const p of pts) {
+          const last = out[out.length - 1];
+          if (last && p.y < last.y + MIN_BAR) {          // 直前の棒に食い込む
+            if (last.k !== p.k) last.k = "chg";          // 削除と追加が同居 → 変更
+          } else out.push({ y: p.y, k: p.k });
+        }
+        return out;
+      }
+
+      if (isDiffTab) {
+        // 「変更」タブでは変更そのものが主役なので幅いっぱいに描く
+        if (state.diffStale || !t.marks) computeDiff();   // マーカーを取りこぼさない
+        for (const b of packMarks(t.marks || [], n)) {
+          ctx.fillStyle = DC[b.k];
+          ctx.fillRect(2, b.y, w - 4, MIN_BAR);
+        }
+      } else if (!isL && state.diffMarks.length) {
+        const nD = Math.max(1, state.diffMarksLines || n);   // マーカー計算時点の行数
+        // 原稿側は右端のガター（5px）に寄せ、density・見出しと重ならないようにする
+        const gx = w - 6;
+        ctx.fillStyle = "rgba(255,255,255,.6)";
+        ctx.fillRect(gx - 1, 0, 7, h);
+        for (const b of packMarks(state.diffMarks, nD)) {
+          ctx.fillStyle = DC[b.k];
+          if (b.k === "del") ctx.fillRect(gx - 2, b.y, 8, 2);    // 削除位置はティック（行を持たない）
+          else ctx.fillRect(gx, b.y, 5, MIN_BAR);
+        }
+      }
+      // 検索ヒット（「変更」タブでも描く）
+      const hits = isL ? state.refHits : state.edHits;
+      const cur = isL ? state.refIdx : state.edIdx;
+      hits.forEach((hit, i) => {
+        const y = (lineOf(hit.start) / n) * h;    // ← 行番号で揃える（文字数比ではない）
+        ctx.fillStyle = i === cur ? "#f57c00" : "#ffb300";
+        ctx.fillRect(1, y - 1, w - 2, i === cur ? 3 : 2);
+      });
+      // キャレット（常時表示）
+      if (!isL) {
+        const y = (lineOf(state.caret) / n) * h;  // ← 行番号で揃える
+        ctx.fillStyle = "#2e7d32";
+        ctx.fillRect(0, y - 1, w, 2);
+        ctx.beginPath(); ctx.moveTo(0, y - 4); ctx.lineTo(4, y); ctx.lineTo(0, y + 4); ctx.closePath(); ctx.fill();
+      }
+    }
+
+    // ビューポート: 塗りつぶさず枠線のみ（下の色を隠さないため）
+    // 空状態のときは枠も描かない。中身が無いのに枠だけ出ていると壊れて見える（仕様 5.2B）
+    /* ビューポート枠は「本文が占める範囲」に対して描く。
+       scrollHeight をそのまま使うと、本文の下に敷いてある大きな余白（padding-bottom:60vh。
+       最終行を画面中央まで持ち上げるためのもの）まで含めて割ってしまい、
+       行番号基準で描いたマーカーと縦位置が合わなくなる。 */
+    if (!refEmpty && total > 0 && pane.scrollHeight - pane.clientHeight > 0) {
+      // 画面に見えている「行」の範囲をそのまま枠にする → マーカーと必ず一致する
+      const vr = visibleLineRange(isL, lineOf, n);
+      const a = Math.max(0, Math.min(n - 1, vr.top));
+      const b = Math.max(a, Math.min(n - 1, vr.bot));
+      const y1 = (a / n) * h;
+      const y2 = ((b + 1) / n) * h;          // 末尾の行も枠に含める
+      ctx.strokeStyle = "#1976d2"; ctx.lineWidth = 1.5;
+      ctx.strokeRect(0.75, y1 + 0.75, w - 1.5, Math.max(y2 - y1 - 1.5, 4));
+    }
+  }
+
+  /* =======================================================
+     ミニマップ：行 ⇔ 画面の対応
+     枠の描画・クリック・ドラッグがすべてここを通る。
+     「見えている行の範囲」を実測するので、折り返しがあっても枠が実際の
+     表示エリアとぴったり一致する。比率で近似すると必ずずれる。
+     ======================================================= */
+
+  /** root 内の文字オフセットに対応する (テキストノード, ノード内オフセット) */
+  function nodeAtOffset(root, off) {
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let acc = 0, n;
+    while ((n = w.nextNode())) {
+      const len = n.nodeValue.length;
+      if (off <= acc + len) return { node: n, off: off - acc };
+      acc += len;
+    }
+    return null;
+  }
+
+  /** 左ペイン（通常タブ）の座標 → 文字オフセット。div なので標準APIが使える */
+  function refOffsetAt(x, y) {
+    const root = $("ref-inner").querySelector(".rtext") || $("ref-inner");
+    let rg = null;
+    if (document.caretRangeFromPoint) rg = document.caretRangeFromPoint(x, y);
+    else if (document.caretPositionFromPoint) {
+      const cp = document.caretPositionFromPoint(x, y);
+      if (cp) return charOffsetInRoot(root, cp.offsetNode, cp.offset);
+    }
+    if (!rg || !root.contains(rg.startContainer)) return null;
+    return charOffsetInRoot(root, rg.startContainer, rg.startOffset);
+  }
+
+  /* スクロールのたびに呼ばれるので、同じ状態なら計算し直さない */
+  const visRangeMemo = { left: null, right: null };
+
+  /** いま画面に見えている論理行の範囲 { top, bot } */
+  function visibleLineRange(isL, lineOf, n) {
+    const pane0 = isL ? $("ref-body") : body();
+    // テキストが差し替わってもレイアウト寸法が偶然同じ、という取り違えを避けるため
+    // 文字数もキーに入れる（5.4D）
+    const srcLen = isL ? ((activeTabObj() && activeTabObj().text) || "").length : ta().value.length;
+    const key = [Math.round(pane0.scrollTop), pane0.clientHeight, pane0.scrollHeight, n, srcLen,
+                 isL ? ((activeTabObj() && activeTabObj().id) || "-") : "e"].join("|");
+    const memo = visRangeMemo[isL ? "left" : "right"];
+    if (memo && memo.key === key) return memo.val;
+    const val = computeVisibleLineRange(isL, lineOf, n);
+    visRangeMemo[isL ? "left" : "right"] = { key: key, val: val };
+    return val;
+  }
+
+  function computeVisibleLineRange(isL, lineOf, n) {
+    if (isL) {
+      const rb = $("ref-body"), r = rb.getBoundingClientRect();
+      const t = activeTabObj();
+      // 「変更」タブは行がブロック要素なので offsetTop を二分探索するだけで正確に出る
+      if (t && t.kind === SYS.DIFF && diffLineEls.length) {
+        const find = y => {
+          let lo = 0, hi = diffLineEls.length - 1;
+          while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (diffLineEls[mid].offsetTop <= y) lo = mid; else hi = mid - 1; }
+          return lo;
+        };
+        return { top: find(rb.scrollTop), bot: find(rb.scrollTop + rb.clientHeight - 1) };
+      }
+      const x = r.left + Math.min(30, Math.max(4, r.width / 2));
+      const o1 = refOffsetAt(x, r.top + 2), o2 = refOffsetAt(x, r.bottom - 2);
+      return { top: o1 == null ? 0 : lineOf(o1), bot: o2 == null ? n - 1 : lineOf(o2) };
+    }
+    // 右ペインは textarea なのでミラー（5.6B）経由で求める。
+    // style の同期は refreshOverlay 側で済んでいるので、ここでは本文だけ合わせる
+    // （getComputedStyle をスクロールごとに走らせると重い）
+    const eb = body(), r = eb.getBoundingClientRect();
+    syncMirrorText();
+    const x = r.left + Math.min(30, Math.max(4, r.width / 2));
+    return { top: lineOf(offsetFromPoint(x, r.top + 2)), bot: lineOf(offsetFromPoint(x, r.bottom - 2)) };
+  }
+
+  /** 指定した論理行の、スクロールコンテンツ内でのY座標（px）。取れなければ null */
+  function lineDocY(isL, line) {
+    if (isL) {
+      const rb = $("ref-body"), t = activeTabObj();
+      if (t && t.kind === SYS.DIFF && diffLineEls.length) {
+        const el = diffLineEls[Math.max(0, Math.min(diffLineEls.length - 1, line))];
+        return el ? el.offsetTop : null;
+      }
+      const root = $("ref-inner").querySelector(".rtext") || $("ref-inner");
+      const txt = root.textContent || "";
+      let off = 0;
+      for (let k = 0; k < line; k++) { const nx = txt.indexOf("\n", off); if (nx < 0) break; off = nx + 1; }
+      const p = nodeAtOffset(root, off);
+      if (!p) return null;
+      const rg = document.createRange();
+      rg.setStart(p.node, p.off);
+      rg.setEnd(p.node, Math.min(p.off + 1, p.node.nodeValue.length));
+      const rects = rg.getClientRects();
+      const rc = rects.length ? rects[0] : rg.getBoundingClientRect();
+      if (!rc || (!rc.height && !rc.top)) return null;
+      return rc.top - rb.getBoundingClientRect().top + rb.scrollTop;
+    }
+    const eb = body(), v = ta().value;
+    let off = 0;
+    for (let k = 0; k < line; k++) { const nx = v.indexOf("\n", off); if (nx < 0) break; off = nx + 1; }
+    syncMirrorStyle(); syncMirrorText();
+    const rc = rectForOffset(off);
+    if (!rc) return null;
+    return rc.top - eb.getBoundingClientRect().top + eb.scrollTop;
+  }
+
+  function setupMinimapDrag(canvasId, getPane, side) {
+    const canvas = $(canvasId);
+    let dragging = false;
+    const jump = clientY => {
+      const r = canvas.getBoundingClientRect();
+      if (r.height <= 0) return;
+      const p = Math.max(0, Math.min(1, (clientY - r.top) / r.height));
+      const isL = side === "left";
+      const pane = getPane();
+      // クリックした位置の「行」を求め、その行を画面の上端に持ってくる
+      const src = isL ? ((activeTabObj() && activeTabObj().text) || "") : ta().value;
+      const nn = Math.max(1, src.split("\n").length);
+      const line = Math.max(0, Math.min(nn - 1, Math.floor(p * nn)));
+      const docY = lineDocY(isL, line);
+      const max = Math.max(0, pane.scrollHeight - pane.clientHeight);
+      pane.scrollTop = docY == null ? Math.max(0, Math.min(max, p * max))    // 測れなければ比率で
+                                    : Math.max(0, Math.min(max, docY));
+      if (side === "left") rememberScroll();
+      drawMinimap(side);
+    };
+    canvas.addEventListener("pointerdown", e => {
+      if (e.button != null && e.button !== 0) return;
+      dragging = true;
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+      canvas.style.cursor = "grabbing"; jump(e.clientY); e.preventDefault();
+    });
+    canvas.addEventListener("pointermove", e => { if (dragging) { jump(e.clientY); e.preventDefault(); } });
+    const end = () => { dragging = false; canvas.style.cursor = "grab"; };
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach(ev => canvas.addEventListener(ev, end));
+  }
+
+  /* =======================================================
+     スプリッタ
+     ======================================================= */
+  (function () {
+    const sp = $("splitter");
+    let dragging = false;
+    sp.addEventListener("pointerdown", e => {
+      dragging = true; sp.classList.add("dragging");
+      try { sp.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+    });
+    sp.addEventListener("pointermove", e => {
+      if (!dragging) return;
+      const r = $("main").getBoundingClientRect();
+      const avail = r.width - MM * 2 - SPL;
+      state.ratio = Math.min(.85, Math.max(.15, (e.clientX - r.left - MM) / avail));
+      applyRatio(); reflowWidth(); refreshOverlay(); drawMinimap("left"); updateTabNav();
+    });
+    const end = () => { if (dragging) { dragging = false; sp.classList.remove("dragging"); saveSettings(); refreshOverlay(); } };
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach(ev => sp.addEventListener(ev, end));
+  })();
+
+  /* =======================================================
+     トースト
+     ======================================================= */
+  let toastTimer = null;
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 1800);
+  }
+
+  /* =======================================================
+     配線
+     ======================================================= */
+  /* ---- 空状態ヒントの操作（仕様 5.2B / 5.6C） ---- */
+  // 左：全面クリックでファイル選択（複数可）
+  $("ref-empty").addEventListener("click", () => $("file-ref").click());
+  // 右：破線枠の中だけクリック可。枠外は pointer-events:none で textarea に素通しする
+  $("edit-empty").querySelector(".hint-box").addEventListener("click", () => pickAndOpen());
+  // IME 変換中はヒントを隠す（変換候補の背後に残るのを防ぐ）
+  ta().addEventListener("compositionstart", () => { composing = true; updateEditEmpty(); });
+  ta().addEventListener("compositionend",   () => { composing = false; updateEditEmpty(); });
+  ["focus", "blur"].forEach(ev => ta().addEventListener(ev, updateEditEmpty));
+
+  // 左ペインで書こうとした人に知らせる（5 秒に 1 回まで）
+  // div はフォーカスを持たないので keydown は #ref-body に届かない。
+  // document で受け、いま選択キャレットが左ペイン内にあるかで判定する。
+  let refKeyToastAt = 0;
+  document.addEventListener("keydown", e => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.isComposing === true || e.keyCode === 229) return;      // IME 変換中は無視
+    if (e.key.length !== 1 && !["Enter", "Backspace", "Delete"].includes(e.key)) return;
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === "TEXTAREA" || ae.tagName === "INPUT" || ae.isContentEditable)) return;
+    const sel = window.getSelection();
+    const node = sel && sel.anchorNode;
+    if (!node || !$("ref-body").contains(node.nodeType === 1 ? node : node.parentNode)) return;
+    const now = Date.now();
+    if (now - refKeyToastAt < 5000) return;
+    refKeyToastAt = now;
+    toast("左ペインは参照専用です。編集は右ペインで行ってください");
+  });
+
+  $("btn-open").addEventListener("click", () =>
+    confirmOverwrite("いま編集中の「" + (state.fileName || "無題.txt") + "」を、選んだファイルの内容で置き換えます。", pickAndOpen));
+  $("file-edit").addEventListener("change", e => { if (e.target.files[0]) openEditFile(e.target.files[0]); e.target.value = ""; });
+  $("btn-save").addEventListener("click", saveTxt);
+
+  // ファイル挿入（原稿は差し替えない＝上書き確認は不要）
+  $("btn-insert").addEventListener("click", () => $("file-insert").click());
+  $("file-insert").addEventListener("change", e => { if (e.target.files[0]) insertFileAtCaret(e.target.files[0]); e.target.value = ""; });
+  $("tab-add").addEventListener("click", () => $("file-ref").click());
+  $("tab-undo").addEventListener("click", undoClose);
+
+  // タブが溢れたときの左右スクロール
+  const tabScroll = d => $("tabbar").scrollBy({ left: d, behavior: "smooth" });
+  $("tab-left").addEventListener("click", () => tabScroll(-160));
+  $("tab-right").addEventListener("click", () => tabScroll(160));
+  $("tabbar").addEventListener("scroll", updateTabNav);
+  // 縦ホイールを横スクロールに変換する（横ホイールが無いマウス向け）
+  $("tabbar").addEventListener("wheel", e => {
+    const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (!d) return;
+    const bar = $("tabbar");
+    if (bar.scrollWidth - bar.clientWidth <= 2) return;
+    bar.scrollLeft += d;
+    e.preventDefault();
+  }, { passive: false });
+  $("file-ref").addEventListener("change", e => {
+    [...e.target.files].forEach(f => readFile(f, (n, t) => addTab(n, t)));
+    e.target.value = "";
+  });
+
+  $("ref-q").addEventListener("input", () => runRefSearch());
+  /* 日本語入力（IME）の変換確定の Enter を奪ってはならない。
+     preventDefault() すると変換が確定できず、検索欄にカタカナや漢字を入れられない。
+     e.isComposing（未対応環境は keyCode 229）で変換中を判定して素通しする。 */
+  const composingKey = e => e.isComposing === true || e.keyCode === 229;
+  $("ref-q").addEventListener("keydown", e => {
+    if (e.key !== "Enter" || composingKey(e)) return;
+    e.preventDefault(); stepRef(e.shiftKey ? -1 : 1);
+  });
+  $("ref-next").addEventListener("click", () => stepRef(1));
+  $("ref-prev").addEventListener("click", () => stepRef(-1));
+
+  $("ed-q").addEventListener("input", () => runEdSearch());
+  $("ed-q").addEventListener("keydown", e => {
+    if (e.key !== "Enter" || composingKey(e)) return;      // IME の変換確定を奪わない
+    e.preventDefault(); stepEd(e.shiftKey ? -1 : 1);
+  });
+  $("ed-next").addEventListener("click", () => stepEd(1));
+  $("ed-prev").addEventListener("click", () => stepEd(-1));
+
+  function toggleReplace(force) {
+    const bar = $("ed-repbar");
+    const show = force != null ? force : bar.hidden;
+    bar.hidden = !show;
+    $("ed-rep-toggle").classList.toggle("on", show);
+    $("ed-rep-toggle").textContent = show ? "置換 ▴" : "置換 ▾";
+    refreshOverlay();
+    if (show) $("ed-r").focus();
+  }
+  $("ed-rep-toggle").addEventListener("click", () => toggleReplace());
+  $("ed-rep-one").addEventListener("click", replaceOne);
+  $("ed-rep-all").addEventListener("click", replaceAll);
+  $("ed-r").addEventListener("keydown", e => {
+    if (e.key !== "Enter" || composingKey(e)) return;      // IME の変換確定を奪わない
+    e.preventDefault();
+    if (e.shiftKey) replaceAll(); else replaceOne();
+  });
+
+  const t0 = ta();
+  t0.addEventListener("input", () => onEdit());
+  ["keyup", "click", "select", "focus", "blur"].forEach(ev => t0.addEventListener(ev, () => { updateCaret(); drawMinimap("right"); }));
+  document.addEventListener("selectionchange", () => { if (document.activeElement === t0) updateCaret(); });
+
+  // 左検索バーのコンテキストボタン
+  $("ref-act").addEventListener("click", () => {
+    const act = $("ref-act").dataset.act;
+    if (act === "rebase") {
+      setOrigin(ta().value, state.fileName);
+      renderRef(); updateCount("ref");
+      toast("「初期」を右ペインの現在の内容に再設定しました");
+    } else if (act === "tohere") {
+      rightToHere();
+    }
+  });
+
+  $("ref-body").addEventListener("scroll", () => { rememberScroll(); drawMinimap("left"); });
+  // 右ペインのスクロールでは追従しない（カーソルが動いたときだけ）
+  body().addEventListener("scroll", () => drawMinimap("right"));
+
+  $("opt-font").addEventListener("change", () => { applySettings(); saveSettings(); });   // 文字を大きくすると上限が下がる
+  $("opt-width").addEventListener("input", () => {
+    const v = +$("opt-width").value;
+    if (!v) return;                                   // 入力途中の空欄は無視
+    state.widthPref = Math.max(WIDTH_MIN, Math.min(WIDTH_HARD_MAX, v));
+    const mx = maxWidthChars();
+    if (state.widthPref > mx) toast("いまのペイン幅で表示できるのは全角 " + mx + " 文字までです");
+    applySettings(); saveSettings();
+  });
+  $("opt-head").addEventListener("change", e => {
+    state.showHead = e.target.checked;
+    saveSettings(); renderRef(); refreshOverlay();
+    toast(state.showHead ? "見出し表示：ON" : "見出し表示：OFF");
+  });
+  /* ---- 見出し設定ダイアログ ---- */
+  (function () {
+    const box = $("cfg-builtin");
+    BUILTIN_ORDER.forEach(k => {
+      const b = BUILTIN[k];
+      const l = document.createElement("label");
+      l.className = "ck";
+      l.innerHTML = '<input type="checkbox" data-b="' + k + '"><span></span>';
+      l.querySelector("span").innerHTML =
+        '<b style="color:' + (b.lv === 1 ? "#283593" : "#00695c") + '">Lv' + b.lv + '</b> ' +
+        b.label + '<br><span class="ex">' + b.ex + '</span>';
+      box.appendChild(l);
+    });
+    const box3 = $("cfg-lv3");
+    BUILTIN_LV3_ORDER.forEach(k => {
+      const b = BUILTIN_LV3[k];
+      const l = document.createElement("label");
+      l.className = "ck";
+      l.innerHTML = '<input type="checkbox" data-b="' + k + '"><span></span>';
+      const col = b.kind === "blue" ? "#1565c0" : "#c62828";
+      l.querySelector("span").innerHTML =
+        '<b style="color:' + col + '">Lv3</b> ' +
+        b.label + '<br><span class="ex">' + b.ex + '</span>';
+      box3.appendChild(l);
+    });
+  })();
+
+  function cfgFromDialog() {
+    const builtin = {};
+    $("cfg-builtin").querySelectorAll("input[data-b]").forEach(i => { builtin[i.dataset.b] = i.checked; });
+    $("cfg-lv3").querySelectorAll("input[data-b]").forEach(i => { builtin[i.dataset.b] = i.checked; });
+    return { builtin: builtin, lv1: $("cfg-lv1").value, lv2: $("cfg-lv2").value };
+  }
+  function cfgToDialog(cfg) {
+    $("cfg-builtin").querySelectorAll("input[data-b]").forEach(i => { i.checked = !!cfg.builtin[i.dataset.b]; });
+    $("cfg-lv3").querySelectorAll("input[data-b]").forEach(i => { i.checked = !!cfg.builtin[i.dataset.b]; });
+    $("cfg-lv1").value = cfg.lv1;
+    $("cfg-lv2").value = cfg.lv2;
+    cfgPreview();
+  }
+  function cfgPreview() {
+    const comp = compileHead(cfgFromDialog());
+    const count = txt => {
+      const h = findHeadings(txt, comp);
+      return [
+        h.filter(x => x.lv === 1).length,
+        h.filter(x => x.lv === 2).length,
+        h.filter(x => x.lv === 3 && x.kind === "red").length,
+        h.filter(x => x.lv === 3 && x.kind === "blue").length
+      ];
+    };
+    const t = activeTabObj();
+    const L = count(t ? t.text : ""), R = count(ta().value);
+    const samples = (t ? findHeadings(t.text, comp) : []).slice(0, 3)
+      .map(h => t.text.slice(h.start, h.end).trim().slice(0, 24));
+    $("cfg-preview").innerHTML =
+      "この設定での検出数 — 左「" + (t ? t.name : "—") + "」: <b>Lv1 " + L[0] + " / Lv2 " + L[1] +
+      " / Lv3赤 " + L[2] + " / Lv3青 " + L[3] + "</b>" +
+      "　右「" + state.fileName + "」: <b>Lv1 " + R[0] + " / Lv2 " + R[1] +
+      " / Lv3赤 " + R[2] + " / Lv3青 " + R[3] + "</b>" +
+      (samples.length ? "<br>例: " + samples.map(s => "「" + esc(s) + "」").join("　") : "");
+  }
+  function openHeadCfg() {
+    cfgToDialog(state.headCfg);
+    $("overlay-head").classList.add("show");
+  }
+  const closeHeadCfg = () => $("overlay-head").classList.remove("show");
+
+  $("btn-head-cfg").addEventListener("click", openHeadCfg);
+  $("cfg-lv1").addEventListener("input", cfgPreview);
+  $("cfg-lv2").addEventListener("input", cfgPreview);
+  $("cfg-builtin").addEventListener("change", cfgPreview);
+  $("cfg-lv3").addEventListener("change", cfgPreview);
+  $("cfg-reset").addEventListener("click", () => cfgToDialog(JSON.parse(JSON.stringify(HEAD_DEFAULT))));
+  $("cfg-cancel").addEventListener("click", closeHeadCfg);
+  $("cfg-apply").addEventListener("click", () => {
+    state.headCfg = cfgFromDialog();
+    headC = compileHead(state.headCfg);
+    invalidateHeads();
+    if (!state.showHead) { state.showHead = true; $("opt-head").checked = true; }
+    saveSettings();
+    renderRef(); refreshOverlay(); drawAll();
+    closeHeadCfg();
+    const t = activeTabObj();
+    toast("見出し設定を適用しました（左 " + (t ? tabHeads(t).length : 0) + "件 / 右 " + edHeads().length + "件）");
+  });
+
+  window.addEventListener("resize", () => { applyRatio(); reflowWidth(); refreshOverlay(); drawMinimap("left"); updateTabNav(); });
+  /* 離脱時：まず下書きを保存し、【保存できなかったときだけ】確認を出す（5.8B）。
+     ブラウザの確認文は差し替えられず「行った変更が保存されない可能性があります」と出る。
+     下書きが保存できているのにこれを出すと、事実と違うことを言うことになる。 */
+  window.addEventListener("beforeunload", e => {
+    if (!state.dirty) return;
+    const saved = autoSave(true);              // 離脱中なのでトーストや表示は出さない
+    if (saved) return;                         // 失われるものは無い → 何も出さない
+    e.preventDefault(); e.returnValue = "";    // 保存できなかった → ここで止める
+  });
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") { disarm(); closeHeadCfg(); return; }
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    if (e.key === "s") { e.preventDefault(); saveTxt(); }
+    else if (e.key === "f") { e.preventDefault(); (document.activeElement === t0 ? $("ed-q") : $("ref-q")).focus(); }
+    else if (e.key === "h") { e.preventDefault(); toggleReplace(true); }
+  });
+
+  setupMinimapDrag("mm-left", () => $("ref-body"), "left");
+  setupMinimapDrag("mm-right", body, "right");
+
+
+  /* =======================================================
+     起動
+     ======================================================= */
+  loadSettings();
+
+  // ① システムタブ（常設・閉じられない）
+  addTab("初期", "", false, 0, SYS.ORIGIN);
+  addTab("変更", "", false, 0, SYS.DIFF);
+  // ② 起動直後は資料も原稿も空。左右の空状態ヒント（仕様 5.2B / 5.6C）が出る。
+  setActiveTab(state.tabs[0].id);          // 「初期」タブをアクティブにする
+  state.fileName = "無題.txt";
+  setOrigin("", state.fileName);
+
+  updateHeader();
+  applySettings();
+  runEdSearch();
+  refreshOverlay();
+  drawAll();
+  setTimeout(() => { reflowWidth(); refreshOverlay(); }, 60);   // フォント確定後に幅の上限を測り直す
+
+  try {
+    const raw = localStorage.getItem(LS_DRAFT);
+    if (raw) {
+      const d = JSON.parse(raw);
+      if (d && d.text) {
+        $("restore-info").textContent = "前回の自動保存（" + new Date(d.at).toLocaleString("ja-JP") + " / " +
+          d.text.length.toLocaleString() + "文字）が残っています。復元しますか？";
+        $("overlay").classList.add("show");
+        $("btn-restore").focus();          // 大きい側＝既定の選択肢としてフォーカスも置く
+        $("btn-restore").onclick = () => {
+          ta().value = d.text; state.fileName = d.name || "無題.txt"; state.dirty = false;
+          ta().setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;   // 先頭から読む
+          // 基準も一緒に戻す。origin が無い古い下書きは、復元した内容を基準にする（5.13.1B）
+          const o = d.origin && typeof d.origin.text === "string" ? d.origin : null;
+          setOrigin(o ? o.text : d.text, (o && o.name) || state.fileName);
+          $("overlay").classList.remove("show");
+          updateHeader(); runEdSearch(); refreshOverlay(); drawAll();
+        };
+        $("btn-discard").onclick = () => { localStorage.removeItem(LS_DRAFT); $("overlay").classList.remove("show"); };
+      }
+    }
+  } catch (_) {}
+})();
+</script>
+</body>
+</html>
