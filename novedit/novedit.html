@@ -2259,37 +2259,68 @@
         const hw = Math.max(1, w - hx - 1);
         ctx.fillRect(hx, y - 1, hw, i === cur ? 3 : 2);
       });
-      // キャレット（常時表示）— 本文側に短い印のみ（全幅線なし）
+      // キャレット（常時表示・rev31）— 白縁の黒三角（本文側）。全幅線なし
+      // 行数が増えてもサイズは固定。density・見出しに埋もれないよう縁取り必須
       if (!isL) {
         const y = (lineOf(state.caret) / n) * h;
-        ctx.fillStyle = "#2e7d32";
-        ctx.fillRect(1, y - 1, 6, 2);
-        ctx.beginPath();
-        ctx.moveTo(1, y - 4);
-        ctx.lineTo(5, y);
-        ctx.lineTo(1, y + 4);
-        ctx.closePath();
-        ctx.fill();
+        const tri = (ox, oy) => {
+          ctx.beginPath();
+          ctx.moveTo(1 + ox, y - 6 + oy);
+          ctx.lineTo(9 + ox, y + oy);
+          ctx.lineTo(1 + ox, y + 6 + oy);
+          ctx.closePath();
+        };
+        // 白縁：周囲にオフセット塗りで疑似 stroke（lineJoin より輪郭が安定）
+        ctx.fillStyle = "#ffffff";
+        for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]) {
+          tri(dx, dy); ctx.fill();
+        }
+        ctx.fillStyle = "#111111";
+        tri(0, 0); ctx.fill();
       }
     }
 
     ctx.restore(); // clip 解除
 
-    // ビューポート枠：本文に接する辺は余白の内側に置き、線がペインに張り付かないようにする
+    // ビューポート枠（rev31/32）：塗りなし。最小高さ 12px。左右 2px・上下 1px
+    // 下限で伸ばすときは「真の表示範囲の中心」に枠の中心を合わせる（上端固定だとズレて見える）
     if (!refEmpty && total > 0 && pane.scrollHeight - pane.clientHeight > 0) {
       const vr = visibleLineRange(isL, lineOf, n);
       const a = Math.max(0, Math.min(n - 1, vr.top));
       const b = Math.max(a, Math.min(n - 1, vr.bot));
       const y1 = MM_OUT_Y + (a / n) * h;
       const y2 = MM_OUT_Y + ((b + 1) / n) * h;
-      const lw = 1;
-      const fx = padL + lw / 2;
-      const fy = Math.max(lw / 2, y1 - MM_OUT_Y + lw / 2);
-      const fw = Math.max(1, w0 - padL - padR - lw);
-      const fh = Math.max(4, Math.min(H - fy - lw / 2, y2 + MM_OUT_Y - fy - lw / 2));
+      const lwTB = 1;   // 上下
+      const lwLR = 2;   // 左右を太く（狭い MM でも位置が掴める）
+      const MIN_VP = 12;
+      const fx = padL + lwLR / 2;
+      const fw = Math.max(1, w0 - padL - padR - lwLR);
+      const trueH = Math.max(1, y2 - y1);
+      const mid = (y1 + y2) / 2;           // 本文表示範囲の中心（ミニマップ座標）
+      let fh = Math.max(MIN_VP, trueH);
+      const yMin = lwTB / 2;
+      const yMax = H - lwTB / 2;
+      // 中心合わせ → はみ出すときだけ端へスライド（中心を可能な限り維持）
+      let fy = mid - fh / 2;
+      if (fy < yMin) fy = yMin;
+      if (fy + fh > yMax) fy = yMax - fh;
+      if (fy < yMin) { fy = yMin; fh = Math.max(MIN_VP, Math.min(fh, yMax - fy)); }
+      const xL = fx, xR = fx + fw, yT = fy, yB = fy + fh;
       ctx.strokeStyle = "#1976d2";
-      ctx.lineWidth = lw;
-      ctx.strokeRect(fx, fy, fw, fh);
+      ctx.lineCap = "butt";
+      // 左右（太い）
+      ctx.lineWidth = lwLR;
+      ctx.beginPath();
+      ctx.moveTo(xL, yT); ctx.lineTo(xL, yB);
+      ctx.moveTo(xR, yT); ctx.lineTo(xR, yB);
+      ctx.stroke();
+      // 上下（細い）
+      ctx.lineWidth = lwTB;
+      const insetX = lwLR / 2;
+      ctx.beginPath();
+      ctx.moveTo(xL - insetX, yT); ctx.lineTo(xR + insetX, yT);
+      ctx.moveTo(xL - insetX, yB); ctx.lineTo(xR + insetX, yB);
+      ctx.stroke();
     }
   }
 
