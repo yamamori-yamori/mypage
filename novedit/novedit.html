@@ -26,12 +26,14 @@
     --hit: #ffe082;
     --hit-cur: #ffab40;
     --caret: #2e7d32;
-    --hd1: #5c6bc0;
-    --hd1-bg: #e8eaf6;
-    --hd1-fg: #283593;
-    --hd2: #26a69a;
-    --hd2-bg: #e0f2f1;
-    --hd2-fg: #00695c;
+    /* 見出し Lv1/Lv2 は構造の目印。変更の赤緑と役割は別だが、
+       レベル差が一目で分かるよう本文・ミニマップとも赤／緑を使う（5.5 / 5.12） */
+    --hd1: #c62828;
+    --hd1-bg: #fce4ec;
+    --hd1-fg: #b71c1c;
+    --hd2: #2e7d32;
+    --hd2-bg: #e8f5e9;
+    --hd2-fg: #1b5e20;
     /* Lv3＝本文中の ** / *** 強調（行頭見出しではない） */
     --hd3r: #c62828;
     --hd3r-bg: rgba(198, 40, 40, .10);
@@ -94,10 +96,14 @@
     height: calc(100% - var(--toolbar-h));
     position: relative;
   }
-  .minimap-wrap { background: var(--panel-bg); position: relative; overflow: hidden; }
-  #mm-left-wrap  { border-right: 1px solid #b0bec5; }
-  #mm-right-wrap { border-left: 1px solid #b0bec5; }
-  .minimap-wrap canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+  .minimap-wrap { background: var(--panel-bg); position: relative; overflow: hidden; contain: paint; }
+  /* border は box を食う＆隣へにじむので、内側の線にする */
+  #mm-left-wrap  { box-shadow: inset -1px 0 0 #b0bec5; }
+  #mm-right-wrap { box-shadow: inset 1px 0 0 #b0bec5; }
+  .minimap-wrap canvas {
+    display: block; width: 100%; height: 100%;
+    cursor: grab; touch-action: none;
+  }
 
   #splitter { background: var(--line); cursor: col-resize; position: relative; }
   #splitter:hover, #splitter.dragging { background: #90a4ae; }
@@ -401,12 +407,26 @@
   #toast.show { opacity: 1; }
 
 </style>
+<!-- Google tag (gtag.js) — https のみ（file://・http ローカルでは読み込まない） -->
+<script>
+  if (location.protocol === 'https:') {
+    var script = document.createElement('script');
+    script.async = true;
+    script.src = 'https://www.googletagmanager.com/gtag/js?id=G-FEWVNH23P4';
+    document.head.appendChild(script);
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-FEWVNH23P4');
+  }
+</script>
 </head>
 <body>
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.0 / <a href="#" onclick="return false;">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.0 / <a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
@@ -542,12 +562,12 @@
 
     <h3>記号（空白か改行で区切って入力）</h3>
     <div class="fld">
-      <span><span class="sw" style="background:#5c6bc0"></span>レベル1 ／ 章・話</span>
+      <span><span class="sw" style="background:#c62828"></span>レベル1 ／ 章・話</span>
       <textarea id="cfg-lv1" spellcheck="false"></textarea>
       <p class="hint">例: <code>#</code> <code>§</code> <code>■</code> ／ その記号で始まる行を章見出しとして扱います</p>
     </div>
     <div class="fld">
-      <span><span class="sw" style="background:#26a69a"></span>レベル2 ／ 場面・小見出し</span>
+      <span><span class="sw" style="background:#2e7d32"></span>レベル2 ／ 場面・小見出し</span>
       <textarea id="cfg-lv2" spellcheck="false"></textarea>
       <p class="hint">長い記号が優先されます（<code>##</code> はレベル2、<code>#</code> はレベル1 と使い分けられます）</p>
     </div>
@@ -595,8 +615,6 @@
     headCfg: null,               // 見出し検出ルール（起動時に既定値を入れる）
     origin: { text: "", name: "", at: 0 },  // 右ペインの「初期」
     diffStale: true,             // 差分の再計算が必要か
-    diffMarks: [],               // 右ミニマップ用の変更マーカー
-    diffMarksLines: 1,           // そのマーカーを計算した時点の原稿の行数 → 5.4D
     diffFollow: true             // 「変更」タブは常に右のカーソル行へ追従する（固定）
   };
   const SYS = { ORIGIN: "origin", DIFF: "diff" };   // システムタブ（閉じられない）
@@ -1140,23 +1158,23 @@
 
   /**
    * 差分からミニマップ用のマーカーを作る。
-   *  marksL … 差分ビューの表示行に対応（削除=赤 / 追加=緑）
-   *  marksR … 右ペイン（現在の原稿）の行に対応（追加=緑 / 変更=橙 / 削除位置=赤）
+   *  marksL … 差分ビュー（「変更」タブ）の表示行に対応（削除=赤 / 追加=緑）
+   *  右ミニマップには変更マーカーを出さない（rev30）。map/rev は左右の行対応用。
    */
   function buildDiffMarks(rows) {
-    const L = [], R = [], map = [], rev = [];
+    const L = [], map = [], rev = [];
     // map[原稿の行番号] = 表示行番号 ／ rev[表示行番号] = 原稿の行番号
     let li = 0, ni = 0;
     for (const r of rows) {
       if (r.k === "same") { map[ni] = li; rev[li] = ni; li++; ni++; }
       else if (r.k === "del") {
-        L.push({ i: li, k: "del" }); R.push({ i: ni, k: "del" });
+        L.push({ i: li, k: "del" });
         rev[li] = ni;                   // 削除行は「その位置」の原稿行を指す
         li++;
       }
       else if (r.k === "add") {
         map[ni] = li; rev[li] = ni;
-        L.push({ i: li, k: "add" }); R.push({ i: ni, k: "add" });
+        L.push({ i: li, k: "add" });
         li++; ni++;
       }
       else {                            // chg: 表示は削除行＋追加行の2行
@@ -1164,13 +1182,12 @@
         L.push({ i: li + 1, k: "add" });
         map[ni] = li + 1;               // 原稿の行に対応するのは「追加」側
         rev[li] = ni; rev[li + 1] = ni;
-        R.push({ i: ni, k: "chg" });
         li += 2; ni++;
       }
     }
     if (!map.length) map[0] = 0;
     if (!rev.length) rev[0] = 0;
-    return { L: L, R: R, map: map, rev: rev, lines: li };
+    return { L: L, map: map, rev: rev, lines: li };
   }
 
   function computeDiff() {
@@ -1183,10 +1200,6 @@
     t.marks = marks.L;
     t.lineMap = marks.map;
     t.revMap = marks.rev;
-    state.diffMarks = marks.R;
-    // マーカーは「計算した時点の行数」で割る。入力中（デバウンス待ち）に
-    // 新しい行数で割ると、まだ古いマーカーなのに位置だけ動いてずれる（5.4D）
-    state.diffMarksLines = Math.max(1, ta().value.split("\n").length);
     const r = renderDiffHtml(rows);
     t.html = r.html;
     t.text = r.plain;
@@ -2115,16 +2128,36 @@
     const wrap = canvas.parentElement;
     const pane = isL ? $("ref-body") : body();
     const dpr = window.devicePixelRatio || 1;
-    const w = wrap.clientWidth, h = wrap.clientHeight;
-    if (w < 1 || h < 1) return;
-    canvas.width = w * dpr; canvas.height = h * dpr;
-    canvas.style.width = w + "px"; canvas.style.height = h + "px";
+    // 上下 1px は canvas 内の余白（1行目見出しが枠に埋もれない）
+    // 左右も canvas 内余白。本文に接する側を厚くして、色棒・青枠・キャレットが
+    // 隣ペインに張り付いて「はみ出してる」ように見えないようにする
+    // （左MMの右端＝左ペイン本文、右MMの左端＝右ペイン本文）
+    const MM_OUT_Y = 1;
+    const X_NEAR = 3;   // 本文に接する側（ここが薄いと溢れて見える）
+    const X_FAR  = 2;   // ウィンドウ端側
+    const padL = isL ? X_FAR : X_NEAR;
+    const padR = isL ? X_NEAR : X_FAR;
+    const w0 = wrap.clientWidth, H = wrap.clientHeight;
+    if (w0 < 1 || H < 1) return;
+    const w = Math.max(1, w0 - padL - padR);   // 横の描画幅
+    const h = Math.max(1, H - MM_OUT_Y * 2);   // 縦の内容高さ
+    // レイアウト寸法は CSS 100% に任せ、バッファだけ DPR 合わせる
+    canvas.width = Math.max(1, Math.round(w0 * dpr));
+    canvas.height = Math.max(1, Math.round(H * dpr));
+    canvas.style.width = "";
+    canvas.style.height = "";
     const ctx = canvas.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const t0 = activeTabObj();
-    // 左は本文の色（クリーム／初期はグレー）に合わせた下地にする（仕様 5.2C）
+    // 下地は wrap 全体（余白帯も同色で、にじみを隠す）
     ctx.fillStyle = isL ? (t0 && t0.kind === SYS.ORIGIN ? MM_BG_ORIGIN : MM_BG_L) : "#eceff1";
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(0, 0, w0, H);
+    // これ以降は内側矩形だけに描く（はみ出し禁止）
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(padL, MM_OUT_Y, w, h);
+    ctx.clip();
+    ctx.translate(padL, MM_OUT_Y);
 
     const t = t0;
     const refEmpty = isL && refIsEmpty();
@@ -2158,19 +2191,21 @@
           if (len) ctx.fillRect(x0, (i / n) * h, Math.max(1, Math.min(maxW, (len / 42) * maxW)), Math.min(rowH, 2));
         }
       }
-      // 見出しマーカー（藍系で統一する。赤・緑・橙は「変更」専用の色にする）
-      // Lv3（** / ***）は本文中の強調で件数が多く、赤を使うと変更マーカーと混ざるのでミニマップには出さない
+      // 見出しマーカー：Lv1＝赤系・全幅／Lv2＝緑・幅55%（本文の見出し色と揃える）
+      // 変更の赤緑と同系だが、「変更」タブでは見出しを描かない、で役割を分ける
+      // Lv3（** / ***）は本文中の強調で件数が多く、ミニマップには出さない
+      // 右 MM に変更ガターは出さない（rev30）ので、右の赤緑は見出しのみ
       if (headsOn() && !isDiffTab) {
         for (const hd of (isL ? tabHeads(t) : edHeads())) {
           if (hd.lv === 3) continue;
           const y = (hd.line / n) * h;
-          // クリーム／グレーの下地でも沈まないよう、濃い藍にして太くする
-          if (hd.lv === 1) { ctx.fillStyle = "#303f9f"; ctx.fillRect(0, y - 1.5, w, 3); }
-          else { ctx.fillStyle = "#5c6bc0"; ctx.fillRect(0, y - 1, Math.max(8, w * .55), 2); }
+          // 左右 1px 空けて clip 端・本文境界に色が乗らないようにする
+          if (hd.lv === 1) { ctx.fillStyle = "#b71c1c"; ctx.fillRect(1, y - 1.5, Math.max(1, w - 2), 3); }
+          else { ctx.fillStyle = "#2e7d32"; ctx.fillRect(1, y - 1, Math.max(8, (w - 2) * .55), 2); }
         }
       }
 
-      // 変更マーカー
+      // 変更マーカー（左「変更」タブのみ。右 MM には出さない → rev30）
       const DC = { del: "#d32f2f", add: "#2e7d32", chg: "#ef6c00" };
       const MIN_BAR = 2.5;   // これ未満だと 3,000 行クラスで見えなくなる
 
@@ -2183,68 +2218,78 @@
          グリッドの境目をまたぐと別々のままになり、橙にならない。
          y 順に並べて「直前の棒と重なるか」で判定する。 */
       function packMarks(marks, nLines) {
+        // y と高さ h を持つ棒にまとめる。
+        // ① 重なったら種別を合成（del+add→chg）
+        // ② 同じ種別が隣の行で連続していたら1本の長い棒にする
+        const row = h / Math.max(1, nLines);
         const pts = marks.map(m => ({ y: (m.i / nLines) * h, k: m.k })).sort((a, b) => a.y - b.y);
         const out = [];
         for (const p of pts) {
           const last = out[out.length - 1];
-          if (last && p.y < last.y + MIN_BAR) {          // 直前の棒に食い込む
-            if (last.k !== p.k) last.k = "chg";          // 削除と追加が同居 → 変更
-          } else out.push({ y: p.y, k: p.k });
+          if (last && p.y < last.y + last.h) {          // 直前の棒に食い込む
+            if (last.k !== p.k) last.k = "chg";
+            last.h = Math.max(last.h, p.y + MIN_BAR - last.y);
+          } else if (last && last.k === p.k && p.y <= last.y + last.h + row * 1.05) {
+            // 同じ種別の連続行 → 伸ばす
+            last.h = p.y + MIN_BAR - last.y;
+          } else out.push({ y: p.y, k: p.k, h: MIN_BAR });
         }
         return out;
       }
 
       if (isDiffTab) {
-        // 「変更」タブでは変更そのものが主役なので幅いっぱいに描く
-        if (state.diffStale || !t.marks) computeDiff();   // マーカーを取りこぼさない
+        // 「変更」タブ：左右とも 1px 空けて描く（枠・窓端・本文境界のどれにも張り付かない）
+        if (state.diffStale || !t.marks) computeDiff();
+        const inset = 1;
+        const markW = Math.max(1, w - inset * 2);
         for (const b of packMarks(t.marks || [], n)) {
           ctx.fillStyle = DC[b.k];
-          ctx.fillRect(2, b.y, w - 4, MIN_BAR);
-        }
-      } else if (!isL && state.diffMarks.length) {
-        const nD = Math.max(1, state.diffMarksLines || n);   // マーカー計算時点の行数
-        // 原稿側は右端のガター（5px）に寄せ、density・見出しと重ならないようにする
-        const gx = w - 6;
-        ctx.fillStyle = "rgba(255,255,255,.6)";
-        ctx.fillRect(gx - 1, 0, 7, h);
-        for (const b of packMarks(state.diffMarks, nD)) {
-          ctx.fillStyle = DC[b.k];
-          if (b.k === "del") ctx.fillRect(gx - 2, b.y, 8, 2);    // 削除位置はティック（行を持たない）
-          else ctx.fillRect(gx, b.y, 5, MIN_BAR);
+          ctx.fillRect(inset, b.y, markW, b.h);
         }
       }
+      // 右ミニマップには変更マーカーを描かない（rev30）。変更の分布は左「変更」タブのみ。
       // 検索ヒット（「変更」タブでも描く）
       const hits = isL ? state.refHits : state.edHits;
       const cur = isL ? state.refIdx : state.edIdx;
       hits.forEach((hit, i) => {
-        const y = (lineOf(hit.start) / n) * h;    // ← 行番号で揃える（文字数比ではない）
+        const y = (lineOf(hit.start) / n) * h;
         ctx.fillStyle = i === cur ? "#f57c00" : "#ffb300";
-        ctx.fillRect(1, y - 1, w - 2, i === cur ? 3 : 2);
+        // 左右 1px 空けて端のにじみを防ぐ（右はキャレット帯を少し避ける）
+        const hx = isL ? 1 : 7;
+        const hw = Math.max(1, w - hx - 1);
+        ctx.fillRect(hx, y - 1, hw, i === cur ? 3 : 2);
       });
-      // キャレット（常時表示）
+      // キャレット（常時表示）— 本文側に短い印のみ（全幅線なし）
       if (!isL) {
-        const y = (lineOf(state.caret) / n) * h;  // ← 行番号で揃える
+        const y = (lineOf(state.caret) / n) * h;
         ctx.fillStyle = "#2e7d32";
-        ctx.fillRect(0, y - 1, w, 2);
-        ctx.beginPath(); ctx.moveTo(0, y - 4); ctx.lineTo(4, y); ctx.lineTo(0, y + 4); ctx.closePath(); ctx.fill();
+        ctx.fillRect(1, y - 1, 6, 2);
+        ctx.beginPath();
+        ctx.moveTo(1, y - 4);
+        ctx.lineTo(5, y);
+        ctx.lineTo(1, y + 4);
+        ctx.closePath();
+        ctx.fill();
       }
     }
 
-    // ビューポート: 塗りつぶさず枠線のみ（下の色を隠さないため）
-    // 空状態のときは枠も描かない。中身が無いのに枠だけ出ていると壊れて見える（仕様 5.2B）
-    /* ビューポート枠は「本文が占める範囲」に対して描く。
-       scrollHeight をそのまま使うと、本文の下に敷いてある大きな余白（padding-bottom:60vh。
-       最終行を画面中央まで持ち上げるためのもの）まで含めて割ってしまい、
-       行番号基準で描いたマーカーと縦位置が合わなくなる。 */
+    ctx.restore(); // clip 解除
+
+    // ビューポート枠：本文に接する辺は余白の内側に置き、線がペインに張り付かないようにする
     if (!refEmpty && total > 0 && pane.scrollHeight - pane.clientHeight > 0) {
-      // 画面に見えている「行」の範囲をそのまま枠にする → マーカーと必ず一致する
       const vr = visibleLineRange(isL, lineOf, n);
       const a = Math.max(0, Math.min(n - 1, vr.top));
       const b = Math.max(a, Math.min(n - 1, vr.bot));
-      const y1 = (a / n) * h;
-      const y2 = ((b + 1) / n) * h;          // 末尾の行も枠に含める
-      ctx.strokeStyle = "#1976d2"; ctx.lineWidth = 1.5;
-      ctx.strokeRect(0.75, y1 + 0.75, w - 1.5, Math.max(y2 - y1 - 1.5, 4));
+      const y1 = MM_OUT_Y + (a / n) * h;
+      const y2 = MM_OUT_Y + ((b + 1) / n) * h;
+      const lw = 1;
+      const fx = padL + lw / 2;
+      const fy = Math.max(lw / 2, y1 - MM_OUT_Y + lw / 2);
+      const fw = Math.max(1, w0 - padL - padR - lw);
+      const fh = Math.max(4, Math.min(H - fy - lw / 2, y2 + MM_OUT_Y - fy - lw / 2));
+      ctx.strokeStyle = "#1976d2";
+      ctx.lineWidth = lw;
+      ctx.strokeRect(fx, fy, fw, fh);
     }
   }
 
@@ -2358,10 +2403,13 @@
   function setupMinimapDrag(canvasId, getPane, side) {
     const canvas = $(canvasId);
     let dragging = false;
+    // drawMinimap の MM_OUT_Y と同じ。上下 1px は枠用余白で、行対応には使わない
+    const MM_OUT_Y = 1;
     const jump = clientY => {
       const r = canvas.getBoundingClientRect();
-      if (r.height <= 0) return;
-      const p = Math.max(0, Math.min(1, (clientY - r.top) / r.height));
+      const contentH = r.height - MM_OUT_Y * 2;
+      if (contentH <= 0) return;
+      const p = Math.max(0, Math.min(1, (clientY - r.top - MM_OUT_Y) / contentH));
       const isL = side === "left";
       const pane = getPane();
       // クリックした位置の「行」を求め、その行を画面の上端に持ってくる
