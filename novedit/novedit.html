@@ -10,7 +10,7 @@
     --tabbar-h: 30px;
     --header-h: 28px;
     --searchbar-h: 32px;
-    --minimap-w: 28px;
+    --minimap-w: 24px;
     --splitter-w: 6px;
     --ink: #263238;
     --ink2: #37474f;
@@ -258,8 +258,9 @@
     margin: 0 auto;
     /* rev39: 左右同幅にして max-width + margin:auto の中心がズレないようにする
        （rev37 の MM側6/反対12 は中身が右へ寄って見えた）
-       MM との隙間は両側 6px のまま狭く保つ */
-    padding: 16px 6px 60vh;
+       rev48: 左右 4px（旧6）。合計 WIDTH_PAD=8
+       rev51: 左右 3px。合計 WIDTH_PAD=6（+MM 24px で表示幅を 1 文字分稼ぎやすく） */
+    padding: 16px 3px 60vh;
     white-space: pre-wrap; word-break: break-word;
     line-height: 1.9; font-size: 15px; color: #212121; font-family: inherit;
   }
@@ -285,10 +286,10 @@
      余白を .dl 自身の padding にしておけば、そこから普通に選択を始められる。 */
   /* 「変更」タブは行頭にマーカーの溝が必要だが、本文の折り返しは通常タブと
      完全に一致させたい。そこで .dl には padding を持たせず、
-     #ref-inner の左右パディングの【合計を通常タブと同じ 12px】左へ寄せて溝を作る。
+     #ref-inner の左右パディングの【合計を通常タブと同じ WIDTH_PAD】左へ寄せて溝を作る。
      本文の幅（= 内容ボックスの幅）が通常タブと同じになるので折り返しが揃う。
-     通常: 左右 6+6=12 ／ 変更: 左10+右2=12 */
-  #ref-inner.diff-view { padding-left: 10px; padding-right: 2px; }
+     rev51: 通常 3+3=6 ／ 変更 左5+右1=6（rev48 は 4+4／7+1） */
+  #ref-inner.diff-view { padding-left: 5px; padding-right: 1px; }
 
   .dl {
     display: block; position: relative; padding-left: 0;
@@ -304,10 +305,9 @@
   .dl.same.cur-line { background: #f1f8e9; color: #33691e; }
   .dl .mk {
     /* right:100% で本文の左端より外側へ出す。本文の幅を1pxも削らない。
-       置き場所は #ref-inner の左パディング（変更タブ 10px）の中
-       rev37–39: 溝が狭くなったので字号・余白を抑える */
-    position: absolute; right: 100%; top: 0; margin-right: 2px;
-    font-size: .75em; white-space: nowrap;
+       置き場所は #ref-inner の左パディング（変更タブ 5px・rev51）の中 */
+    position: absolute; right: 100%; top: 0; margin-right: 1px;
+    font-size: .65em; white-space: nowrap;
     user-select: none; pointer-events: none;     /* マーカー自身でクリックを受けない */
     color: #b0bec5; text-align: right; font-weight: 700;
   }
@@ -361,8 +361,8 @@
   #edit-area {
     position: relative; z-index: 1;
     display: block; margin: 0 auto;
-    /* rev39: 左右とも 6px（rev37 の非対称は中央が右へ寄って見えた） */
-    padding: 16px 6px 60vh;
+    /* rev51: 左右とも 3px（rev48 は 4。本文幅へ） */
+    padding: 16px 3px 60vh;
     width: 100%; border: none; resize: none; outline: none; background: transparent;
     font-family: inherit; font-size: 15px; line-height: 1.9; color: #212121;
     white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word; overflow: hidden;
@@ -666,7 +666,7 @@
     const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
     return isFinite(v) && v > 0 ? v : fallback;
   };
-  const MM = cssPx("--minimap-w", 28), SPL = cssPx("--splitter-w", 6);   // ミニマップ幅 / スプリッタ幅
+  const MM = cssPx("--minimap-w", 24), SPL = cssPx("--splitter-w", 6);   // ミニマップ幅 / スプリッタ幅
   const AUTOSAVE_MS = 3000;       // 入力が止まってから自動保存するまで（12章 #6）
   const SIM_THRESHOLD = 0.5;      // 削除行と追加行を「変更」とみなす類似度（12章 #19）
   const CLOSED_MAX = 10;          // 閉じたタブのスタック上限（12章 #11）
@@ -1003,7 +1003,7 @@
   /* ---- 表示幅の上限（仕様 5.1B） ----
      本文の最大幅は fontSize × 文字数 + PAD。これが実際のペイン幅を超えると
      指定しただけ無駄になるので、右ペインに収まる文字数を上限にする（12章 #34）。 */
-  const WIDTH_PAD = 12;          // .pane-inner / textarea の左右パディング合計（rev39: 左右6+6）
+  const WIDTH_PAD = 6;           // .pane-inner / textarea の左右パディング合計（rev51: 左右3+3）
   const WIDTH_MIN = 16, WIDTH_HARD_MAX = 120;
 
   function maxWidthChars() {
@@ -2549,9 +2549,10 @@
     // （左MMの右端＝左ペイン本文、右MMの左端＝右ペイン本文）
     // rev35: 左右 3px 枠＋全幅赤で本文側に 1px にじむ報告 → X_NEAR を 4 に、
     // マーカーも本文側 inset を 2 にして端を避ける
+    // rev48: X_NEAR 4→3／rev51: マーカー用 inset は残しつつ、青枠は canvas 端まで（下）
     const MM_OUT_Y = 1;
-    const X_NEAR = 4;   // 本文に接する側（ここが薄いと溢れて見える）
-    const X_FAR  = 2;   // ウィンドウ端側
+    const X_NEAR = 2;   // 本文に接する側（マーカー clip。青枠は pad を使わない）
+    const X_FAR  = 1;   // ウィンドウ端側
     const padL = isL ? X_FAR : X_NEAR;
     const padR = isL ? X_NEAR : X_FAR;
     const w0 = wrap.clientWidth, H = wrap.clientHeight;
@@ -2714,7 +2715,10 @@
 
     ctx.restore(); // clip 解除
 
-    // ビューポート枠（rev31–35）：塗りなし。最小高さ 8px。左右 3px・上下 1px
+    // ビューポート枠（rev50–51）：塗りなし。最小高さ 8px。左右 4px・上下 2px。色 #2196f3
+    // rev51: 左右は pad を使わず canvas 端まで（外縁 x=0 と x=w0）。
+    //        以前の padL/padR 分の隙間は「中の余白」で本文幅には効いていなかったが、
+    //        見た目の空きを無くし、あわせて MM 列幅自体を 27→24 に下げて本文へ回す。
     // 下限で伸ばすときは「真の表示範囲の中心」に枠の中心を合わせる（上端固定だとズレて見える）
     if (!refEmpty && total > 0 && pane.scrollHeight - pane.clientHeight > 0) {
       const vr = visibleLineRange(isL, lineOf, n);
@@ -2722,11 +2726,12 @@
       const b = Math.max(a, Math.min(n - 1, vr.bot));
       const y1 = MM_OUT_Y + (a / n) * h;
       const y2 = MM_OUT_Y + ((b + 1) / n) * h;
-      const lwTB = 1;   // 上下
-      const lwLR = 3;   // 左右を太く（狭い MM でも位置が掴める）
+      const lwTB = 2;   // 上下（rev50: 1→2）
+      const lwLR = 4;   // 左右を太く（rev49: 3→4）
       const MIN_VP = 8;
-      const fx = padL + lwLR / 2;
-      const fw = Math.max(1, w0 - padL - padR - lwLR);
+      // 線の中心を lwLR/2 と w0-lwLR/2 に置く → 外縁が canvas の左右端に一致
+      const fx = lwLR / 2;
+      const fw = Math.max(1, w0 - lwLR);
       const trueH = Math.max(1, y2 - y1);
       const mid = (y1 + y2) / 2;           // 本文表示範囲の中心（ミニマップ座標）
       let fh = Math.max(MIN_VP, trueH);
@@ -2738,7 +2743,7 @@
       if (fy + fh > yMax) fy = yMax - fh;
       if (fy < yMin) { fy = yMin; fh = Math.max(MIN_VP, Math.min(fh, yMax - fy)); }
       const xL = fx, xR = fx + fw, yT = fy, yB = fy + fh;
-      ctx.strokeStyle = "#1976d2";
+      ctx.strokeStyle = "#2196f3";  // rev50: 旧 #1976d2 より鮮やか（G−R は依然 60+）
       ctx.lineCap = "butt";
       // 左右（太い）
       ctx.lineWidth = lwLR;
@@ -2746,7 +2751,7 @@
       ctx.moveTo(xL, yT); ctx.lineTo(xL, yB);
       ctx.moveTo(xR, yT); ctx.lineTo(xR, yB);
       ctx.stroke();
-      // 上下（細い）
+      // 上下
       ctx.lineWidth = lwTB;
       const insetX = lwLR / 2;
       ctx.beginPath();
