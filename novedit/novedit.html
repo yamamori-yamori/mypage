@@ -75,6 +75,25 @@
   #toolbar input[type="number"] { width: 58px; }
   #toolbar .app-meta { font-size: 11px; color: #90a4ae; white-space: nowrap; }
   #toolbar .tb-group.push { margin-left: auto; }   /* ここから右がメニュー */
+
+  /* ---------- ツール（原稿全体のテキスト整形。5.14） ----------
+     モーダルにはしない（制約 #6）。#toolbar は overflow の都合でボタン直下に描けないことがあるため、
+     position:fixed とし、開くたびに JS でボタン直下の座標へ置き直す。 */
+  #tools-menu {
+    position: fixed; z-index: 60; display: none;
+    background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.28); padding: 6px 0; min-width: 250px; font-size: 13px;
+  }
+  #tools-menu.show { display: block; }
+  #tools-menu .tm-h { padding: 7px 12px 3px; font-size: 11px; color: #78909c; font-weight: 700; }
+  #tools-menu button[role="menuitem"] {
+    display: block; width: 100%; text-align: left; background: none; border: none;
+    color: var(--ink); padding: 7px 12px; font-size: 13px; cursor: pointer; border-radius: 0;
+  }
+  #tools-menu button[role="menuitem"]:hover { background: var(--panel-bg); }
+  #tools-menu .tm-sep { height: 1px; background: var(--line); margin: 5px 0; }
+  #tools-menu .tm-radio { display: flex; align-items: center; gap: 6px; padding: 6px 12px 6px 12px; cursor: pointer; }
+  #tools-menu .tm-radio input { cursor: pointer; }
   /* 自動保存の状態表示（5.8）。一瞬ではなく【出したままにする】。
      「いつ保存されたか」が常に見えていれば、閉じるときに不安にならない。 */
   #autosave-note {
@@ -204,9 +223,8 @@
   .searchbar button { border: 1px solid var(--line); background: #fff; color: #546e7a; border-radius: 3px; padding: 3px 8px; font-size: 12px; cursor: pointer; line-height: 1.4; white-space: nowrap; flex-shrink: 0; }
   .searchbar button:hover { background: var(--panel-bg); }
   .searchbar button.on { background: #dcedc8; border-color: #aed581; color: #33691e; }
+  /* 常に「N / M」のヒット数（5.3.4）。旧 ＋12 −8 用の .p / .m は rev41 で削除 */
   .searchbar .count { font-size: 11px; color: #78909c; min-width: 52px; text-align: right; flex-shrink: 0; }
-  .searchbar .count .p { color: var(--added-text); font-weight: 700; }
-  .searchbar .count .m { color: var(--deleted-text); font-weight: 700; }
   /* 左検索窓は半分まで。残りをコンテキストボタンに使う */
   #ref-q { flex: 1 1 40%; max-width: 50%; }
   #ref-act {
@@ -454,10 +472,33 @@
 
   <span class="sep"></span>
 
+  <div class="tb-group" id="tb-tools">
+    <button id="btn-tools" aria-haspopup="true" aria-expanded="false"
+            title="原稿全体のテキスト整形（すべて Ctrl+Z で元に戻せます）">ツール ▾</button>
+  </div>
+
+  <span class="sep"></span>
+
   <div class="tb-group">
     <label title="章・話の始まりを色付け表示"><input type="checkbox" id="opt-head" checked> 見出し</label>
     <button id="btn-head-cfg" title="見出しの検出ルールを設定" style="padding:4px 8px;font-size:12px;">⚙</button>
   </div>
+</div>
+
+<!-- ツールのドロップダウン（5.14）。モーダルではないので #overlay 系とは別枠。 -->
+<div id="tools-menu" role="menu" aria-hidden="true">
+  <div class="tm-h">空行を整える</div>
+  <button type="button" id="tool-blank-del" role="menuitem">空行を削除する</button>
+  <button type="button" id="tool-blank-head" role="menuitem">空行を入れる ─ 見出しの前後</button>
+  <button type="button" id="tool-blank-serif-narr" role="menuitem">空行を入れる ─ セリフと地の文の間</button>
+  <button type="button" id="tool-blank-serif-all" role="menuitem">空行を入れる ─ セリフの両側すべて</button>
+  <div class="tm-sep"></div>
+  <div class="tm-h">段落を整える</div>
+  <button type="button" id="tool-indent" role="menuitem">段落頭を全角空白で字下げする</button>
+  <div class="tm-sep"></div>
+  <div class="tm-h">保存する改行コード</div>
+  <label class="tm-radio"><input type="radio" name="tool-eol" id="tool-eol-crlf" value="crlf"> Windows（CRLF）</label>
+  <label class="tm-radio"><input type="radio" name="tool-eol" id="tool-eol-lf" value="lf" checked> Mac・Unix（LF）</label>
 </div>
 
 <div id="main">
@@ -601,7 +642,17 @@
 (function () {
   "use strict";
   const $ = id => document.getElementById(id);
-  const MM = 28, SPL = 6;                 // ミニマップ幅 / スプリッタ幅
+  /* 寸法の定義元は CSS だけにする（C-1 / 3.2）。二重管理だと片方だけ変えたとき
+     ミニマップのクリック座標とドラッグ計算がずれる。第2引数は読めない環境の保険 */
+  const cssPx = (name, fallback) => {
+    const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+    return isFinite(v) && v > 0 ? v : fallback;
+  };
+  const MM = cssPx("--minimap-w", 28), SPL = cssPx("--splitter-w", 6);   // ミニマップ幅 / スプリッタ幅
+  const AUTOSAVE_MS = 3000;       // 入力が止まってから自動保存するまで（12章 #6）
+  const SIM_THRESHOLD = 0.5;      // 削除行と追加行を「変更」とみなす類似度（12章 #19）
+  const CLOSED_MAX = 10;          // 閉じたタブのスタック上限（12章 #11）
+  const DIFF_WARN_LINES = 20000;  // 差分の表示行がこれを超えたら警告トースト（12章 #18）
   const LS_DRAFT = "novedit.draft.v1";
   const LS_SETTINGS = "novedit.settings.v1";
   const ZWSP = "​";
@@ -623,7 +674,8 @@
     headCfg: null,               // 見出し検出ルール（起動時に既定値を入れる）
     origin: { text: "", name: "", at: 0 },  // 右ペインの「初期」
     diffStale: true,             // 差分の再計算が必要か
-    diffFollow: true             // 「変更」タブは常に右のカーソル行へ追従する（固定）
+    diffFollow: true,            // 「変更」タブは常に右のカーソル行へ追従する（固定）
+    eol: "lf"                     // ツール＞保存する改行コード。"lf"|"crlf"。既定 lf（現状維持。保存時のみ適用＝5.14）
   };
   const SYS = { ORIGIN: "origin", DIFF: "diff" };   // システムタブ（閉じられない）
   const MM_BG_L = "#EFE7D2";                        // 左ミニマップの下地（仕様 5.2C）
@@ -905,6 +957,7 @@
         state.ratio = r;
       }
       if (typeof s.showHead === "boolean") { state.showHead = s.showHead; $("opt-head").checked = s.showHead; }
+      if (s.eol === "crlf" || s.eol === "lf") state.eol = s.eol;   // 不正値は既定 lf のまま（検証つき）
       if (s.headCfg && typeof s.headCfg === "object") {
         state.headCfg = {
           builtin: Object.assign({}, HEAD_DEFAULT.builtin, s.headCfg.builtin || {}),
@@ -915,27 +968,28 @@
     } catch (_) {}
     if (!state.headCfg) state.headCfg = JSON.parse(JSON.stringify(HEAD_DEFAULT));
     headC = compileHead(state.headCfg);
+    $("tool-eol-" + state.eol).checked = true;   // ラジオへ反映（値は crlf/lf のみに検証済み）
   }
   function saveSettings() {
     try {
       localStorage.setItem(LS_SETTINGS, JSON.stringify({
         fontSize: +$("opt-font").value, widthChars: state.widthPref,
         ratio: state.ratio, showHead: state.showHead,
-        headCfg: state.headCfg
+        headCfg: state.headCfg, eol: state.eol
       }));
     } catch (_) {}
   }
   /* ---- 表示幅の上限（仕様 5.1B） ----
      本文の最大幅は fontSize × 文字数 + PAD。これが実際のペイン幅を超えると
-     指定しただけ無駄になるので、狭いほうのペインに収まる文字数を上限にする。 */
+     指定しただけ無駄になるので、右ペインに収まる文字数を上限にする（12章 #34）。 */
   const WIDTH_PAD = 12;          // .pane-inner / textarea の左右パディング合計（rev39: 左右6+6）
   const WIDTH_MIN = 16, WIDTH_HARD_MAX = 120;
 
   function maxWidthChars() {
     const fs = +$("opt-font").value || 15;
-    /* 上限は【右ペイン】の内寸で決める。書くのは右なので、
-       左を狭めたせいで原稿の行長が変わってしまうのはおかしい。
-       左は自分の幅で折り返すだけ（.pane-inner は max-width なので溢れない）。 */
+    /* 上限は【右ペイン】の内寸だけで決める（12章 #34）。書くのは右なので、左を狭めた
+       せいで原稿の行長が変わるのはおかしい。左は自分の幅で折り返すだけ。
+       ※「狭いほうのペインに合わせる」は rev11 以前。戻さないこと */
     const avail = $("edit-body").clientWidth;
     if (!avail || avail <= 0) return WIDTH_HARD_MAX;             // レイアウト確定前
     const n = Math.floor((avail - WIDTH_PAD) / fs);
@@ -948,8 +1002,38 @@
     return Math.max(WIDTH_MIN, Math.min(state.widthPref, maxWidthChars()));
   }
 
+  /* ---- 文字サイズ・表示幅の変更時にスクロールを比例補正する（B-2 / 12章 #10） ----
+     scroll はピクセル値。15→22 で総高さが 1.5 倍近くなるので、そのままでは読んでいた
+     場所を見失う。前後の scrollHeight から比 r=新/旧 を出して掛け直す。
+
+     【スクローラを間違えないこと】左は #ref-body、右は #edit-body。
+     <textarea> は overflow:hidden で autoGrow() が height を直接いじるので、
+     ta().scrollTop は常に 0・ta().scrollHeight も本文の高さではない。ここを ta() で
+     書くと右ペインの補正が黙って何もしなくなる（rev41 の初版がこの誤りだった）。
+
+     【非アクティブなタブ】DOM に載っていないので測れない。アクティブな左ペインで
+     測った比を流用するが、その左が「スクロールできる状態」でないと比は 1 になる
+     （scrollHeight は clientHeight を下回らない＋.pane-inner の下に 60vh の余白がある）。
+     短いタブや空の「初期」タブを開いたまま文字サイズを変える、は普通に起きるので、
+     測れないときは文字サイズの比（行の高さは font-size に比例する）で代用する。
+     幅だけの変更（reflowWidth）では折り返しが各タブで違い代用が効かないので、
+     非アクティブなタブには触らない。実測できるアクティブ側だけを直す。 */
+  let lastFs = 0;                       // 直前に適用した文字サイズ（B-2 の代用比に使う）
+
+  /** applySettings() が rAF へ渡す右ペイン補正の申し送り（applyPendingRightFix で消費）。
+   *  applySettings より前で宣言しておく（TDZ 事故を避ける）。 */
+  let pendingRightFix = null;
+
   function applySettings() {
     const fs = +$("opt-font").value || 15;
+    const rb = $("ref-body"), eb = body();             // ★右は #edit-body。ta() ではない
+    rememberScroll();                                  // アクティブタブの scroll を最新にする
+    const scrollable = el => el.scrollHeight > el.clientHeight + 1;
+    const measurable = scrollable(rb);                 // 左が実際にスクロールできるか
+    const beforeL = rb.scrollHeight, topL = rb.scrollTop;
+    const beforeR = eb.scrollHeight, topR = eb.scrollTop;
+    const fsChanged = lastFs > 0 && fs !== lastFs;
+    const fsRatio = lastFs > 0 ? fs / lastFs : 1;
     // 先にレイアウトを確定させてから上限を測る（clientWidth が古い値を返すのを防ぐ）
     applyRatio();
     const mx = maxWidthChars();
@@ -966,7 +1050,48 @@
     $("ref-inner").style.maxWidth = px + "px";
     ta().style.fontSize = fs + "px";
     ta().style.maxWidth = px + "px";
+    /* ---- ここで新しい scrollHeight を測って比例補正する（rev41 B-2 / rev42 で作り直し）----
+       ①左ペインは height 指定が無く自然に伸びるので、ここで同期に測って直せる
+       ②右ペインは autoGrow() が textarea の height を明示指定するまで高さが確定しないので、
+         【refreshOverlay() の rAF で autoGrow() の直後に】当てる（applyPendingRightFix）
+       ③非アクティブなタブは推定するしかないので、文字サイズが変わったときだけ触る
+
+       rev42 の初版は「ここで autoGrow() を同期で呼んでから測る」方式にしたが、うまくいかなかった。
+       実測：期待 22766 に対し scrollTop が 17033.33 になる＝【古いレイアウトの最大値でクランプ
+       された】値（17523 − clientHeight）。同期に測った直後の代入は間に合わないことがある。
+       さらに autoGrow() が height:"auto" を経由するあいだに #edit-body.scrollTop が失われ、
+       比が 1 のとき（＝サイズが変わっていないとき）誰も戻さないという副作用も出た
+       （症状：右ペインを途中まで送って「変更」タブに切り替えると左が先頭に飛ぶ）。 */
+    const ok = r => isFinite(r) && r > 0 && Math.abs(r - 1) > 0.001;
+    const rl = beforeL > 0 ? rb.scrollHeight / beforeL : 1;
+    if (topL > 0 && ok(rl)) rb.scrollTop = Math.round(topL * rl);
+    pendingRightFix = (topR > 0 && beforeR > 0) ? { top: topR, before: beforeR } : null;
+
+    if (fsChanged) {
+      // 左が実測できたならその比を、できなければ文字サイズの比を代用する
+      const rt = (measurable && ok(rl)) ? rl : fsRatio;
+      if (ok(rt)) for (const t of state.tabs) if (t.scroll) t.scroll = Math.round(t.scroll * rt);
+      // 閉じたタブのスタックも同じ比で直す（↩復元したときに位置がずれないように）
+      if (ok(rt)) for (const c of state.closed) if (c.scroll) c.scroll = Math.round(c.scroll * rt);
+    }
+    // アクティブタブだけは推定でなく実測値に上書きする
+    const act = activeTabObj();
+    if (act) act.scroll = rb.scrollTop;
+    lastFs = fs;
+
+    /* refreshOverlay() は rAF で autoGrow → drawMinimap("right") まで通す。
+       左右のミニマップは上で scrollTop を書き換えたときの scroll イベントで描き直るので、
+       ここで drawAll() を呼ばない（"変更" タブがアクティブだと drawMinimap が
+       computeDiff() を同期で呼ぶため、文字サイズのスピナーを回すたびに LCS が走る）。 */
     refreshOverlay();
+    /* ★rev42: 左ミニマップだけは明示的に描き直す。
+       症状：左ペインが先頭（scrollTop 0）のまま文字サイズ／表示幅を変えると、折り返しが
+       変わったのに青枠の高さが古いまま残る。
+       原因：左MMの描き直しを #ref-body の scroll イベントに任せていた。上の比例補正で
+       scrollTop が同じ値（0 のときは必ずそう）だとブラウザは scroll を出さないので誰も描き直さない。
+       drawAll() ではなく "left" だけ呼ぶ（右は refreshOverlay の rAF が描く）。
+       state.diffStale が false なら drawMinimap("left") は computeDiff() を呼ばないので LCS は走らない。 */
+    requestAnimationFrame(() => drawMinimap("left"));
   }
 
   /** ペイン幅が変わったときの再適用。applyRatio の後に呼ぶ（clientWidth が確定してから） */
@@ -1003,7 +1128,9 @@
     rafPending = true;
     requestAnimationFrame(() => {
       rafPending = false;
-      autoGrow(); syncMirrorStyle(); syncMirrorText();
+      autoGrow();
+      applyPendingRightFix();        // ★rev42: autoGrow で高さが確定した直後に測って当てる
+      syncMirrorStyle(); syncMirrorText();
       buildHeadLayer(); buildHitLayer(); updateCaret(); drawMinimap("right");
       updateEditEmpty();
     });
@@ -1019,9 +1146,31 @@
   }
 
   function autoGrow() {
-    const t = ta();
+    const t = ta(), eb = body();
+    /* ★rev42: height:"auto" を経由するあいだ中身が一瞬縮み、ブラウザが #edit-body の
+       scrollTop をクランプして「読んでいた位置」を失う。前後で必ず戻す。
+       これを入れないと、サイズが変わっていない（＝比例補正が働かない）ときに
+       右ペインが黙って先頭へ飛び、「変更」タブの追従もそれに引きずられる。 */
+    const keep = eb.scrollTop;
     t.style.height = "auto";
-    t.style.height = Math.max(t.scrollHeight, body().clientHeight) + "px";
+    t.style.height = Math.max(t.scrollHeight, eb.clientHeight) + "px";
+    if (keep > 0 && Math.abs(eb.scrollTop - keep) > 1) eb.scrollTop = keep;
+  }
+
+  /** 文字サイズ・表示幅を変えたときの【右ペイン】のスクロール比例補正（5.1B / 12章 #10）。
+   *  autoGrow() が height を確定させた後でしか正しく測れないので、applySettings() から
+   *  値を預かって refreshOverlay() の rAF がここを呼ぶ。 */
+  function applyPendingRightFix() {
+    const p = pendingRightFix; pendingRightFix = null;
+    if (!p) return;
+    const eb = body();
+    const rr = eb.scrollHeight / p.before;
+    if (!isFinite(rr) || rr <= 0 || Math.abs(rr - 1) <= 0.001) return;
+    const want = Math.round(p.top * rr);
+    eb.scrollTop = want;
+    /* 代入が【古いレイアウトの最大値】でクランプされることがある（rev42 実測 22766 → 17033.33）。
+       ずれていたら次のフレームでもう一度当てる。 */
+    if (Math.abs(eb.scrollTop - want) > 2) requestAnimationFrame(() => { eb.scrollTop = want; });
   }
   function buildHeadLayer() {
     const layer = $("hd-layer");
@@ -1146,7 +1295,7 @@
       const n = Math.max(dels.length, adds.length);
       for (let k = 0; k < n; k++) {
         const d = dels[k], a = adds[k];
-        if (d != null && a != null && similarity(d, a) >= 0.5) {
+        if (d != null && a != null && similarity(d, a) >= SIM_THRESHOLD) {
           rows.push({ k: "chg", d: d, a: a, sp: charSpans(d, a) });
         } else {
           if (d != null) rows.push({ k: "del", s: d });
@@ -1158,8 +1307,23 @@
   }
 
   /** 全文を表示する（省略・折り畳みはしない） */
+  /* 巨大な差分を「固まった」と誤解されないよう警告する（B-3 / 12章 #18）。描画は止めない。
+     表示行は chg が 2 行に開くので rows 数とは一致しない。しきい値を跨いだときだけ出す。
+     LCS_CELL_CAP は計算量の話で、これは表示量の話（別物） */
+  let diffBigWarned = false;
+
   function renderDiffHtml(rows) {
     const changed = rows.filter(r => r.k !== "same").length;
+    let shown = 0;
+    for (const r of rows) shown += (r.k === "chg" ? 2 : 1);
+    if (shown > DIFF_WARN_LINES) {
+      if (!diffBigWarned) {
+        diffBigWarned = true;
+        toast("差分が大きいため表示が重くなります（" + shown.toLocaleString() + "行）");
+      }
+    } else {
+      diffBigWarned = false;                 // 下回ったら次に超えたときまた知らせる
+    }
     let html = "", plain = "";
     const line = (cls, mk, inner, rawText) =>
       '<div class="dl ' + cls + '" data-t="' + esc(rawText).replace(/"/g, "&quot;") + '">' +
@@ -1219,6 +1383,11 @@
     return { L: L, map: map, rev: rev, lines: li };
   }
 
+  /** 「変更」タブの tooltip 文面。renderTabs() と computeDiff() の両方がこれを使う（rev42）。
+   *  t.sum（computeDiff が持たせる ＋N/−N）が無いうちは素の文面だけ返す。 */
+  const diffTitle = t => "初期からの変更（閉じられません）" +
+    (t && t.sum ? "　＋" + t.sum.add + "行 −" + t.sum.del + "行" : "");
+
   function computeDiff() {
     const t = state.tabs.find(x => x.kind === SYS.DIFF);
     if (!t) return;
@@ -1234,10 +1403,12 @@
     t.text = r.plain;
     t.heads = [];
     t.sum = { add: add, del: del };
-    // タブの tooltip に増減行数を出す（検索バーの枠は使わない）。
-    // renderTabs() を呼ぶとタブDOMを作り直して「閉じる武装」状態が消えるので、属性だけ書き換える
+    /* タブの tooltip に増減行数を出す（検索バーの枠は常に N / M に使うので流用しない）。
+       renderTabs() を呼ぶとタブDOMを作り直して「閉じる武装」状態が消えるので、属性だけ書き換える。
+       ★rev42: 文面の組み立ては diffTitle() の1か所だけ。ここで後付けしても、その後 renderTabs()
+       （タブ切替・タブ開閉・undoClose()・updateUndoChip() 経由など）が走ると消えていた。 */
     const tabEl2 = $("tabbar").querySelector('.tab[data-id="' + t.id + '"]');
-    if (tabEl2) tabEl2.title = "初期からの変更（閉じられません）　＋" + add + "行 −" + del + "行";
+    if (tabEl2) tabEl2.title = diffTitle(t);
     state.diffStale = false;
     return t.sum;
   }
@@ -1410,6 +1581,8 @@
     rememberScroll();
     const [t] = state.tabs.splice(i, 1);
     state.closed.push({ name: t.name, text: t.text, scroll: t.scroll, at: i });
+    // 上限 10 件（B-1 / 12章 #11）。本文ごと抱えるので無制限だとメモリが伸び続ける
+    while (state.closed.length > CLOSED_MAX) state.closed.shift();
     if (state.activeTab === id) {
       const next = state.tabs[Math.min(i, state.tabs.length - 1)];
       state.activeTab = next ? next.id : null;
@@ -1502,7 +1675,7 @@
         + (t.kind ? " sys sys-" + (t.kind === SYS.ORIGIN ? "origin" : "diff") : "");
       el.dataset.id = t.id;
       el.title = t.kind
-        ? (t.kind === SYS.ORIGIN ? "右ペインを開いた時点の内容（閉じられません）" : "初期からの変更（閉じられません）")
+        ? (t.kind === SYS.ORIGIN ? "右ペインを開いた時点の内容（閉じられません）" : diffTitle(t))
         : t.name;
       el.innerHTML = t.kind
         ? '<span class="pin">◉</span><span class="name"></span>'
@@ -1808,6 +1981,132 @@
   }
 
   /* =======================================================
+     ツール：原稿全体のテキスト整形（仕様書 5.14）
+     4機能とも execCommand("insertText") 経由で書き換える＝ Ctrl+Z 1回で戻る（制約 #4）。
+     適用範囲は全文固定（選択範囲は見ない）。改行コードの変換だけは保存時にのみ適用し、
+     textarea の中身（value）は変えない（textarea は仕様上 CRLF を保持できないため）。
+     ======================================================= */
+  const isBlankLine = s => /^[ 　\t]*$/.test(s);   // 空・空白/タブだけの行（両方を「空行」とみなす）
+  const isSerif = s => /^[ 　\t]*[「『]/.test(s);   // セリフ判定は「」『』の行頭のみ（（）〈〉は対象外＝作者確定）
+  const withEol = s => state.eol === "crlf" ? s.replace(/\n/g, "\r\n") : s;
+
+  /** 空行を削除。line === "" だけを消す。空白/タブだけの行（意図的な「間」）は残す。末尾改行の有無は保つ */
+  function removeBlankLines(src) {
+    const endsNL = /\n$/.test(src);
+    const lines = src.split("\n");
+    const ls = endsNL ? lines.slice(0, -1) : lines;
+    const kept = ls.filter(l => l !== "");
+    let text = kept.join("\n");
+    if (endsNL) text += "\n";
+    return { text: text, count: ls.length - kept.length };
+  }
+
+  /**
+   * 空行を入れる（3種）。隣接2行の「境界」ごとに入れるかを先に決めてから組み立てる
+   * （行ごとに前後別々に判定すると、連続する対象行の間で二重に入ってしまうため）。
+   * どちらかの行がすでに空行（空白/タブだけも含む）なら増やさない＝連続空行を作らない。
+   * kind: "head"（見出しの前後）／"serif-narr"（セリフ⇔地の文の境界）／"serif-all"（セリフ行ごとの前後すべて）
+   * 既知の限界：複数行にまたがるセリフの2行目以降は行頭が「で始まらないため判定できない（未処置課題）。
+   */
+  function insertBlankLines(kind, src) {
+    const endsNL = /\n$/.test(src);
+    const lines = src.split("\n");
+    const ls = endsNL ? lines.slice(0, -1) : lines;
+    const n = ls.length;
+    if (n < 2) return { text: src, count: 0 };
+    const out = [ls[0]];
+    let count = 0;
+    for (let i = 0; i < n - 1; i++) {
+      const a = ls[i], b = ls[i + 1];
+      let need = false;
+      if (!isBlankLine(a) && !isBlankLine(b)) {
+        if (kind === "head") need = headLevel(a) > 0 || headLevel(b) > 0;
+        else if (kind === "serif-narr") need = isSerif(a) !== isSerif(b);
+        else if (kind === "serif-all") need = isSerif(a) || isSerif(b);
+      }
+      if (need) { out.push(""); count++; }
+      out.push(b);
+    }
+    let text = out.join("\n");
+    if (endsNL) text += "\n";
+    return { text: text, count: count };
+  }
+
+  /** 段落頭を全角空白（　）で字下げ。対象外：空行／全角・半角空白・タブで字下げ済み（触らない＝確定事項）／見出し行／セリフ行 */
+  function indentParagraphs(src) {
+    const endsNL = /\n$/.test(src);
+    const lines = src.split("\n");
+    const ls = endsNL ? lines.slice(0, -1) : lines;
+    let count = 0;
+    const out = ls.map(line => {
+      if (isBlankLine(line) || /^[ 　\t]/.test(line) || headLevel(line) > 0 || isSerif(line)) return line;   // 全角/半角空白・タブで字下げ済みの行は触らない（確定事項）
+      count++;
+      return "　" + line;
+    });
+    let text = out.join("\n");
+    if (endsNL) text += "\n";
+    return { text: text, count: count };
+  }
+
+  /* 整形の共通経路。replaceAll()（上）と同じ手順：execCommand を通して Ctrl+Z 対象にする。
+     罠：t.select() の直後はキャレットが文末へ行くので必ず戻す。scrollTop も復元する（毎回画面が飛ぶ事故を防ぐ）。
+     罠：state.edHits は元テキストにしか対応しないので runEdSearch() で作り直す（5.4D と同じ理由）。 */
+  function applyTransform(label, fn) {
+    const t = ta(), src = t.value;
+    const r = fn(src);
+    if (r.text === src) { toast(label + "：変えるところがありませんでした"); closeToolsMenu(); return; }
+    const keep = body().scrollTop;
+    const caret = Math.min(t.selectionStart, r.text.length);
+    t.focus(); t.select(); insertText(r.text);
+    t.setSelectionRange(caret, caret);
+    body().scrollTop = keep;
+    onEdit(true); runEdSearch();
+    closeToolsMenu();
+    toast(label + "：" + r.count + "か所（Ctrl+Z で元に戻せます）");
+  }
+
+  /* ---- ツールメニューの開閉配線 ----
+     罠：#toolbar はボタン直下にドロップダウンを描けないことがあるため position:fixed で開き、
+     開くたびに JS でボタン直下の座標へ置き直す。
+     罠：mousedown で textarea の focus を奪うと execCommand が失敗するので、ボタン・パネルとも
+     mousedown を preventDefault する（ラジオのクリックだけは通す）。 */
+  let closeToolsMenu = () => {};
+  (function () {
+    const btn = $("btn-tools"), menu = $("tools-menu");
+    function place() {
+      const r = btn.getBoundingClientRect();
+      menu.style.left = Math.round(r.left) + "px";
+      menu.style.top = Math.round(r.bottom + 4) + "px";
+    }
+    function openMenu() {
+      place(); menu.classList.add("show");
+      btn.setAttribute("aria-expanded", "true"); menu.setAttribute("aria-hidden", "false");
+    }
+    function closeMenu() {
+      menu.classList.remove("show");
+      btn.setAttribute("aria-expanded", "false"); menu.setAttribute("aria-hidden", "true");
+    }
+    closeToolsMenu = closeMenu;
+    btn.addEventListener("mousedown", e => e.preventDefault());
+    btn.addEventListener("click", () => { menu.classList.contains("show") ? closeMenu() : openMenu(); });
+    menu.addEventListener("mousedown", e => { if (e.target.tagName !== "INPUT") e.preventDefault(); });
+    document.addEventListener("click", e => {
+      if (!menu.classList.contains("show") || e.target === btn || menu.contains(e.target)) return;
+      closeMenu();
+    });
+    document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });
+
+    $("tool-blank-del").addEventListener("click", () => applyTransform("空行を削除", removeBlankLines));
+    $("tool-blank-head").addEventListener("click", () => applyTransform("空行を入れる（見出しの前後）", s => insertBlankLines("head", s)));
+    $("tool-blank-serif-narr").addEventListener("click", () => applyTransform("空行を入れる（セリフと地の文の間）", s => insertBlankLines("serif-narr", s)));
+    $("tool-blank-serif-all").addEventListener("click", () => applyTransform("空行を入れる（セリフの両側すべて）", s => insertBlankLines("serif-all", s)));
+    $("tool-indent").addEventListener("click", () => applyTransform("段落頭を字下げ", indentParagraphs));
+
+    $("tool-eol-crlf").addEventListener("change", () => { state.eol = "crlf"; saveSettings(); toast("保存する改行コード：Windows（CRLF）"); });
+    $("tool-eol-lf").addEventListener("change", () => { state.eol = "lf"; saveSettings(); toast("保存する改行コード：Mac・Unix（LF）"); });
+  })();
+
+  /* =======================================================
      ドラッグ＆ドロップ
      ======================================================= */
   /**
@@ -1993,7 +2292,7 @@
     refreshOverlay();
     scheduleDiff();
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(autoSave, 3000);
+    saveTimer = setTimeout(autoSave, AUTOSAVE_MS);
   }
   /* 自動保存の状態はトーストではなく、ツールバーの空き領域に出したままにする（5.8）。
      本文の上に何も重ならないので、書いている最中でも視界を邪魔しない。
@@ -2060,6 +2359,8 @@
     if (!state.dirty) { fn(); return; }
     $("open-info").textContent = info;
     $("overlay-open").classList.add("show");
+    // 既定はキャンセル側（A-2）。置かないとフォーカスが［開く］に残り Enter で再発火する
+    $("btn-open-cancel").focus();
     const close = () => {
       $("overlay-open").classList.remove("show");
       document.removeEventListener("keydown", onKey, true);
@@ -2110,7 +2411,7 @@
   const canFSA = () => typeof window.showSaveFilePicker === "function";
 
   async function saveTxt() {
-    const text = ta().value;
+    const text = withEol(ta().value);   // 改行コードは保存の出口だけで変換（5.14）
     const name = state.fileName || "無題.txt";
     if (canFSA()) {
       try {
@@ -2129,14 +2430,19 @@
         return;
       } catch (err) {
         if (err && err.name === "AbortError") return;              // ユーザーがキャンセル
-        // SecurityError / NotAllowedError などはフォールバックへ落とす
-        toast("ダイアログを開けなかったため、ダウンロードで保存します");
+        /* SecurityError / NotAllowedError などはフォールバックへ落とす。
+           ここでトーストを出しても downloadTxt() の成功報告に 0 秒で上書きされる
+           （toast() は textContent を差し替えるだけ）ので、理由は downloadTxt に渡して
+           1 つの文にまとめる。いちばん不安な場面で「なぜダイアログが出ないのか」が
+           読めないのは困る。 */
+        downloadTxt(text, name, true);
+        return;
       }
     }
     downloadTxt(text, name);
   }
 
-  function downloadTxt(text, name) {
+  function downloadTxt(text, name, fellBack) {
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -2144,10 +2450,13 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     state.dirty = false; updateHeader();
+    // 成功を報告する（A-4）。この経路は file:// で SecurityError になったときに動く
+    toast((fellBack ? "保存ダイアログを開けませんでした。" : "") +
+          "「" + name + "」をダウンロードに保存しました");
   }
 
   /* =======================================================
-     ミニマップ（幅 28px）
+     ミニマップ（幅は CSS の --minimap-w。JS からは MM で読む → rev41 C-1）
      ======================================================= */
   const drawAll = () => { drawMinimap("left"); drawMinimap("right"); };
 
@@ -2598,8 +2907,13 @@
   /* ---- 空状態ヒントの操作（仕様 5.2B / 5.6C） ---- */
   // 左：全面クリックでファイル選択（複数可）
   $("ref-empty").addEventListener("click", () => $("file-ref").click());
-  // 右：破線枠の中だけクリック可。枠外は pointer-events:none で textarea に素通しする
-  $("edit-empty").querySelector(".hint-box").addEventListener("click", () => pickAndOpen());
+  /* 右：破線枠の中だけクリック可。枠外は pointer-events:none で textarea に素通しする。
+     この経路も上書き確認を通す（A-3）。全消去でヒントが戻るので dirty=true かつ空が起きる */
+  /* 文言はツールバーの［開く］と変える。この経路は本文が空のときしか通らないので
+     「編集中の原稿を置き換えます」は事実と違う。実際に失うのは「初期」の基準と Undo 履歴 */
+  $("edit-empty").querySelector(".hint-box").addEventListener("click", () =>
+    confirmOverwrite("「" + (state.fileName || "無題.txt") + "」を閉じて、選んだファイルを開きます。" +
+      "「初期」の基準と Ctrl+Z の履歴は失われます。", pickAndOpen));
   // IME 変換中はヒントを隠す（変換候補の背後に残るのを防ぐ）
   ta().addEventListener("compositionstart", () => { composing = true; updateEditEmpty(); });
   ta().addEventListener("compositionend",   () => { composing = false; updateEditEmpty(); });
@@ -2835,13 +3149,22 @@
     e.preventDefault(); e.returnValue = "";    // 保存できなかった → ここで止める
   });
 
+  /* Ctrl+F の飛び先（5.11）。左は資料0件だと disabled で focus() が効かないので右へ回す（B-4） */
+  function focusSearchBox() {
+    const left = $("ref-q"), right = $("ed-q");
+    const target = document.activeElement === t0 ? right : (left.disabled ? right : left);
+    if (!target.disabled) target.focus();
+  }
+
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") { disarm(); closeHeadCfg(); return; }
     const mod = e.ctrlKey || e.metaKey;
     if (!mod) return;
-    if (e.key === "s") { e.preventDefault(); saveTxt(); }
-    else if (e.key === "f") { e.preventDefault(); (document.activeElement === t0 ? $("ed-q") : $("ref-q")).focus(); }
-    else if (e.key === "h") { e.preventDefault(); toggleReplace(true); }
+    // CapsLock ON・Shift 併用では e.key が "S" になる。畳んでから比べる（A-1）
+    const k = (e.key || "").toLowerCase();
+    if (k === "s") { e.preventDefault(); saveTxt(); }
+    else if (k === "f") { e.preventDefault(); focusSearchBox(); }
+    else if (k === "h") { e.preventDefault(); toggleReplace(true); }
   });
 
   setupMinimapDrag("mm-left", () => $("ref-body"), "left");
