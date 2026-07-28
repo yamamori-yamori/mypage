@@ -2,11 +2,18 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>novedit — 資料を読みながら書くエディタ</title>
+<!-- iPad/iOS ホーム画面（Web App）。standalone で Safari の URL 欄を出さない（縦view と同じ方針・rev54） -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="novedit">
+<meta name="theme-color" content="#263238">
+<link rel="manifest" href="data:application/manifest+json;charset=utf-8,%7B%22name%22%3A%22novedit%22%2C%22short_name%22%3A%22novedit%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23eceff1%22%2C%22theme_color%22%3A%22%23263238%22%7D">
 <style>
   :root {
-    --toolbar-h: 48px;
+    --toolbar-h: 42px;
     --tabbar-h: 30px;
     --header-h: 28px;
     --searchbar-h: 32px;
@@ -56,22 +63,23 @@
   }
 
   /* ---------- toolbar ---------- */
+  /* rev52: 文字サイズはそのまま、高さ・ボタン余白だけ詰める（48→42） */
   #toolbar {
     height: var(--toolbar-h);
     background: var(--ink); color: #fff;
-    display: flex; align-items: center; gap: 14px; padding: 0 14px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 10px; padding: 0 12px; flex-shrink: 0;
   }
   #toolbar .app-title { font-size: 12px; color: #cfd8dc; white-space: nowrap; }
   #toolbar .app-title .app-name { color: #eceff1; font-weight: 700; font-size: 14px; }
-  #toolbar .tb-group { display: flex; align-items: center; gap: 6px; }
-  #toolbar .sep { width: 1px; height: 22px; background: #455a64; }
-  #toolbar button { background: var(--ink3); color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  #toolbar .tb-group { display: flex; align-items: center; gap: 5px; }
+  #toolbar .sep { width: 1px; height: 18px; background: #455a64; }
+  #toolbar button { background: var(--ink3); color: #fff; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1.25; }
   #toolbar button:hover { background: #546e7a; }
   #toolbar button.primary { background: var(--caret); }
   #toolbar button.primary:hover { background: #388e3c; }
   #toolbar button:disabled { opacity: .7; cursor: progress; }   /* ツール実行中（rev45） */
-  #toolbar label { font-size: 12px; display: flex; align-items: center; gap: 5px; color: #cfd8dc; cursor: pointer; }
-  #toolbar select, #toolbar input[type="number"] { padding: 4px 6px; border-radius: 3px; border: 1px solid #546e7a; background: var(--ink2); color: #fff; font-size: 13px; }
+  #toolbar label { font-size: 12px; display: flex; align-items: center; gap: 4px; color: #cfd8dc; cursor: pointer; }
+  #toolbar select, #toolbar input[type="number"] { padding: 3px 5px; border-radius: 3px; border: 1px solid #546e7a; background: var(--ink2); color: #fff; font-size: 13px; }
   #toolbar input.capped { border-color: #ef6c00; background: #4e342e; }
   #toolbar input[type="number"] { width: 58px; }
   #toolbar .app-meta { font-size: 11px; color: #90a4ae; white-space: nowrap; }
@@ -109,7 +117,7 @@
      「いつ保存されたか」が常に見えていれば、閉じるときに不安にならない。 */
   #autosave-note {
     font-size: 11px; color: #9fc9a2; white-space: nowrap;
-    border: 1px solid #3f5540; border-radius: 3px; padding: 2px 8px;
+    border: 1px solid #3f5540; border-radius: 3px; padding: 1px 7px;
     pointer-events: none; min-width: 0; overflow: hidden; text-overflow: ellipsis;
   }
   /* 一度も保存していないうちは枠も出さない */
@@ -200,9 +208,10 @@
   @keyframes pulse { from { opacity: .6 } to { opacity: 1 } }
   #tab-add { flex-shrink: 0; padding: 0 12px; font-size: 15px; color: #607d8b; background: transparent; border: none; cursor: pointer; }
   #tab-add:hover { background: #dfe6e9; }
+  /* rev52: ラベル「復元」は幅を食うので矢印のみ。意味は title / tooltip に任せる */
   #tab-undo {
-    flex-shrink: 0; display: none; align-items: center; gap: 4px;
-    padding: 0 10px; font-size: 11px; color: #00695c; background: #d7f0ec;
+    flex-shrink: 0; display: none; align-items: center; justify-content: center;
+    padding: 0 8px; min-width: 28px; font-size: 14px; line-height: 1; color: #00695c; background: #d7f0ec;
     border: none; border-left: 1px solid var(--line); cursor: pointer;
   }
   #tab-undo.show { display: flex; }
@@ -464,7 +473,7 @@
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.0 / <a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.1 / <a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
@@ -530,7 +539,7 @@
       <div id="tabbar"></div>
       <button id="tab-right" class="tab-nav" title="タブを右へスクロール">›</button>
       <button id="tab-add" title="タブを追加">＋</button>
-      <button id="tab-undo" title="閉じたタブを復元">↩ 復元</button>
+      <button id="tab-undo" title="閉じたタブを復元" aria-label="閉じたタブを復元">↩</button>
     </div>
     <div class="searchbar">
       <input type="text" id="ref-q" placeholder="検索">
@@ -1092,7 +1101,7 @@
       // 左が実測できたならその比を、できなければ文字サイズの比を代用する
       const rt = (measurable && ok(rl)) ? rl : fsRatio;
       if (ok(rt)) for (const t of state.tabs) if (t.scroll) t.scroll = Math.round(t.scroll * rt);
-      // 閉じたタブのスタックも同じ比で直す（↩復元したときに位置がずれないように）
+      // 閉じたタブのスタックも同じ比で直す（↩ で戻したときに位置がずれないように）
       if (ok(rt)) for (const c of state.closed) if (c.scroll) c.scroll = Math.round(c.scroll * rt);
     }
     // アクティブタブだけは推定でなく実測値に上書きする
@@ -1612,7 +1621,7 @@
       renderTabs();
     }
     updateUndoChip();
-    toast("「" + t.name + "」を閉じました　→ ↩復元 で戻せます");
+    toast("「" + t.name + "」を閉じました　→ ↩ で戻せます");
   }
   function undoClose() {
     const c = state.closed.pop();
@@ -2920,14 +2929,18 @@
       const p = Math.max(0, Math.min(1, (clientY - r.top - MM_OUT_Y) / contentH));
       const isL = side === "left";
       const pane = getPane();
-      // クリックした位置の「行」を求め、その行を画面の上端に持ってくる
+      // クリックした位置の「行」をビューポート中央へ（青枠の中心 ≈ クリック点）。
+      // 以前は行を画面上端に置いていたため、枠の上辺がクリック点に来て見えていた（rev53）。
       const src = isL ? ((activeTabObj() && activeTabObj().text) || "") : ta().value;
       const nn = Math.max(1, src.split("\n").length);
       const line = Math.max(0, Math.min(nn - 1, Math.floor(p * nn)));
       const docY = lineDocY(isL, line);
       const max = Math.max(0, pane.scrollHeight - pane.clientHeight);
-      pane.scrollTop = docY == null ? Math.max(0, Math.min(max, p * max))    // 測れなければ比率で
-                                    : Math.max(0, Math.min(max, docY));
+      const half = pane.clientHeight / 2;
+      // 行頭 y を中央に。測れなければドキュメント比率 p を中央に合わせる（上端合わせは p*max）
+      pane.scrollTop = docY == null
+        ? Math.max(0, Math.min(max, p * pane.scrollHeight - half))
+        : Math.max(0, Math.min(max, docY - half));
       if (side === "left") rememberScroll();
       drawMinimap(side);
     };
