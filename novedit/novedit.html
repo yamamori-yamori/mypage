@@ -69,6 +69,7 @@
   #toolbar button:hover { background: #546e7a; }
   #toolbar button.primary { background: var(--caret); }
   #toolbar button.primary:hover { background: #388e3c; }
+  #toolbar button:disabled { opacity: .7; cursor: progress; }   /* ツール実行中（rev45） */
   #toolbar label { font-size: 12px; display: flex; align-items: center; gap: 5px; color: #cfd8dc; cursor: pointer; }
   #toolbar select, #toolbar input[type="number"] { padding: 4px 6px; border-radius: 3px; border: 1px solid #546e7a; background: var(--ink2); color: #fff; font-size: 13px; }
   #toolbar input.capped { border-color: #ef6c00; background: #4e342e; }
@@ -94,6 +95,16 @@
   #tools-menu .tm-sep { height: 1px; background: var(--line); margin: 5px 0; }
   #tools-menu .tm-radio { display: flex; align-items: center; gap: 6px; padding: 6px 12px 6px 12px; cursor: pointer; }
   #tools-menu .tm-radio input { cursor: pointer; }
+  #tools-menu .tm-field { padding: 4px 12px 6px; }
+  #tools-menu .tm-field input[type="text"],
+  #tools-menu .tm-field textarea {
+    width: 100%; box-sizing: border-box; padding: 5px 8px; font-size: 13px;
+    border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: #fff;
+    font-family: inherit; resize: vertical; min-height: 2.4em; line-height: 1.4;
+  }
+  #tools-menu .tm-field input[type="text"]:focus,
+  #tools-menu .tm-field textarea:focus { outline: none; border-color: #4db6ac; }
+  #tools-menu .tm-hint { padding: 0 12px 6px; font-size: 11px; color: #90a4ae; line-height: 1.45; }
   /* 自動保存の状態表示（5.8）。一瞬ではなく【出したままにする】。
      「いつ保存されたか」が常に見えていれば、閉じるときに不安にならない。 */
   #autosave-note {
@@ -429,7 +440,8 @@
   .dialog .hint { font-size: 11px; color: #90a4ae; margin: 3px 0 0; }
   #cfg-preview { font-size: 11.5px; color: #00695c; background: #e0f2f1; border-radius: 3px; padding: 7px 10px; margin: 14px 0 0; line-height: 1.7; }
 
-  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: rgba(38,50,56,.92); color: #fff; font-size: 12px; padding: 8px 16px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
+  /* 画面中央（rev46）。下端だと長い原稿のツール実行中に視線が届きにくい */  
+  #toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(38,50,56,.92); color: #fff; font-size: 12px; padding: 8px 16px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; max-width: min(90vw, 480px); text-align: center; }
   #toast.show { opacity: 1; }
 
 </style>
@@ -465,16 +477,16 @@
 
   <span class="sep"></span>
 
-  <div class="tb-group">
-    <label title="本文の文字サイズ（px・1px刻み）">文字<input type="number" id="opt-font" value="15" min="10" max="28" step="1"></label>
-    <label title="本文1行の全角文字数。ペインに入る範囲までしか上げられません">幅<input type="number" id="opt-width" value="40" min="16" max="120" step="1"></label>
+  <div class="tb-group" id="tb-tools">
+    <button id="btn-tools" aria-haspopup="true" aria-expanded="false"
+            title="原稿全体のテキスト整形（すべて Ctrl+Z で元に戻せます）">ツール ▾</button>
   </div>
 
   <span class="sep"></span>
 
-  <div class="tb-group" id="tb-tools">
-    <button id="btn-tools" aria-haspopup="true" aria-expanded="false"
-            title="原稿全体のテキスト整形（すべて Ctrl+Z で元に戻せます）">ツール ▾</button>
+  <div class="tb-group">
+    <label title="本文の文字サイズ（px・1px刻み）">文字<input type="number" id="opt-font" value="15" min="10" max="28" step="1"></label>
+    <label title="本文1行の全角文字数。ペインに入る範囲までしか上げられません">幅<input type="number" id="opt-width" value="40" min="16" max="120" step="1"></label>
   </div>
 
   <span class="sep"></span>
@@ -492,6 +504,12 @@
   <button type="button" id="tool-blank-head" role="menuitem">空行を入れる ─ 見出しの前後</button>
   <button type="button" id="tool-blank-serif-narr" role="menuitem">空行を入れる ─ セリフと地の文の間</button>
   <button type="button" id="tool-blank-serif-all" role="menuitem">空行を入れる ─ セリフの両側すべて</button>
+  <button type="button" id="tool-blank-sep" role="menuitem">空行を入れる ─ 区切り行の前後</button>
+  <div class="tm-field">
+    <textarea id="tool-sep-pat" rows="2" placeholder="例：　・　・　・" autocomplete="off" spellcheck="false"
+              title="行全体がこれと一致する行を区切りとみなします。複数あるときは改行で並べて入力（設定に保存）"></textarea>
+  </div>
+  <div class="tm-hint">作者任意の1行（例：　・　・　・ ／ -----）。行全体一致。複数は改行区切り</div>
   <div class="tm-sep"></div>
   <div class="tm-h">段落を整える</div>
   <button type="button" id="tool-indent" role="menuitem">段落頭を全角空白で字下げする</button>
@@ -675,7 +693,8 @@
     origin: { text: "", name: "", at: 0 },  // 右ペインの「初期」
     diffStale: true,             // 差分の再計算が必要か
     diffFollow: true,            // 「変更」タブは常に右のカーソル行へ追従する（固定）
-    eol: "lf"                     // ツール＞保存する改行コード。"lf"|"crlf"。既定 lf（現状維持。保存時のみ適用＝5.14）
+    eol: "lf",                    // ツール＞保存する改行コード。"lf"|"crlf"。既定 lf（現状維持。保存時のみ適用＝5.14）
+    sepPat: ""                    // ツール＞区切り行パターン（改行区切りで複数可）。行全体一致で判定（5.14）
   };
   const SYS = { ORIGIN: "origin", DIFF: "diff" };   // システムタブ（閉じられない）
   const MM_BG_L = "#EFE7D2";                        // 左ミニマップの下地（仕様 5.2C）
@@ -958,6 +977,7 @@
       }
       if (typeof s.showHead === "boolean") { state.showHead = s.showHead; $("opt-head").checked = s.showHead; }
       if (s.eol === "crlf" || s.eol === "lf") state.eol = s.eol;   // 不正値は既定 lf のまま（検証つき）
+      if (typeof s.sepPat === "string") state.sepPat = s.sepPat;
       if (s.headCfg && typeof s.headCfg === "object") {
         state.headCfg = {
           builtin: Object.assign({}, HEAD_DEFAULT.builtin, s.headCfg.builtin || {}),
@@ -969,13 +989,14 @@
     if (!state.headCfg) state.headCfg = JSON.parse(JSON.stringify(HEAD_DEFAULT));
     headC = compileHead(state.headCfg);
     $("tool-eol-" + state.eol).checked = true;   // ラジオへ反映（値は crlf/lf のみに検証済み）
+    $("tool-sep-pat").value = state.sepPat || "";
   }
   function saveSettings() {
     try {
       localStorage.setItem(LS_SETTINGS, JSON.stringify({
         fontSize: +$("opt-font").value, widthChars: state.widthPref,
         ratio: state.ratio, showHead: state.showHead,
-        headCfg: state.headCfg, eol: state.eol
+        headCfg: state.headCfg, eol: state.eol, sepPat: state.sepPat
       }));
     } catch (_) {}
   }
@@ -1989,6 +2010,21 @@
   const isBlankLine = s => /^[ 　\t]*$/.test(s);   // 空・空白/タブだけの行（両方を「空行」とみなす）
   const isSerif = s => /^[ 　\t]*[「『]/.test(s);   // セリフ判定は「」『』の行頭のみ（（）〈〉は対象外＝作者確定）
   const withEol = s => state.eol === "crlf" ? s.replace(/\n/g, "\r\n") : s;
+  /* 区切り行：作者が #tool-sep-pat に書いた文字列と「行全体」が一致するもの（前後の半角/全角空白・タブだけは許容して trim 比較もする）。
+     複数パターンは改行区切り。空パターンはマッチしない。推測マッチ（・だけの行など）はしない＝誤爆防止。 */
+  function sepPatterns() {
+    return String(state.sepPat || "").split("\n").map(x => x.trimEnd().replace(/^\uFEFF/, "")).filter(x => x.length > 0);
+  }
+  function isSepLine(line) {
+    const pats = sepPatterns();
+    if (!pats.length) return false;
+    const t = line.trim();
+    for (let i = 0; i < pats.length; i++) {
+      const p = pats[i];
+      if (line === p || t === p.trim()) return true;
+    }
+    return false;
+  }
 
   /** 空行を削除。line === "" だけを消す。空白/タブだけの行（意図的な「間」）は残す。末尾改行の有無は保つ */
   function removeBlankLines(src) {
@@ -2005,7 +2041,7 @@
    * 空行を入れる（3種）。隣接2行の「境界」ごとに入れるかを先に決めてから組み立てる
    * （行ごとに前後別々に判定すると、連続する対象行の間で二重に入ってしまうため）。
    * どちらかの行がすでに空行（空白/タブだけも含む）なら増やさない＝連続空行を作らない。
-   * kind: "head"（見出しの前後）／"serif-narr"（セリフ⇔地の文の境界）／"serif-all"（セリフ行ごとの前後すべて）
+   * kind: "head"／"serif-narr"／"serif-all"／"sep"（区切り行の前後。state.sepPat）
    * 既知の限界：複数行にまたがるセリフの2行目以降は行頭が「で始まらないため判定できない（未処置課題）。
    */
   function insertBlankLines(kind, src) {
@@ -2023,6 +2059,7 @@
         if (kind === "head") need = headLevel(a) > 0 || headLevel(b) > 0;
         else if (kind === "serif-narr") need = isSerif(a) !== isSerif(b);
         else if (kind === "serif-all") need = isSerif(a) || isSerif(b);
+        else if (kind === "sep") need = isSepLine(a) || isSepLine(b);
       }
       if (need) { out.push(""); count++; }
       out.push(b);
@@ -2050,19 +2087,47 @@
 
   /* 整形の共通経路。replaceAll()（上）と同じ手順：execCommand を通して Ctrl+Z 対象にする。
      罠：t.select() の直後はキャレットが文末へ行くので必ず戻す。scrollTop も復元する（毎回画面が飛ぶ事故を防ぐ）。
-     罠：state.edHits は元テキストにしか対応しないので runEdSearch() で作り直す（5.4D と同じ理由）。 */
+     罠：state.edHits は元テキストにしか対応しないので runEdSearch() で作り直す（5.4D と同じ理由）。
+     罠：全文 insertText は長い原稿で同期ブロックする。メニューを閉じて「処理中…」を描画してから
+         二重 rAF で本体処理に入る（rev45）。同一経路の再入は toolBusy で拒否。 */
+  let toolBusy = false;
   function applyTransform(label, fn) {
-    const t = ta(), src = t.value;
-    const r = fn(src);
-    if (r.text === src) { toast(label + "：変えるところがありませんでした"); closeToolsMenu(); return; }
-    const keep = body().scrollTop;
-    const caret = Math.min(t.selectionStart, r.text.length);
-    t.focus(); t.select(); insertText(r.text);
-    t.setSelectionRange(caret, caret);
-    body().scrollTop = keep;
-    onEdit(true); runEdSearch();
+    if (toolBusy) { toast("前の処理が終わるまでお待ちください"); return; }
+    toolBusy = true;
     closeToolsMenu();
-    toast(label + "：" + r.count + "か所（Ctrl+Z で元に戻せます）");
+    const btn = $("btn-tools");
+    const prevLabel = btn.textContent;
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+    btn.textContent = "処理中…";
+    document.documentElement.style.cursor = "progress";
+    toast(label + "：処理中…", 120000);   // 完了トーストが上書きするまで出したまま
+    /* 1フレーム目で DOM を反映、2フレーム目で確実に塗ってから重い処理へ */
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          const t = ta(), src = t.value;
+          const r = fn(src);
+          if (r.text === src) {
+            toast(label + "：変えるところがありませんでした");
+            return;
+          }
+          const keep = body().scrollTop;
+          const caret = Math.min(t.selectionStart, r.text.length);
+          t.focus(); t.select(); insertText(r.text);
+          t.setSelectionRange(caret, caret);
+          body().scrollTop = keep;
+          onEdit(true); runEdSearch();
+          toast(label + "：" + r.count + "か所（Ctrl+Z で元に戻せます）");
+        } finally {
+          toolBusy = false;
+          btn.disabled = false;
+          btn.removeAttribute("aria-busy");
+          btn.textContent = prevLabel;
+          document.documentElement.style.cursor = "";
+        }
+      });
+    });
   }
 
   /* ---- ツールメニューの開閉配線 ----
@@ -2089,7 +2154,7 @@
     closeToolsMenu = closeMenu;
     btn.addEventListener("mousedown", e => e.preventDefault());
     btn.addEventListener("click", () => { menu.classList.contains("show") ? closeMenu() : openMenu(); });
-    menu.addEventListener("mousedown", e => { if (e.target.tagName !== "INPUT") e.preventDefault(); });
+    menu.addEventListener("mousedown", e => { if (e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA") e.preventDefault(); });
     document.addEventListener("click", e => {
       if (!menu.classList.contains("show") || e.target === btn || menu.contains(e.target)) return;
       closeMenu();
@@ -2100,6 +2165,18 @@
     $("tool-blank-head").addEventListener("click", () => applyTransform("空行を入れる（見出しの前後）", s => insertBlankLines("head", s)));
     $("tool-blank-serif-narr").addEventListener("click", () => applyTransform("空行を入れる（セリフと地の文の間）", s => insertBlankLines("serif-narr", s)));
     $("tool-blank-serif-all").addEventListener("click", () => applyTransform("空行を入れる（セリフの両側すべて）", s => insertBlankLines("serif-all", s)));
+    function runSepBlank() {
+      const v = $("tool-sep-pat").value;
+      state.sepPat = v;
+      saveSettings();
+      if (!sepPatterns().length) { toast("区切り行の記号を入力してください（例：　・　・　・）"); return; }
+      applyTransform("空行を入れる（区切り行の前後）", s => insertBlankLines("sep", s));
+    }
+    $("tool-blank-sep").addEventListener("click", runSepBlank);
+    $("tool-sep-pat").addEventListener("change", () => { state.sepPat = $("tool-sep-pat").value; saveSettings(); });
+    $("tool-sep-pat").addEventListener("keydown", e => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runSepBlank(); }
+    });
     $("tool-indent").addEventListener("click", () => applyTransform("段落頭を字下げ", indentParagraphs));
 
     $("tool-eol-crlf").addEventListener("change", () => { state.eol = "crlf"; saveSettings(); toast("保存する改行コード：Windows（CRLF）"); });
@@ -2894,11 +2971,12 @@
      トースト
      ======================================================= */
   let toastTimer = null;
-  function toast(msg) {
+  /* ms 省略時 1800。長い処理の「処理中…」は大きな ms を渡し、完了 toast で上書きする（rev45） */
+  function toast(msg, ms) {
     const t = $("toast");
     t.textContent = msg; t.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove("show"), 1800);
+    toastTimer = setTimeout(() => t.classList.remove("show"), ms == null ? 1800 : ms);
   }
 
   /* =======================================================
