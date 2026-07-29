@@ -77,6 +77,13 @@
   #toolbar button:hover { background: #546e7a; }
   #toolbar button.primary { background: var(--caret); }
   #toolbar button.primary:hover { background: #388e3c; }
+  /* ↶ は右端の単一アイコンだと「装飾」に見える（作者報告・rev60）。
+     緑 primary（保存系）とも ↩（タブ復元）とも被らない teal ＋「戻す」文字で役割を示す。 */
+  #toolbar #btn-undo {
+    background: #00897b; color: #fff; font-weight: 700;
+    padding: 4px 10px; letter-spacing: .02em;
+  }
+  #toolbar #btn-undo:hover { background: #26a69a; }
   #toolbar button:disabled { opacity: .7; cursor: progress; }   /* ツール実行中（rev45） */
   #toolbar label { font-size: 12px; display: flex; align-items: center; gap: 4px; color: #cfd8dc; cursor: pointer; }
   #toolbar select, #toolbar input[type="number"] { padding: 3px 5px; border-radius: 3px; border: 1px solid #546e7a; background: var(--ink2); color: #fff; font-size: 13px; }
@@ -468,6 +475,8 @@
   /* 画面中央（rev46）。下端だと長い原稿のツール実行中に視線が届きにくい */  
   #toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(38,50,56,.92); color: #fff; font-size: 12px; padding: 8px 16px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; max-width: min(90vw, 480px); text-align: center; }
   #toast.show { opacity: 1; }
+  /* アンカー付き（#btn-undo 直下など）。中央配置を外し JS が top/right を書く（rev60） */
+  #toast.near { top: auto; left: auto; right: auto; transform: none; }
 
 </style>
 <!-- Google tag (gtag.js) — https のみ（file://・http ローカルでは読み込まない） -->
@@ -498,7 +507,7 @@
     <button id="btn-new" title="原稿を空にして新規に書き始めます（左ペインの参照ファイルはそのまま残ります）">新規</button>
     <button id="btn-insert" title="テキストファイルの中身を、いまのカーソル位置に挿入します（原稿は差し替えません）">ファイル挿入</button>
     <button id="btn-save" class="primary" aria-haspopup="true" aria-expanded="false"
-            title="Ctrl+S＝上書き保存 ／ Ctrl+Shift+S＝名前を付けて保存">ファイル保存 ▾</button>
+            title="ファイルに保存（Ctrl+S）">ファイル保存 ▾</button>
   </div>
 
   <span class="sep"></span>
@@ -525,9 +534,10 @@
   <span class="sep"></span>
 
   <!-- 元に戻す（5.15）。タブの ↩（閉じたタブを戻す）とは別物なので字形を変える。
-       iPad のようにキーボードが無い環境では Ctrl+Z が押せないため、ボタンでも出す。 -->
+       iPad のようにキーボードが無い環境では Ctrl+Z が押せないため、ボタンでも出す。
+       rev60: 記号だけだと役割が読めない →「↶ 戻す」＋ teal。 -->
   <div class="tb-group">
-    <button id="btn-undo" title="本文の編集を元に戻す（Ctrl+Z）" aria-label="元に戻す">↶</button>
+    <button type="button" id="btn-undo" title="本文の編集を元に戻す（Ctrl+Z）" aria-label="元に戻す">↶ 戻す</button>
   </div>
 </div>
 
@@ -2254,7 +2264,8 @@
 
   /* ---- 保存メニューの開閉配線（5.9）----
      ツールメニューと同じ position:fixed 方式。開くたびにボタン直下へ置き直す。
-     ［上書き保存］は「どこへ書くか」が見えていないと押せないので、開くたびに保存先を書く。 */
+     ［上書き保存］は「どこへ書くか」が見えていないと押せないので、開くたびに保存先を書く。
+     ★rev65: Safari（Apple WebKit）は上書き UI を出さず、常に保存先を選ぶ経路だけにする。 */
   (function () {
     const btn = $("btn-save"), menu = $("save-menu");
     function place() {
@@ -2267,10 +2278,15 @@
       menu.style.left = Math.max(4, Math.min(Math.round(r.right - w), window.innerWidth - w - 4)) + "px";
     }
     function openMenu() {
-      const h = state.fileHandle;
-      $("save-over-hint").textContent = h
-        ? "「" + h.name + "」に、ダイアログを出さずに書き込みます"
-        : "保存先がまだ決まっていません。1回目は保存ダイアログが出ます";
+      const over = allowOverwriteUI();
+      $("save-over").hidden = !over;
+      $("save-over-hint").hidden = !over;
+      if (over) {
+        const h = state.fileHandle;
+        $("save-over-hint").textContent = h
+          ? "「" + h.name + "」に、ダイアログを出さずに書き込みます"
+          : "保存先がまだ決まっていません。1回目は保存ダイアログが出ます";
+      }
       menu.classList.add("show"); place();
       btn.setAttribute("aria-expanded", "true"); menu.setAttribute("aria-hidden", "false");
     }
@@ -2279,7 +2295,11 @@
       btn.setAttribute("aria-expanded", "false"); menu.setAttribute("aria-hidden", "true");
     }
     btn.addEventListener("mousedown", e => e.preventDefault());
-    btn.addEventListener("click", () => { menu.classList.contains("show") ? closeMenu() : openMenu(); });
+    btn.addEventListener("click", () => {
+      /* Safari: メニューを挟まずすぐ「保存先を選ぶ」（上書きが無いので一段省略） */
+      if (!allowOverwriteUI()) { saveAsTxt(); return; }
+      menu.classList.contains("show") ? closeMenu() : openMenu();
+    });
     menu.addEventListener("mousedown", e => e.preventDefault());
     document.addEventListener("click", e => {
       if (!menu.classList.contains("show") || e.target === btn || menu.contains(e.target)) return;
@@ -2731,11 +2751,20 @@
     });
   }
   /* ---- 保存（仕様 5.9） ----
-     OS のファイルダイアログを開く。開いたファイルのハンドルを持っていれば
-     そのフォルダ・そのファイル名が既定になる。
-     File System Access API が使えない環境ではダウンロードにフォールバックする。 */
+     1) FSA（Chrome）上書き可
+     2) Safari は上書きなし・常に保存先選択（rev65）
+     3) iPhone/iPad は共有シート（Files で場所を選ぶ）
+     4) それ以外は download／だめならコピー */
   const canFSA = () => typeof window.showSaveFilePicker === "function";
 
+  /** Safari / iOS 全ブラウザ（vendor が Apple）。Chrome デスクトップは false。 */
+  function isAppleWebKit() {
+    return typeof navigator !== "undefined" && navigator.vendor === "Apple Computer, Inc.";
+  }
+  /** 上書き保存 UI・黙って上書きする経路を出してよいか。Safari は常に不可（rev65）。 */
+  function allowOverwriteUI() {
+    return canFSA() && !isAppleWebKit();
+  }
   /** ハンドルへ書き込む許可を確かめる。
    *  showSaveFilePicker で得たハンドルは最初から readwrite だが、
    *  showOpenFilePicker やドロップで得たハンドルは read しか持っていないことがある。
@@ -2749,10 +2778,9 @@
     } catch (err) { return false; }
   }
 
-  /** 上書き保存（Ctrl+S。仕様 5.9.2）。保存先を知っているときはダイアログを出さずに書く。
-   *  知らないとき（新規・ダウンロード経由）は「名前を付けて保存」に落ちる。 */
+  /** 上書き保存（Ctrl+S。仕様 5.9.2）。Safari では呼ばれず saveAsTxt へ（rev65）。 */
   async function saveOverwrite() {
-    if (!canFSA() || !state.fileHandle) { saveAsTxt(); return; }
+    if (!allowOverwriteUI() || !state.fileHandle) { saveAsTxt(); return; }
     const text = withEol(ta().value);
     try {
       if (!await ensureWritable(state.fileHandle)) {
@@ -2767,22 +2795,19 @@
       toast("「" + state.fileHandle.name + "」に上書き保存しました");
     } catch (err) {
       if (err && err.name === "AbortError") return;
-      /* ファイルが移動・削除された、権限が落ちた等。黙って失敗させない。
-         名前を付けて保存へ落とすと「知らない場所に保存された」になるので、
-         ここはダウンロードではなくダイアログに誘導する（保存先を人に決めさせる）。 */
       toast("上書きできませんでした（" + (err && err.name || "不明") + "）。［名前を付けて保存］に切り替えます");
       saveAsTxt();
     }
   }
 
   async function saveAsTxt() {
-    const text = withEol(ta().value);   // 改行コードは保存の出口だけで変換（5.14）
-    const name = state.fileName || "無題.txt";
-    if (canFSA()) {
+    const text = withEol(ta().value);
+    let name = state.fileName || "無題.txt";
+    /* Chrome: OS の保存ダイアログで場所と名前を選ぶ */
+    if (canFSA() && allowOverwriteUI()) {
       try {
         const opts = { id: "novedit", suggestedName: name,
           types: [{ description: "テキスト", accept: { "text/plain": [".txt"] } }] };
-        // 元のファイルのハンドルがあれば、そのフォルダを初期表示にする
         if (state.fileHandle) opts.startIn = state.fileHandle; else opts.startIn = "documents";
         const h = await window.showSaveFilePicker(opts);
         const w = await h.createWritable();
@@ -2794,30 +2819,152 @@
         toast("「" + h.name + "」に保存しました（次からは Ctrl+S で上書き保存できます）");
         return;
       } catch (err) {
-        if (err && err.name === "AbortError") return;              // ユーザーがキャンセル
-        /* SecurityError / NotAllowedError などはフォールバックへ落とす。
-           ここでトーストを出しても downloadTxt() の成功報告に 0 秒で上書きされる
-           （toast() は textContent を差し替えるだけ）ので、理由は downloadTxt に渡して
-           1 つの文にまとめる。いちばん不安な場面で「なぜダイアログが出ないのか」が
-           読めないのは困る。 */
-        downloadTxt(text, name, true);
+        if (err && err.name === "AbortError") return;
+        await exportTxt(text, name, true);
         return;
       }
     }
-    downloadTxt(text, name);
+    /* Safari 等: 上書き API は無いが、ファイル名はここで指定できる（rev67）。
+       場所は download／Safari「毎回確認」。iPad 共有はシート側で名前が付くので省略。 */
+    if (!preferShareFirst()) {
+      const n = askSaveFileName(name);
+      if (n === null) return;
+      name = n;
+      state.fileName = name;
+      updateHeader();
+    }
+    await exportTxt(text, name, false);
   }
 
-  function downloadTxt(text, name, fellBack) {
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    state.dirty = false; updateHeader();
-    // 成功を報告する（A-4）。この経路は file:// で SecurityError になったときに動く
-    toast((fellBack ? "保存ダイアログを開けませんでした。" : "") +
-          "「" + name + "」をダウンロードに保存しました");
+  /** 保存ファイル名。キャンセルは null。空や禁則は直す。.txt が無ければ付ける。 */
+  function askSaveFileName(current) {
+    const cur = current || "無題.txt";
+    try {
+      const r = window.prompt("保存するファイル名（場所は次のダウンロードで）", cur);
+      if (r === null) return null;
+      return sanitizeSaveName(r, cur);
+    } catch (_) { return cur; }
+  }
+  function sanitizeSaveName(raw, fallback) {
+    let n = String(raw == null ? "" : raw).trim().replace(/[\\/:*?"<>|]/g, "_");
+    if (!n) n = fallback || "無題.txt";
+    if (!/\.[^./\\]+$/.test(n)) n += ".txt";
+    return n.length > 120 ? n.slice(0, 120) : n;
+  }
+/** FSA が使えない／Safari 用の出口（5.9.3 / rev61–65）。
+   *  @returns {"shared"|"downloaded"|"cancelled"|"failed"} */
+  async function exportTxt(text, name, fellBack) {
+    /* iPhone/iPad: 共有シート →「ファイルに保存」で場所を選ぶ */
+    if (preferShareFirst()) {
+      const r = await tryShareTxt(text, name);
+      if (r === "shared" || r === "cancelled") return r;
+    }
+
+    /* Mac Safari: download。場所は「毎回確認」。file:// の空欄許可は rev66 トースト。 */
+    if (await downloadTxt(text, name, fellBack)) return "downloaded";
+    if (await copyTxtFallback(text, name, fellBack)) return "downloaded";
+    return "failed";
+  }
+
+  /** 共有を先に試すか（iPhone/iPad のみ）。 */
+  function preferShareFirst() {
+    try {
+      if (typeof navigator !== "undefined" && navigator.standalone) return true;
+      if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) return true;
+    } catch (_) {}
+    const ua = navigator.userAgent || "";
+    if (/iPad|iPhone|iPod/.test(ua)) return true;
+    if (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1) return true;
+    return false;
+  }
+
+  async function tryShareTxt(text, name) {
+    if (typeof navigator === "undefined" || typeof navigator.share !== "function") return "unavailable";
+    let file;
+    try {
+      file = new File([text], name, { type: "text/plain" });
+    } catch (_) {
+      return "unavailable";
+    }
+    try {
+      if (typeof navigator.canShare === "function" && !navigator.canShare({ files: [file] })) {
+        return "unavailable";
+      }
+    } catch (_) { return "unavailable"; }
+    try {
+      await navigator.share({ files: [file], title: name });
+      state.dirty = false; updateHeader();
+      toast("「" + name + "」を共有シートに渡しました。「ファイルに保存」で場所を選べます");
+      return "shared";
+    } catch (err) {
+      if (err && err.name === "AbortError") return "cancelled";
+      return "failed";
+    }
+  }
+
+  async function copyTxtFallback(text, name, fellBack) {
+    try {
+      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+        toast("保存できませんでした。本文を選択してコピーするか、Chrome で開いて［ファイル保存］してください");
+        return false;
+      }
+      await navigator.clipboard.writeText(text);
+      state.dirty = false; updateHeader();
+      const head = fellBack ? "保存ダイアログを開けませんでした。" : "";
+      toast(head + "「" + name + "」をコピーしました。テキストエディット等に貼り付けて保存するか、Chrome で開いて［ファイル保存］してください");
+      return true;
+    } catch (_) {
+      toast("保存できませんでした。本文を選択してコピーするか、Chrome で開いて保存してください");
+      return false;
+    }
+  }
+
+  /** Mac Safari + file:// のとき、空の許可ダイアログが出うる（サイト名が無い）。 */
+  function safariEmptyDlPromptLikely() {
+    try {
+      return isAppleWebKit() && !preferShareFirst()
+        && typeof location !== "undefined" && location.protocol === "file:";
+    } catch (_) { return false; }
+  }
+
+  async function downloadTxt(text, name, fellBack) {
+    try {
+      /* 許可ダイアログが前面に出る前に、空欄の意味をトーストで先に出す（rev66）。
+         二重 rAF で1フレーム描画を挟む（ダイアログで JS が止まっても直前までは見える）。 */
+      if (safariEmptyDlPromptLikely()) {
+        toast("Safariが『“”でのダウンロードを許可』と聞いたら［許可］を。"
+            + "“”が空なのはローカル起動（file://）でサイト名が無いだけです");
+        await new Promise(function (r) {
+          requestAnimationFrame(function () { requestAnimationFrame(r); });
+        });
+      }
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.rel = "noopener";
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        try { URL.revokeObjectURL(a.href); } catch (_) {}
+        try { a.remove(); } catch (_) {}
+      }, 2000);
+      state.dirty = false; updateHeader();
+      let msg = (fellBack ? "保存ダイアログを開けませんでした。" : "") +
+            "「" + name + "」をダウンロードに保存しました";
+      if (safariEmptyDlPromptLikely()) {
+        msg += "（先の空欄の許可はSafariの表示で、保存自体はできています）";
+      }
+      /* Safari: OS の「名前を付けて保存」API が無いので、毎回場所を選ぶ設定を案内 */
+      if (isAppleWebKit() && !preferShareFirst()) {
+        msg += "。毎回場所を選ぶには Safari設定→一般→ファイルのダウンロード先→「毎回確認」";
+      }
+      toast(msg);
+      return true;
+    } catch (err) {
+      return false;
+    }
   }
 
   /* =======================================================
@@ -3268,12 +3415,33 @@
      トースト
      ======================================================= */
   let toastTimer = null;
-  /* ms 省略時 1800。長い処理の「処理中…」は大きな ms を渡し、完了 toast で上書きする（rev45） */
+  /* toast を特定ボタンの直下に出すときだけセット（#btn-undo 用・rev60）。
+     Ctrl+Z 経路は触らない。toast() が読んだ直後に呼ぶ側が null に戻してよい。 */
+  let toastAt = null;
+  /* ms 省略時 1800。長い処理の「処理中…」は大きな ms を渡し、完了 toast で上書きする（rev45）
+     toastAt があるときは中央ではなく、その要素の直下・右寄せ（iPad キーボードで中央が隠れる対策） */
   function toast(msg, ms) {
     const t = $("toast");
-    t.textContent = msg; t.classList.add("show");
+    t.textContent = msg;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove("show"), ms == null ? 1800 : ms);
+    if (toastAt && toastAt.getBoundingClientRect) {
+      const r = toastAt.getBoundingClientRect();
+      t.classList.add("near");
+      t.style.top = Math.round(r.bottom + 6) + "px";
+      t.style.left = "auto";
+      /* 右端ボタン想定：ボタン右辺に右寄せ。はみ出す分は 8px 余白を残す */
+      t.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + "px";
+      t.style.transform = "none";
+    } else {
+      t.classList.remove("near");
+      t.style.top = t.style.left = t.style.right = t.style.transform = "";
+    }
+    t.classList.add("show");
+    toastTimer = setTimeout(() => {
+      t.classList.remove("show");
+      t.classList.remove("near");
+      t.style.top = t.style.left = t.style.right = t.style.transform = "";
+    }, ms == null ? 1800 : ms);
   }
 
   /* =======================================================
@@ -3576,7 +3744,7 @@
     /* Ctrl+Z は原則ブラウザ任せ（制約 #4）。ただし［新規］／［読み込み］だけは
        履歴に載せていないので、自前で戻せるときに限って横取りする（5.15.3 / rev57）。 */
     if (k === "z" && !e.shiftKey) { if (undoStep()) e.preventDefault(); return; }
-    if (k === "s") { e.preventDefault(); e.shiftKey ? saveAsTxt() : saveOverwrite(); }
+    if (k === "s") { e.preventDefault(); (e.shiftKey || !allowOverwriteUI()) ? saveAsTxt() : saveOverwrite(); }
     else if (k === "f") { e.preventDefault(); focusSearchBox(); }
     else if (k === "h") { e.preventDefault(); toggleReplace(true); }
   });
@@ -3585,17 +3753,26 @@
      罠：ボタンを押すと textarea からフォーカスが外れ、execCommand("undo") が何にも効かなくなる。
      ツールメニューと同じく mousedown を preventDefault して、フォーカスを本文に残す。
      undo が成功すると input イベントが inputType:"historyUndo" で飛ぶので、
-     dirty・検索・差分の更新は既存の入力経路がそのまま面倒を見る（ここでは呼ばない）。 */
+     dirty・検索・差分の更新は既存の入力経路がそのまま面倒を見る（ここでは呼ばない）。
+     ★rev60: ボタン経路だけ toastAt を付け、結果トーストをボタン直下へ出す。
+       Ctrl+Z は従来どおり中央（または無言のブラウザ Undo）。iPad でキーボードが中央を隠す対策。 */
   $("btn-undo").addEventListener("mousedown", e => e.preventDefault());
   $("btn-undo").addEventListener("click", () => {
     const t = ta();
     if (document.activeElement !== t) t.focus();
-    // ［新規］／［読み込み］は履歴に載せていないので自前で戻す（5.15.3 / rev57）
-    if (undoStep()) return;
-    const before = t.value;
-    try { document.execCommand("undo"); } catch (_) {}
-    // execCommand の戻り値は当てにならない（false でも戻っていることがある）ので本文で見る
-    if (t.value === before) toast("これ以上戻せません");
+    toastAt = $("btn-undo");
+    try {
+      // ［新規］／［読み込み］は履歴に載せていないので自前で戻す（5.15.3 / rev57）
+      // undoStep 内の toast も toastAt 経由でボタン直下に出る
+      if (undoStep()) return;
+      const before = t.value;
+      try { document.execCommand("undo"); } catch (_) {}
+      // execCommand の戻り値は当てにならない（false でも戻っていることがある）ので本文で見る
+      if (t.value === before) toast("これ以上戻せません");
+      else toast("編集を1手戻しました");   // ボタン経路だけ一言（Ctrl+Z は出さない）
+    } finally {
+      toastAt = null;
+    }
   });
 
   /* ---- ツールバーの幅合わせ（5.15）----
