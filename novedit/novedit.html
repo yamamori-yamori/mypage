@@ -2502,20 +2502,23 @@
   }
   /* 自動保存の状態はトーストではなく、ツールバーの空き領域に出したままにする（5.8）。
      本文の上に何も重ならないので、書いている最中でも視界を邪魔しない。
-     消さないので「いつ保存されたか」がいつでも確認できる。 */
+     消さないので「いつ保存されたか」がいつでも確認できる。
+     rev69: 文言を短くし、表示のたびに fitToolbar（iPad で Undo が隠れないようロゴを落とす）。 */
   const pad2 = n => (n < 10 ? "0" : "") + n;
   function setAutosaveNote(ok) {
     const el = $("autosave-note");
     if (ok) {
       const d = new Date();
-      el.textContent = "ブラウザに自動保存しました（" + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()) + "）";
+      /* 長いと iPad で［↶ 戻す］が overflow で消える。時刻は残す。 */
+      el.textContent = "自動保存 " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
       el.classList.remove("failed");
-      el.title = "この内容はブラウザ内に控えられています。次に開いたとき復元できます（ファイルには書かれていません）";
+      el.title = "ブラウザに自動保存しました。次に開いたとき復元できます（ファイルには書かれていません）";
     } else {
-      el.textContent = "⚠ ブラウザに自動保存できません";
+      el.textContent = "⚠ 自動保存不可";
       el.classList.add("failed");
       el.title = "ブラウザの保存領域に書けませんでした。［ファイル保存］で手元に残してください";
     }
+    fitToolbar();
   }
 
   /** 下書きを LocalStorage に保存する。成功したら true を返す（5.8） */
@@ -3777,21 +3780,20 @@
     }
   });
 
-  /* ---- ツールバーの幅合わせ（5.15 / rev68）----
-     ボタンが増えて iPad の幅に収まらなくなった。折り返すと本文の高さが削られ、
-     かつ flex で子が縮むとボタン文字が縦になってさらに見にくい。
-     → 子は縮めず nowrap。足りなければ情報の薄いものから落とす：
-       クレジット＋バージョン（.app-meta）→ アプリ名（.app-title）。
-     測り方：いったん全部出して scrollWidth と clientWidth を比べる。
-     隠したまま測ると「戻していいか」が分からず、一度隠れたら戻らない。 */
+  /* ---- ツールバーの幅合わせ（5.15 / rev68–69）----
+     子は縮めず nowrap。足りなければ：
+       1) クレジット＋ver（.app-meta）
+       2) アプリ名ロゴ（.app-title）← 自動保存が出て Undo が隠れるときはここまで落とす
+     自動保存表示は残す（操作ボタンより情報優先度は低いが、ロゴよりは残す）。
+     測る前に class を外す。setAutosaveNote からも呼ぶ（rev69）。 */
   function fitToolbar() {
     const tb = $("toolbar");
     tb.classList.remove("narrow", "narrow2");
     const room = () => tb.scrollWidth <= tb.clientWidth + 1;
     if (room()) return;
-    tb.classList.add("narrow");            /* ver / by クレジットを隠す */
+    tb.classList.add("narrow");            /* ver / クレジット */
     if (room()) return;
-    tb.classList.add("narrow2");           /* novedit 名も隠す */
+    tb.classList.add("narrow2");           /* ロゴを消し、自動保存と Undo を残す */
   }
 
   setupMinimapDrag("mm-left", () => $("ref-body"), "left");
