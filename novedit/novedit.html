@@ -507,7 +507,7 @@
 
   <div class="tb-group push">
     <button id="btn-new" title="原稿を空にして新規に書き始めます（左ペインの参照ファイルはそのまま残ります）">新規</button>
-    <button id="btn-insert" title="テキストファイルの中身を、いまのカーソル位置に挿入します（原稿は差し替えません）">ファイル挿入</button>
+    <button id="btn-insert" title="テキストファイルの中身を、いまのカーソル位置に挿入します（原稿は差し替えません）">挿入</button>
     <button id="btn-save" class="primary" aria-haspopup="true" aria-expanded="false"
             title="ファイルに保存（Ctrl+S）">ファイル保存 ▾</button>
   </div>
@@ -666,11 +666,11 @@
   <div class="dialog">
     <h2 id="open-title">編集中のファイルが上書きされます</h2>
     <p id="open-info"></p>
-    <p class="sub" id="open-sub">開くと、いまの原稿は画面から消えます。取り消せません。<br>
-       中身を残したまま読み込みたい場合は、いったんキャンセルして<b>［ファイル挿入］</b>を使ってください。</p>
+    <p class="sub" id="open-sub">読み込むと、いまの原稿は画面から消えます。取り消せません。<br>
+       中身を残したまま取り込みたい場合は、いったんキャンセルして<b>［挿入］</b>を使ってください。</p>
     <div class="row">
       <button id="btn-open-cancel">キャンセル</button>
-      <button id="btn-open-ok" class="danger">上書きして開く</button>
+      <button id="btn-open-ok" class="danger">上書きして読み込む</button>
     </div>
   </div>
 </div>
@@ -2214,8 +2214,10 @@
   /* ---- ツールメニューの開閉配線 ----
      罠：#toolbar はボタン直下にドロップダウンを描けないことがあるため position:fixed で開き、
      開くたびに JS でボタン直下の座標へ置き直す。
-     罠：mousedown で textarea の focus を奪うと execCommand が失敗するので、ボタン・パネルとも
-     mousedown を preventDefault する（ラジオのクリックだけは通す）。 */
+     罠：ボタン操作で textarea からフォーカスが外れると execCommand が効かない。
+       旧実装は mousedown で preventDefault してフォーカスを残していたが、
+       Safari（とくにタッチ）ではそれが click 自体を食って「1回目無反応」になる（rev72）。
+       → preventDefault は使わず、実行直前に t.focus() する（applyTransform 内）。 */
   let closeToolsMenu = () => {};
   (function () {
     const btn = $("btn-tools"), menu = $("tools-menu");
@@ -2233,9 +2235,10 @@
       btn.setAttribute("aria-expanded", "false"); menu.setAttribute("aria-hidden", "true");
     }
     closeToolsMenu = closeMenu;
-    btn.addEventListener("mousedown", e => e.preventDefault());
-    btn.addEventListener("click", () => { menu.classList.contains("show") ? closeMenu() : openMenu(); });
-    menu.addEventListener("mousedown", e => { if (e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA") e.preventDefault(); });
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      menu.classList.contains("show") ? closeMenu() : openMenu();
+    });
     document.addEventListener("click", e => {
       if (!menu.classList.contains("show") || e.target === btn || menu.contains(e.target)) return;
       closeMenu();
@@ -2267,7 +2270,8 @@
   /* ---- 保存メニューの開閉配線（5.9）----
      ツールメニューと同じ position:fixed 方式。開くたびにボタン直下へ置き直す。
      ［上書き保存］は「どこへ書くか」が見えていないと押せないので、開くたびに保存先を書く。
-     ★rev65: Safari（Apple WebKit）は上書き UI を出さず、常に保存先を選ぶ経路だけにする。 */
+     ★rev65: Safari（Apple WebKit）は上書き UI を出さず、常に保存先を選ぶ経路だけにする。
+     ★rev72: mousedown preventDefault は Safari で click を食うので使わない。 */
   (function () {
     const btn = $("btn-save"), menu = $("save-menu");
     function place() {
@@ -2296,13 +2300,12 @@
       menu.classList.remove("show");
       btn.setAttribute("aria-expanded", "false"); menu.setAttribute("aria-hidden", "true");
     }
-    btn.addEventListener("mousedown", e => e.preventDefault());
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
       /* Safari: メニューを挟まずすぐ「保存先を選ぶ」（上書きが無いので一段省略） */
       if (!allowOverwriteUI()) { saveAsTxt(); return; }
       menu.classList.contains("show") ? closeMenu() : openMenu();
     });
-    menu.addEventListener("mousedown", e => e.preventDefault());
     document.addEventListener("click", e => {
       if (!menu.classList.contains("show") || e.target === btn || menu.contains(e.target)) return;
       closeMenu();
@@ -2585,7 +2588,7 @@
     $("btn-open-ok").textContent = o.ok   || openDlgDefault.ok;
     $("open-info").textContent = info;
     $("overlay-open").classList.add("show");
-    // 既定はキャンセル側（A-2）。置かないとフォーカスが［開く］に残り Enter で再発火する
+    // 既定はキャンセル側（A-2）。置かないとフォーカスが直前のボタンに残り Enter で再発火する
     $("btn-open-cancel").focus();
     const close = () => {
       $("overlay-open").classList.remove("show");
@@ -2597,10 +2600,9 @@
     $("btn-open-ok").onclick = () => { close(); fn(); };
   }
 
-  /* ---- 「新規」（旧「開く」。仕様 5.15）----
+  /* ---- 「新規」（仕様 5.15）----
      右ペインを空にして、まっさらな状態から書き始める。
-     ファイルの読み込みは空状態ヒントのクリック／ドロップから行えるので、
-     ツールバーに「開く」を残す必要はない（5.15 / rev55）。
+     ファイルの読み込みは空状態ヒントのクリック／ドロップから行える。
      左ペインの参照タブには触らない。資料は原稿と独立して持つものなので、
      新規のたびに閉じられると「もう一度開き直す」手間だけが増える。 */
   /* ===== 本文まるごとの差し替えと、その取り消し（5.15.3 / rev57） =====
@@ -2722,7 +2724,7 @@
     toast(marked ? "新規作成しました（Ctrl+Z で元に戻せます）" : "新規作成しました");
   }
 
-  /* ---- 「開く」：ハンドルが取れる環境では showOpenFilePicker を使う ---- */
+  /* ---- 原稿の読み込み：ハンドルが取れる環境では showOpenFilePicker を使う ---- */
   async function pickAndOpen() {
     if (typeof window.showOpenFilePicker === "function") {
       try {
@@ -3456,11 +3458,10 @@
   // 左：全面クリックでファイル選択（複数可）
   $("ref-empty").addEventListener("click", () => $("file-ref").click());
   /* 右：破線枠の中だけクリック可。枠外は pointer-events:none で textarea に素通しする。
-     この経路も上書き確認を通す（A-3）。全消去でヒントが戻るので dirty=true かつ空が起きる */
-  /* 文言はツールバーの［開く］と変える。この経路は本文が空のときしか通らないので
-     「編集中の原稿を置き換えます」は事実と違う。実際に失うのは「初期」の基準と Undo 履歴 */
+     この経路も上書き確認を通す（A-3）。全消去でヒントが戻るので dirty=true かつ空が起きる。
+     文言は本文が空のとき用。実際に失うのは「初期」の基準と Undo 履歴。 */
   $("edit-empty").querySelector(".hint-box").addEventListener("click", () =>
-    confirmOverwrite("「" + (state.fileName || "無題.txt") + "」を閉じて、選んだファイルを開きます。" +
+    confirmOverwrite("「" + (state.fileName || "無題.txt") + "」を閉じて、選んだファイルを読み込みます。" +
       "「初期」の基準と Ctrl+Z の履歴は失われます。", pickAndOpen));
   // IME 変換中はヒントを隠す（変換候補の背後に残るのを防ぐ）
   ta().addEventListener("compositionstart", () => { composing = true; updateEditEmpty(); });
@@ -3491,8 +3492,7 @@
   });
 
   /* ［新規］。未保存の変更があるときだけ止める（保存済み・空のときに止めても失うものが無い）。
-     文面は「開く」とは別物なので差し替える。ここを使い回すと「選んだファイル」という
-     ありもしないファイルの話になる。 */
+     読み込み用の既定文面（「選んだファイル」）を使い回さない。 */
   $("btn-new").addEventListener("click", () =>
     confirmOverwrite(
       "「" + (state.fileName || "無題.txt") + "」には保存していない変更があります。新規にすると、この内容は失われます。",
@@ -3756,15 +3756,14 @@
 
   /* ---- 元に戻す（5.15）----
      罠：ボタンを押すと textarea からフォーカスが外れ、execCommand("undo") が何にも効かなくなる。
-     ツールメニューと同じく mousedown を preventDefault して、フォーカスを本文に残す。
+     → click 内で先に t.focus() する。mousedown preventDefault は Safari で click を食うので使わない（rev72）。
      undo が成功すると input イベントが inputType:"historyUndo" で飛ぶので、
      dirty・検索・差分の更新は既存の入力経路がそのまま面倒を見る（ここでは呼ばない）。
      ★rev60: ボタン経路だけ toastAt を付け、結果トーストをボタン直下へ出す。
        Ctrl+Z は従来どおり中央（または無言のブラウザ Undo）。iPad でキーボードが中央を隠す対策。 */
-  $("btn-undo").addEventListener("mousedown", e => e.preventDefault());
   $("btn-undo").addEventListener("click", () => {
     const t = ta();
-    if (document.activeElement !== t) t.focus();
+    t.focus();
     toastAt = $("btn-undo");
     try {
       // ［新規］／［読み込み］は履歴に載せていないので自前で戻す（5.15.3 / rev57）
