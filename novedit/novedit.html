@@ -68,12 +68,14 @@
     height: var(--toolbar-h);
     background: var(--ink); color: #fff;
     display: flex; align-items: center; gap: 10px; padding: 0 12px; flex-shrink: 0;
+    flex-wrap: nowrap; overflow: hidden;   /* 折り返すと縦に崩れる（iPad）。rev68 */
   }
+  #toolbar > * { flex-shrink: 0; }         /* 縮むとボタン文字が縦になる → 測れず meta が落ちない */
   #toolbar .app-title { font-size: 12px; color: #cfd8dc; white-space: nowrap; }
   #toolbar .app-title .app-name { color: #eceff1; font-weight: 700; font-size: 14px; }
-  #toolbar .tb-group { display: flex; align-items: center; gap: 5px; }
-  #toolbar .sep { width: 1px; height: 18px; background: #455a64; }
-  #toolbar button { background: var(--ink3); color: #fff; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1.25; }
+  #toolbar .tb-group { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+  #toolbar .sep { width: 1px; height: 18px; background: #455a64; flex-shrink: 0; }
+  #toolbar button { background: var(--ink3); color: #fff; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1.25; white-space: nowrap; }
   #toolbar button:hover { background: #546e7a; }
   #toolbar button.primary { background: var(--caret); }
   #toolbar button.primary:hover { background: #388e3c; }
@@ -85,7 +87,7 @@
   }
   #toolbar #btn-undo:hover { background: #26a69a; }
   #toolbar button:disabled { opacity: .7; cursor: progress; }   /* ツール実行中（rev45） */
-  #toolbar label { font-size: 12px; display: flex; align-items: center; gap: 4px; color: #cfd8dc; cursor: pointer; }
+  #toolbar label { font-size: 12px; display: flex; align-items: center; gap: 4px; color: #cfd8dc; cursor: pointer; white-space: nowrap; }
   #toolbar select, #toolbar input[type="number"] { padding: 3px 5px; border-radius: 3px; border: 1px solid #546e7a; background: var(--ink2); color: #fff; font-size: 13px; }
   #toolbar input.capped { border-color: #ef6c00; background: #4e342e; }
   #toolbar input[type="number"] { width: 58px; }
@@ -3775,24 +3777,21 @@
     }
   });
 
-  /* ---- ツールバーの幅合わせ（5.15）----
-     ボタンが増えて iPad の幅に収まらなくなった。折り返すと本文の高さが削られるので、
-     情報量の少ないものから落とす：クレジット → アプリ名。
-     測り方：いったん全部出してから、右端の要素がツールバーの内側からはみ出したかを見る。
-     隠したまま測ると「戻していいかどうか」が永久に分からなくなる（＝一度隠れたら戻らない）。 */
+  /* ---- ツールバーの幅合わせ（5.15 / rev68）----
+     ボタンが増えて iPad の幅に収まらなくなった。折り返すと本文の高さが削られ、
+     かつ flex で子が縮むとボタン文字が縦になってさらに見にくい。
+     → 子は縮めず nowrap。足りなければ情報の薄いものから落とす：
+       クレジット＋バージョン（.app-meta）→ アプリ名（.app-title）。
+     測り方：いったん全部出して scrollWidth と clientWidth を比べる。
+     隠したまま測ると「戻していいか」が分からず、一度隠れたら戻らない。 */
   function fitToolbar() {
     const tb = $("toolbar");
     tb.classList.remove("narrow", "narrow2");
-    const room = () => {
-      const last = tb.lastElementChild;
-      if (!last) return true;
-      const pad = parseFloat(getComputedStyle(tb).paddingRight) || 0;
-      return last.getBoundingClientRect().right <= tb.getBoundingClientRect().right - pad + 1;
-    };
+    const room = () => tb.scrollWidth <= tb.clientWidth + 1;
     if (room()) return;
-    tb.classList.add("narrow");
+    tb.classList.add("narrow");            /* ver / by クレジットを隠す */
     if (room()) return;
-    tb.classList.add("narrow2");
+    tb.classList.add("narrow2");           /* novedit 名も隠す */
   }
 
   setupMinimapDrag("mm-left", () => $("ref-body"), "left");
