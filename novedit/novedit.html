@@ -84,35 +84,41 @@
   #toolbar input[type="number"] { width: 58px; }
   #toolbar .app-meta { font-size: 11px; color: #90a4ae; white-space: nowrap; }
   #toolbar .tb-group.push { margin-left: auto; }   /* ここから右がメニュー */
+  /* 幅が足りないときに落とす順（5.15）。JS が fitToolbar() で付け外しする。
+     CSS のブレークポイントで決め打ちしないのは、ツールバーの中身が rev ごとに増減するため。
+     「何 px から隠すか」を数字で書くと、ボタンを1つ足すたびに嘘になる。 */
+  #toolbar.narrow .app-meta  { display: none; }
+  #toolbar.narrow2 .app-title { display: none; }
 
   /* ---------- ツール（原稿全体のテキスト整形。5.14） ----------
      モーダルにはしない（制約 #6）。#toolbar は overflow の都合でボタン直下に描けないことがあるため、
      position:fixed とし、開くたびに JS でボタン直下の座標へ置き直す。 */
-  #tools-menu {
+  .dropmenu {
     position: fixed; z-index: 60; display: none;
     background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
     box-shadow: 0 6px 20px rgba(0,0,0,.28); padding: 6px 0; min-width: 250px; font-size: 13px;
   }
-  #tools-menu.show { display: block; }
-  #tools-menu .tm-h { padding: 7px 12px 3px; font-size: 11px; color: #78909c; font-weight: 700; }
-  #tools-menu button[role="menuitem"] {
+  .dropmenu.show { display: block; }
+  .dropmenu .tm-h { padding: 7px 12px 3px; font-size: 11px; color: #78909c; font-weight: 700; }
+  .dropmenu button[role="menuitem"] {
     display: block; width: 100%; text-align: left; background: none; border: none;
     color: var(--ink); padding: 7px 12px; font-size: 13px; cursor: pointer; border-radius: 0;
   }
-  #tools-menu button[role="menuitem"]:hover { background: var(--panel-bg); }
-  #tools-menu .tm-sep { height: 1px; background: var(--line); margin: 5px 0; }
-  #tools-menu .tm-radio { display: flex; align-items: center; gap: 6px; padding: 6px 12px 6px 12px; cursor: pointer; }
-  #tools-menu .tm-radio input { cursor: pointer; }
-  #tools-menu .tm-field { padding: 4px 12px 6px; }
-  #tools-menu .tm-field input[type="text"],
-  #tools-menu .tm-field textarea {
+  .dropmenu button[role="menuitem"]:hover { background: var(--panel-bg); }
+  .dropmenu .tm-sep { height: 1px; background: var(--line); margin: 5px 0; }
+  .dropmenu .tm-radio { display: flex; align-items: center; gap: 6px; padding: 6px 12px 6px 12px; cursor: pointer; }
+  .dropmenu .tm-radio input { cursor: pointer; }
+  .dropmenu .tm-field { padding: 4px 12px 6px; }
+  .dropmenu .tm-field input[type="text"],
+  .dropmenu .tm-field textarea {
     width: 100%; box-sizing: border-box; padding: 5px 8px; font-size: 13px;
     border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: #fff;
     font-family: inherit; resize: vertical; min-height: 2.4em; line-height: 1.4;
   }
-  #tools-menu .tm-field input[type="text"]:focus,
-  #tools-menu .tm-field textarea:focus { outline: none; border-color: #4db6ac; }
-  #tools-menu .tm-hint { padding: 0 12px 6px; font-size: 11px; color: #90a4ae; line-height: 1.45; }
+  .dropmenu .tm-field input[type="text"]:focus,
+  .dropmenu .tm-field textarea:focus { outline: none; border-color: #4db6ac; }
+  .dropmenu .tm-hint { padding: 0 12px 6px; font-size: 11px; color: #90a4ae; line-height: 1.45; }
+  .dropmenu .tm-key { float: right; color: #90a4ae; font-size: 11px; margin-left: 18px; }
   /* 自動保存の状態表示（5.8）。一瞬ではなく【出したままにする】。
      「いつ保存されたか」が常に見えていれば、閉じるときに不安にならない。 */
   #autosave-note {
@@ -390,6 +396,16 @@
     border: 1px dashed var(--line); font-size: 13px; color: #90a4ae;
     transition: border-color .15s, background .15s, color .15s;
   }
+  /* ---------- 大きな透かし文字（初期状態の合図） ----------
+     空状態ヒントの中に置く。表示・非表示は .empty-hint の既存ロジックに完全に乗るので、
+     「何かすると消える」条件を二重に持たない（＝食い違いようがない）。 */
+  .empty-hint .pane-wm {
+    font-size: clamp(30px, 8.5vh, 60px); font-weight: 700;
+    letter-spacing: .14em; text-indent: .14em;      /* 字間を空けた分の右寄りを打ち消す */
+    line-height: 1.15; color: #dde1e4; user-select: none; margin-bottom: 2px;
+  }
+  /* 左ペインはクリーム地なので、灰色そのままだと浮く。暖色寄りのグレーにする */
+  #ref-empty .pane-wm { color: #ddd5bd; }
   .empty-hint .hint-note { font-size: 11px; color: #b0bec5; }
   .empty-hint .hint-sub  { font-size: 11px; color: #b0bec5; }
 
@@ -473,15 +489,16 @@
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.1 / <a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.1　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
 
   <div class="tb-group push">
-    <button id="btn-open">開く</button>
+    <button id="btn-new" title="原稿を空にして新規に書き始めます（左ペインの参照ファイルはそのまま残ります）">新規</button>
     <button id="btn-insert" title="テキストファイルの中身を、いまのカーソル位置に挿入します（原稿は差し替えません）">ファイル挿入</button>
-    <button id="btn-save" class="primary">ファイル保存</button>
+    <button id="btn-save" class="primary" aria-haspopup="true" aria-expanded="false"
+            title="Ctrl+S＝上書き保存 ／ Ctrl+Shift+S＝名前を付けて保存">ファイル保存 ▾</button>
   </div>
 
   <span class="sep"></span>
@@ -504,10 +521,18 @@
     <label title="章・話の始まりを色付け表示"><input type="checkbox" id="opt-head" checked> 見出し</label>
     <button id="btn-head-cfg" title="見出しの検出ルールを設定" style="padding:4px 8px;font-size:12px;">⚙</button>
   </div>
+
+  <span class="sep"></span>
+
+  <!-- 元に戻す（5.15）。タブの ↩（閉じたタブを戻す）とは別物なので字形を変える。
+       iPad のようにキーボードが無い環境では Ctrl+Z が押せないため、ボタンでも出す。 -->
+  <div class="tb-group">
+    <button id="btn-undo" title="本文の編集を元に戻す（Ctrl+Z）" aria-label="元に戻す">↶</button>
+  </div>
 </div>
 
 <!-- ツールのドロップダウン（5.14）。モーダルではないので #overlay 系とは別枠。 -->
-<div id="tools-menu" role="menu" aria-hidden="true">
+<div id="tools-menu" class="dropmenu" role="menu" aria-hidden="true">
   <div class="tm-h">空行を整える</div>
   <button type="button" id="tool-blank-del" role="menuitem">空行を削除する</button>
   <button type="button" id="tool-blank-head" role="menuitem">空行を入れる ─ 見出しの前後</button>
@@ -526,6 +551,15 @@
   <div class="tm-h">保存する改行コード</div>
   <label class="tm-radio"><input type="radio" name="tool-eol" id="tool-eol-crlf" value="crlf"> Windows（CRLF）</label>
   <label class="tm-radio"><input type="radio" name="tool-eol" id="tool-eol-lf" value="lf" checked> Mac・Unix（LF）</label>
+</div>
+
+<!-- 保存のドロップダウン（5.9）。ツールと同じ position:fixed 方式。 -->
+<div id="save-menu" class="dropmenu" role="menu" aria-hidden="true">
+  <div class="tm-h">ファイルに保存する</div>
+  <button type="button" id="save-over" role="menuitem"><span class="tm-key">Ctrl+S</span>上書き保存</button>
+  <div class="tm-hint" id="save-over-hint"></div>
+  <button type="button" id="save-as" role="menuitem"><span class="tm-key">Ctrl+Shift+S</span>名前を付けて保存…</button>
+  <div class="tm-hint">保存先とファイル名を選び直します</div>
 </div>
 
 <div id="main">
@@ -551,6 +585,7 @@
     <div class="pane-body" id="ref-body">
       <div class="pane-inner" id="ref-inner"></div>
       <div class="empty-hint" id="ref-empty" title="クリックして参照ファイルを選択">
+        <div class="pane-wm">参照用</div>
         <div class="hint-box">
           参照するテキストファイルを<br>クリックで選択またはドロップしてください
           <div class="hint-note">.txt / UTF-8　／　複数同時に選べます</div>
@@ -588,6 +623,7 @@
       <div class="caret-mark" id="drop-caret"></div>
       <textarea id="edit-area" spellcheck="false"></textarea>
       <div class="empty-hint" id="edit-empty">
+        <div class="pane-wm">編集用</div>
         <div class="hint-box" title="クリックして編集するファイルを選択">
           編集するテキストファイルを<br>クリックで選択またはドロップしてください
         </div>
@@ -616,9 +652,9 @@
 
 <div id="overlay-open">
   <div class="dialog">
-    <h2>編集中のファイルが上書きされます</h2>
+    <h2 id="open-title">編集中のファイルが上書きされます</h2>
     <p id="open-info"></p>
-    <p class="sub">開くと、いまの原稿は画面から消えます。取り消せません。<br>
+    <p class="sub" id="open-sub">開くと、いまの原稿は画面から消えます。取り消せません。<br>
        中身を残したまま読み込みたい場合は、いったんキャンセルして<b>［ファイル挿入］</b>を使ってください。</p>
     <div class="row">
       <button id="btn-open-cancel">キャンセル</button>
@@ -1168,11 +1204,15 @@
   /** 右ペインの空状態ヒント（仕様 5.6C）
    *  空＋非フォーカス → 100%／空＋フォーカス → 35%／1文字でも入ったら消す */
   let composing = false;
+  /* ［新規］の直後は execCommand のためにプログラムからフォーカスしているだけで、
+     人が書き始めたわけではない。ここで 35% に落とすと「押したらガイドが薄れた＝壊れた？」に
+     見える（rev55）。実際にクリックするかキーを打つまでは 100% のままにする。 */
+  let dimHold = false;
   function updateEditEmpty() {
     const hint = $("edit-empty"), t = ta();
     const empty = t.value.length === 0 && !composing;
     hint.classList.toggle("hide", !empty);
-    hint.classList.toggle("dim", empty && document.activeElement === t);
+    hint.classList.toggle("dim", empty && !dimHold && document.activeElement === t);
   }
 
   function autoGrow() {
@@ -1706,7 +1746,7 @@
       el.dataset.id = t.id;
       el.title = t.kind
         ? (t.kind === SYS.ORIGIN ? "右ペインを開いた時点の内容（閉じられません）" : diffTitle(t))
-        : t.name;
+        : (t.note || t.name);          // 「前の編集」だけ由来を出す（rev56）
       el.innerHTML = t.kind
         ? '<span class="pin">◉</span><span class="name"></span>'
         : '<span class="name"></span><span class="x" title="閉じる（2回クリック）">×</span>';
@@ -1743,6 +1783,26 @@
     return t.text === "";                                    // 空の資料タブ
   }
 
+  /** 左ミニマップを【レイアウト確定後に】描き直す（rev59）。
+   *  症状: 「初期」を張り直す・タブを切り替えるなど【左ペインの中身が短くなる】場面で、
+   *        青枠が実際の表示位置とまるで違うところ（例: canvas 884px 中の 805px）に描かれる。
+   *        スクロールしても直らないことがある。
+   *  原因: renderRef() は innerHTML を差し替えた【直後に同期で】drawMinimap("left") を呼んでいた。
+   *        この時点ではブラウザがまだ新しい高さでレイアウトしておらず、
+   *        はみ出した scrollTop のクランプも済んでいない。
+   *        つまり【古い高さと古いスクロール位置】で枠を描いていた。
+   *        そのあと scrollTop がクランプされても、値が変わらなければ scroll イベントは出ないので
+   *        誰も描き直さない（AGENTS.md 罠⑧・罠 3b と同じ型）。
+   *  対策: 1 フレーム待ってから測る。applySettings() が rev41 で同じ対策を入れているのと同じ理由。
+   *  確認: 400 行の資料を下までスクロール →［←現状を初期に設定］で 80 行に差し替え →
+   *        左ペインの青枠が先頭に来ること（下に張り付かないこと）。 */
+  let leftMMPending = false;
+  function drawLeftMM() {
+    if (leftMMPending) return;
+    leftMMPending = true;
+    requestAnimationFrame(() => { leftMMPending = false; drawMinimap("left"); });
+  }
+
   function renderRef() {
     const t = activeTabObj(), inner = $("ref-inner");
     const empty = refIsEmpty();
@@ -1750,8 +1810,8 @@
     $("ref-inner").classList.toggle("diff-view", !!t && t.kind === SYS.DIFF);
     updateRefSearchEnabled();
     $("ref-empty").style.display = empty ? "flex" : "none";
-    if (empty) { inner.innerHTML = ""; diffLineEls = []; curLineEl = null; drawMinimap("left"); return; }
-    if (!t) { inner.innerHTML = ""; drawMinimap("left"); return; }
+    if (empty) { inner.innerHTML = ""; diffLineEls = []; curLineEl = null; drawLeftMM(); return; }
+    if (!t) { inner.innerHTML = ""; drawLeftMM(); return; }
 
     /* 保険：ヒットが「古いテキスト」に対するものだったら作り直す（5.4D）。
        文字オフセットは元テキストと1対1なので、テキストが差し替わった状態で
@@ -1773,7 +1833,7 @@
       diffLineEls = [...inner.querySelectorAll(".dl")];
       curLineEl = null;
       markDiffHits();          // 検索ヒットの行に色を付ける（5.13.6B）
-      drawMinimap("left");
+      drawLeftMM();
       syncDiffToCaret();
       return;
     }
@@ -1785,7 +1845,7 @@
     if (!heads.length && !hits.length) {
       inner.innerHTML = '<div class="rtext"></div>';
       inner.querySelector(".rtext").textContent = text;
-      drawMinimap("left");
+      drawLeftMM();
       return;
     }
 
@@ -1809,7 +1869,7 @@
       html += frag;
     }
     inner.innerHTML = '<div class="rtext">' + html + "</div>";
-    drawMinimap("left");
+    drawLeftMM();
   }
 
   function findAll(text, q) {
@@ -2192,6 +2252,44 @@
     $("tool-eol-lf").addEventListener("change", () => { state.eol = "lf"; saveSettings(); toast("保存する改行コード：Mac・Unix（LF）"); });
   })();
 
+  /* ---- 保存メニューの開閉配線（5.9）----
+     ツールメニューと同じ position:fixed 方式。開くたびにボタン直下へ置き直す。
+     ［上書き保存］は「どこへ書くか」が見えていないと押せないので、開くたびに保存先を書く。 */
+  (function () {
+    const btn = $("btn-save"), menu = $("save-menu");
+    function place() {
+      const r = btn.getBoundingClientRect();
+      menu.style.top = Math.round(r.bottom + 4) + "px";
+      /* 保存ボタンはツールバーのほぼ右端にある。左揃えだと画面外へ出るので右揃えにし、
+         それでも入らなければ左へ寄せる。 */
+      menu.style.left = "0px";
+      const w = menu.offsetWidth || 250;
+      menu.style.left = Math.max(4, Math.min(Math.round(r.right - w), window.innerWidth - w - 4)) + "px";
+    }
+    function openMenu() {
+      const h = state.fileHandle;
+      $("save-over-hint").textContent = h
+        ? "「" + h.name + "」に、ダイアログを出さずに書き込みます"
+        : "保存先がまだ決まっていません。1回目は保存ダイアログが出ます";
+      menu.classList.add("show"); place();
+      btn.setAttribute("aria-expanded", "true"); menu.setAttribute("aria-hidden", "false");
+    }
+    function closeMenu() {
+      menu.classList.remove("show");
+      btn.setAttribute("aria-expanded", "false"); menu.setAttribute("aria-hidden", "true");
+    }
+    btn.addEventListener("mousedown", e => e.preventDefault());
+    btn.addEventListener("click", () => { menu.classList.contains("show") ? closeMenu() : openMenu(); });
+    menu.addEventListener("mousedown", e => e.preventDefault());
+    document.addEventListener("click", e => {
+      if (!menu.classList.contains("show") || e.target === btn || menu.contains(e.target)) return;
+      closeMenu();
+    });
+    document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });
+    $("save-over").addEventListener("click", () => { closeMenu(); saveOverwrite(); });
+    $("save-as").addEventListener("click", () => { closeMenu(); saveAsTxt(); });
+  })();
+
   /* =======================================================
      ドラッグ＆ドロップ
      ======================================================= */
@@ -2427,11 +2525,18 @@
   }
   function openEditFile(file, handle) {
     readFile(file, (name, text) => {
-      state.fileName = name; ta().value = text; state.dirty = false;
+      const t = ta();
+      /* Ctrl+Z で読み込みを取り消せるように、読む前の状態を控える（5.15.3）。
+         ★rev57: 本文の差し替えは value 代入。execCommand は 12万字で 10 秒かかる（上のコメント）。 */
+      markUndo({ text: t.value, name: state.fileName, handle: state.fileHandle,
+                 origin: state.origin, dirty: state.dirty, prevTabId: null,
+                 label: "ファイルの読み込み" });
+      setWholeDoc(text);
+      state.fileName = name; state.dirty = false;
       state.fileHandle = handle || null;     // 保存時の初期フォルダに使う（5.9）
       /* textarea は value を代入すると仕様上キャレットが文末へ行く。
          開いた直後は先頭から読むので、キャレットと表示を先頭に戻す。 */
-      ta().setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;
+      t.setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;
       setOrigin(text, name);                 // 開いた時点を「初期」にする
       updateHeader(); runEdSearch(); refreshOverlay();
       toast("「" + name + "」を開きました（この内容を「初期」にしました）");
@@ -2441,8 +2546,18 @@
   /* ---- 上書き確認（仕様 5.1C） ----
      編集中（dirty）に原稿を差し替える操作は、必ず一度止める。
      ok を押したときだけ fn() を実行する。 */
-  function confirmOverwrite(info, fn) {
+  /* 既定の文面は HTML に書いてある。読み替えるのは「新規」など別の操作から呼ぶときだけ。
+     ここでキャッシュしないと、2回目以降は前回差し替えた文面が残る。 */
+  let openDlgDefault = null;
+  function confirmOverwrite(info, fn, opt) {
     if (!state.dirty) { fn(); return; }
+    if (!openDlgDefault) openDlgDefault = {
+      title: $("open-title").textContent, sub: $("open-sub").innerHTML, ok: $("btn-open-ok").textContent
+    };
+    const o = opt || {};
+    $("open-title").textContent = o.title || openDlgDefault.title;
+    $("open-sub").innerHTML     = o.sub   || openDlgDefault.sub;
+    $("btn-open-ok").textContent = o.ok   || openDlgDefault.ok;
     $("open-info").textContent = info;
     $("overlay-open").classList.add("show");
     // 既定はキャンセル側（A-2）。置かないとフォーカスが［開く］に残り Enter で再発火する
@@ -2455,6 +2570,131 @@
     document.addEventListener("keydown", onKey, true);
     $("btn-open-cancel").onclick = close;
     $("btn-open-ok").onclick = () => { close(); fn(); };
+  }
+
+  /* ---- 「新規」（旧「開く」。仕様 5.15）----
+     右ペインを空にして、まっさらな状態から書き始める。
+     ファイルの読み込みは空状態ヒントのクリック／ドロップから行えるので、
+     ツールバーに「開く」を残す必要はない（5.15 / rev55）。
+     左ペインの参照タブには触らない。資料は原稿と独立して持つものなので、
+     新規のたびに閉じられると「もう一度開き直す」手間だけが増える。 */
+  /* ===== 本文まるごとの差し替えと、その取り消し（5.15.3 / rev57） =====
+
+     rev56 は［新規］と［読み込み］を execCommand で通し、ブラウザの Undo 履歴に載せていた。
+     【12万字のファイルで約10秒フリーズし、ブラウザが警告を出した】（作者実測 2026-07-29）。
+     execCommand は 1 手ぶんの Undo レコードを作るため、長い原稿では現実的でない。
+
+     → 本文の差し替えは <b>value 代入</b>（12万字でも一瞬）に戻し、
+        取り消しは<b>ブラウザの履歴に頼らず自前で持つ</b>。Ctrl+Z と ↶ を横取りして、
+        控え（undoMarks）から名前・保存先・「初期」ごと戻す。
+
+     ★ここが肝：value 代入をしても、ブラウザの Undo 履歴は【消えるとは限らない】。
+       rev55 の不具合（読み込んだ本文の後ろに、消したはずの原稿が湧く）はこれが原因だった。
+       古い履歴に触らせないため、「差し替え直後の本文（markedText）に戻ってきたら、
+       そこから先の Ctrl+Z は必ず自前で受ける」という関所を置く。 */
+  let undoMarks = [];                 // [{text, name, handle, origin, dirty, prevTabId, label}]
+  const UNDO_MARK_MAX = 10;
+  let markedText = null;              // 直近の差し替えの【結果】本文。関所の位置
+  let editedSinceMark = false;        // 差し替え以降に人が編集したか
+
+  /** 本文をまるごと差し替える。value 代入なので input は飛ばない（呼び元が更新する） */
+  function setWholeDoc(text) {
+    ta().value = text;
+    markedText = text;
+    editedSinceMark = false;
+  }
+  function markUndo(rec) {
+    undoMarks.push(rec);
+    while (undoMarks.length > UNDO_MARK_MAX) undoMarks.shift();
+  }
+
+  /** Ctrl+Z / ↶ の 1 手。自前で戻したら true、ブラウザに任せるなら false */
+  function undoStep() {
+    /* 人が編集した直後は、その編集を戻すのが自然なのでブラウザに任せる。
+       戻しきって markedText に着いたら（input の historyUndo で）関所が再武装する。 */
+    if (editedSinceMark) return false;
+    if (!undoMarks.length) {
+      /* 控えが尽きた。ここから先のブラウザ履歴は【value 代入で本文と食い違っている】ので、
+         素通しすると消したはずの原稿が湧く（rev55 の不具合そのもの）。止めて知らせる。
+         markedText が null＝一度も差し替えていない＝履歴は正しいので、そのときだけ素通しする。 */
+      if (markedText !== null) { toast("これ以上戻せません"); return true; }
+      return false;
+    }
+    const p = undoMarks.pop();
+    const t = ta();
+    /* 「前の編集」は本物の原稿が戻れば用済み。残すと同じ本文のタブが2枚並ぶ。
+       閉じたことにはしない（state.closed には積まない）＝ ↩ の履歴を汚さない。 */
+    if (p.prevTabId) {
+      const i = state.tabs.findIndex(x => x.id === p.prevTabId);
+      if (i >= 0) {
+        const wasActive = state.activeTab === p.prevTabId;
+        state.tabs.splice(i, 1);
+        if (wasActive) {
+          const o = state.tabs.find(x => x.kind === SYS.ORIGIN);
+          state.activeTab = o ? o.id : (state.tabs[0] ? state.tabs[0].id : null);
+        }
+        renderTabs();
+      }
+    }
+    setWholeDoc(p.text);
+    state.fileName = p.name; state.fileHandle = p.handle; state.dirty = p.dirty;
+    t.setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;
+    setOrigin(p.origin.text, p.origin.name);
+    renderRef(); restoreScroll();
+    updateHeader(); runEdSearch(); refreshOverlay();
+    toast((p.label || "直前の操作") + "を取り消しました（「" + p.name + "」に戻しました）");
+    return true;
+  }
+
+  /** ［新規］で捨てられる【右ペインの原稿】を、ふつうの資料タブとして左ペインに残す（5.15.2 / rev56）。
+   *  書き手が読み返したいのは「初期」ではなく【いま書いていたもの】なので、本文そのものを入れる。
+   *  システムタブにはしない。閉じられない・並びが固定されるタブが増えると、
+   *  資料を並べる場所が痩せていくため。閉じれば ↩ で戻せる既存の仕組みにも乗る。
+   *  ［新規］を続けて押しても増やさない（1枚を上書きする）。溜まっても読まないので。 */
+  const PREV_EDIT_TAB = "前の編集";
+  function stashPrevEdit(text, name) {
+    if (!text) return null;                       // 空の原稿は残す意味がない
+    /* ↩ で復元したタブは prevEdit の印を失っているので、名前でも拾う。
+       拾えないと［新規］のたびに同名タブが増える。 */
+    let t = state.tabs.find(x => !x.kind && (x.prevEdit || x.name === PREV_EDIT_TAB));
+    if (t) { t.text = text; t.heads = null; t.html = null; t.scroll = 0; }
+    else { t = addTab(PREV_EDIT_TAB, text, false, 0, null); }
+    t.prevEdit = true;
+    t.note = "「" + (name || "無題.txt") + "」の本文（［新規］を押す直前の右ペイン）";
+    renderTabs();
+    return t;
+  }
+
+  function newDoc() {
+    const t = ta(), eb = body();
+    // 捨てる前の【右ペインの原稿】を資料タブに退避する
+    const prevTab = stashPrevEdit(t.value, state.fileName);
+    /* 左ペインを守る（5.15.2 / rev55）。ORIGIN を空にすると「初期」「変更」タブの中身も空になり、
+       左ペインが空状態ヒントに落ちて「参照用」が出る。資料タブを持っているのに
+       「資料を読み込んでください」と言われるのは事実と違うので、資料タブへ逃がす。
+       「初期」を見ていた人には「前の編集」を見せるのがいちばん連続する。
+       資料が1枚も無いときは本当に空なので、ヒントが出るのが正しい。 */
+    const act = activeTabObj();
+    if (act && act.kind) {
+      const refTabs = state.tabs.filter(x => !x.kind);
+      const go = prevTab || refTabs[refTabs.length - 1];
+      if (go) setActiveTab(go.id);
+    }
+    // すでに空なら戻すものが無いので控えも取らない
+    const marked = t.value !== "";
+    if (marked) markUndo({ text: t.value, name: state.fileName, handle: state.fileHandle,
+                           origin: state.origin, dirty: state.dirty,
+                           prevTabId: prevTab ? prevTab.id : null, label: "［新規］" });
+    dimHold = true;                        // 直後のフォーカスでガイドを薄くしない
+    setWholeDoc("");
+    state.fileName = "無題.txt";
+    state.fileHandle = null;               // 保存先も引き継がない（＝上書き保存はダイアログに戻る）
+    state.dirty = false;
+    t.focus();
+    t.setSelectionRange(0, 0); eb.scrollTop = 0; state.caret = 0;
+    setOrigin("", state.fileName);         // 「初期」も空に戻す（差分が前の原稿を指さないように）
+    updateHeader(); runEdSearch(); refreshOverlay();
+    toast(marked ? "新規作成しました（Ctrl+Z で元に戻せます）" : "新規作成しました");
   }
 
   /* ---- 「開く」：ハンドルが取れる環境では showOpenFilePicker を使う ---- */
@@ -2496,7 +2736,46 @@
      File System Access API が使えない環境ではダウンロードにフォールバックする。 */
   const canFSA = () => typeof window.showSaveFilePicker === "function";
 
-  async function saveTxt() {
+  /** ハンドルへ書き込む許可を確かめる。
+   *  showSaveFilePicker で得たハンドルは最初から readwrite だが、
+   *  showOpenFilePicker やドロップで得たハンドルは read しか持っていないことがある。
+   *  requestPermission はユーザー操作の中でしか通らないので、必ずクリック経路から呼ぶ。 */
+  async function ensureWritable(h) {
+    if (!h || typeof h.queryPermission !== "function") return false;
+    const o = { mode: "readwrite" };
+    try {
+      if (await h.queryPermission(o) === "granted") return true;
+      return await h.requestPermission(o) === "granted";
+    } catch (err) { return false; }
+  }
+
+  /** 上書き保存（Ctrl+S。仕様 5.9.2）。保存先を知っているときはダイアログを出さずに書く。
+   *  知らないとき（新規・ダウンロード経由）は「名前を付けて保存」に落ちる。 */
+  async function saveOverwrite() {
+    if (!canFSA() || !state.fileHandle) { saveAsTxt(); return; }
+    const text = withEol(ta().value);
+    try {
+      if (!await ensureWritable(state.fileHandle)) {
+        toast("上書きの許可が得られませんでした。［名前を付けて保存］を使ってください");
+        return;
+      }
+      const w = await state.fileHandle.createWritable();
+      await w.write(new Blob([text], { type: "text/plain;charset=utf-8" }));
+      await w.close();
+      state.fileName = state.fileHandle.name;
+      state.dirty = false; updateHeader();
+      toast("「" + state.fileHandle.name + "」に上書き保存しました");
+    } catch (err) {
+      if (err && err.name === "AbortError") return;
+      /* ファイルが移動・削除された、権限が落ちた等。黙って失敗させない。
+         名前を付けて保存へ落とすと「知らない場所に保存された」になるので、
+         ここはダウンロードではなくダイアログに誘導する（保存先を人に決めさせる）。 */
+      toast("上書きできませんでした（" + (err && err.name || "不明") + "）。［名前を付けて保存］に切り替えます");
+      saveAsTxt();
+    }
+  }
+
+  async function saveAsTxt() {
     const text = withEol(ta().value);   // 改行コードは保存の出口だけで変換（5.14）
     const name = state.fileName || "無題.txt";
     if (canFSA()) {
@@ -2512,7 +2791,7 @@
         state.fileHandle = h;
         state.fileName = h.name;
         state.dirty = false; updateHeader();
-        toast("「" + h.name + "」に保存しました");
+        toast("「" + h.name + "」に保存しました（次からは Ctrl+S で上書き保存できます）");
         return;
       } catch (err) {
         if (err && err.name === "AbortError") return;              // ユーザーがキャンセル
@@ -3014,6 +3293,10 @@
   ta().addEventListener("compositionstart", () => { composing = true; updateEditEmpty(); });
   ta().addEventListener("compositionend",   () => { composing = false; updateEditEmpty(); });
   ["focus", "blur"].forEach(ev => ta().addEventListener(ev, updateEditEmpty));
+  /* ［新規］直後の「薄くしない」を解除する。人が触った合図＝クリック・キー・フォーカスを外す。
+     解除条件を updateEditEmpty の中に書かないのは、あそこは rAF から何度も呼ばれるため。 */
+  ["pointerdown", "keydown", "blur"].forEach(ev =>
+    ta().addEventListener(ev, () => { if (dimHold) { dimHold = false; updateEditEmpty(); } }));
 
   // 左ペインで書こうとした人に知らせる（5 秒に 1 回まで）
   // div はフォーカスを持たないので keydown は #ref-body に届かない。
@@ -3034,10 +3317,18 @@
     toast("左ペインは参照専用です。編集は右ペインで行ってください");
   });
 
-  $("btn-open").addEventListener("click", () =>
-    confirmOverwrite("いま編集中の「" + (state.fileName || "無題.txt") + "」を、選んだファイルの内容で置き換えます。", pickAndOpen));
+  /* ［新規］。未保存の変更があるときだけ止める（保存済み・空のときに止めても失うものが無い）。
+     文面は「開く」とは別物なので差し替える。ここを使い回すと「選んだファイル」という
+     ありもしないファイルの話になる。 */
+  $("btn-new").addEventListener("click", () =>
+    confirmOverwrite(
+      "「" + (state.fileName || "無題.txt") + "」には保存していない変更があります。新規にすると、この内容は失われます。",
+      newDoc,
+      { title: "保存していない原稿を破棄します",
+        sub: "取り消せません。残したい場合は、いったんキャンセルして<b>［ファイル保存］</b>してください。<br>" +
+             "左ペインの参照ファイルはそのまま残ります。",
+        ok: "破棄して新規" }));
   $("file-edit").addEventListener("change", e => { if (e.target.files[0]) openEditFile(e.target.files[0]); e.target.value = ""; });
-  $("btn-save").addEventListener("click", saveTxt);
 
   // ファイル挿入（原稿は差し替えない＝上書き確認は不要）
   $("btn-insert").addEventListener("click", () => $("file-insert").click());
@@ -3104,6 +3395,30 @@
 
   const t0 = ta();
   t0.addEventListener("input", () => onEdit());
+  /* 関所（markedText）の武装／解除（5.15.3 / rev57）。
+     ・人が編集したら解除する（その編集を戻すのはブラウザの仕事）
+     ・ブラウザの undo で【差し替え直後の本文まで戻ってきたら】再武装する
+       ここで再武装しないと、次の Ctrl+Z が value 代入で切れた古い履歴に届き、
+       消したはずの原稿が湧く（rev55 の不具合）。 */
+  t0.addEventListener("input", e => {
+    const it = e.inputType || "";
+    if (it === "historyUndo" || it === "historyRedo") {
+      /* ★rev58: キーボード以外の経路（右クリック → 元に戻す、ブラウザの編集メニュー）は
+         keydown を通らないので undoStep() の関所をすり抜ける。
+         そこで通り抜けた結果をここで検知して押し戻す。
+         【自己診断で実証済み】素通しさせると、value 代入より前の古い履歴が生きていて、
+         まったく無関係な過去のテキストが本文に湧く。 */
+      if (!editedSinceMark && markedText !== null && t0.value !== markedText) {
+        t0.value = markedText;
+        t0.setSelectionRange(0, 0);
+        toast("この操作では戻せません（Ctrl+Z か ［↶］ を使ってください）");
+        return;
+      }
+      if (t0.value === markedText) editedSinceMark = false;
+    } else {
+      editedSinceMark = true;
+    }
+  });
   ["keyup", "click", "select", "focus", "blur"].forEach(ev => t0.addEventListener(ev, () => { updateCaret(); drawMinimap("right"); }));
   document.addEventListener("selectionchange", () => { if (document.activeElement === t0) updateCaret(); });
 
@@ -3234,7 +3549,7 @@
     toast("見出し設定を適用しました（左 " + (t ? tabHeads(t).length : 0) + "件 / 右 " + edHeads().length + "件）");
   });
 
-  window.addEventListener("resize", () => { applyRatio(); reflowWidth(); refreshOverlay(); drawMinimap("left"); updateTabNav(); });
+  window.addEventListener("resize", () => { fitToolbar(); applyRatio(); reflowWidth(); refreshOverlay(); drawMinimap("left"); updateTabNav(); });
   /* 離脱時：まず下書きを保存し、【保存できなかったときだけ】確認を出す（5.8B）。
      ブラウザの確認文は差し替えられず「行った変更が保存されない可能性があります」と出る。
      下書きが保存できているのにこれを出すと、事実と違うことを言うことになる。 */
@@ -3258,10 +3573,50 @@
     if (!mod) return;
     // CapsLock ON・Shift 併用では e.key が "S" になる。畳んでから比べる（A-1）
     const k = (e.key || "").toLowerCase();
-    if (k === "s") { e.preventDefault(); saveTxt(); }
+    /* Ctrl+Z は原則ブラウザ任せ（制約 #4）。ただし［新規］／［読み込み］だけは
+       履歴に載せていないので、自前で戻せるときに限って横取りする（5.15.3 / rev57）。 */
+    if (k === "z" && !e.shiftKey) { if (undoStep()) e.preventDefault(); return; }
+    if (k === "s") { e.preventDefault(); e.shiftKey ? saveAsTxt() : saveOverwrite(); }
     else if (k === "f") { e.preventDefault(); focusSearchBox(); }
     else if (k === "h") { e.preventDefault(); toggleReplace(true); }
   });
+
+  /* ---- 元に戻す（5.15）----
+     罠：ボタンを押すと textarea からフォーカスが外れ、execCommand("undo") が何にも効かなくなる。
+     ツールメニューと同じく mousedown を preventDefault して、フォーカスを本文に残す。
+     undo が成功すると input イベントが inputType:"historyUndo" で飛ぶので、
+     dirty・検索・差分の更新は既存の入力経路がそのまま面倒を見る（ここでは呼ばない）。 */
+  $("btn-undo").addEventListener("mousedown", e => e.preventDefault());
+  $("btn-undo").addEventListener("click", () => {
+    const t = ta();
+    if (document.activeElement !== t) t.focus();
+    // ［新規］／［読み込み］は履歴に載せていないので自前で戻す（5.15.3 / rev57）
+    if (undoStep()) return;
+    const before = t.value;
+    try { document.execCommand("undo"); } catch (_) {}
+    // execCommand の戻り値は当てにならない（false でも戻っていることがある）ので本文で見る
+    if (t.value === before) toast("これ以上戻せません");
+  });
+
+  /* ---- ツールバーの幅合わせ（5.15）----
+     ボタンが増えて iPad の幅に収まらなくなった。折り返すと本文の高さが削られるので、
+     情報量の少ないものから落とす：クレジット → アプリ名。
+     測り方：いったん全部出してから、右端の要素がツールバーの内側からはみ出したかを見る。
+     隠したまま測ると「戻していいかどうか」が永久に分からなくなる（＝一度隠れたら戻らない）。 */
+  function fitToolbar() {
+    const tb = $("toolbar");
+    tb.classList.remove("narrow", "narrow2");
+    const room = () => {
+      const last = tb.lastElementChild;
+      if (!last) return true;
+      const pad = parseFloat(getComputedStyle(tb).paddingRight) || 0;
+      return last.getBoundingClientRect().right <= tb.getBoundingClientRect().right - pad + 1;
+    };
+    if (room()) return;
+    tb.classList.add("narrow");
+    if (room()) return;
+    tb.classList.add("narrow2");
+  }
 
   setupMinimapDrag("mm-left", () => $("ref-body"), "left");
   setupMinimapDrag("mm-right", body, "right");
@@ -3281,13 +3636,14 @@
   setOrigin("", state.fileName);
 
   updateHeader();
+  fitToolbar();
   applySettings();
   runEdSearch();
   refreshOverlay();
   drawAll();
   // レイアウト確定後にもう一度（起動直後の clientWidth が不安定な環境向け）
   requestAnimationFrame(() => {
-    applyRatio(); reflowWidth(); refreshOverlay(); drawAll();
+    fitToolbar(); applyRatio(); reflowWidth(); refreshOverlay(); drawAll();
   });
   setTimeout(() => { reflowWidth(); refreshOverlay(); }, 60);   // フォント確定後に幅の上限を測り直す
 
@@ -3301,7 +3657,7 @@
         $("overlay").classList.add("show");
         $("btn-restore").focus();          // 大きい側＝既定の選択肢としてフォーカスも置く
         $("btn-restore").onclick = () => {
-          ta().value = d.text; state.fileName = d.name || "無題.txt"; state.dirty = false;
+          setWholeDoc(d.text); state.fileName = d.name || "無題.txt"; state.dirty = false;
           ta().setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;   // 先頭から読む
           // 基準も一緒に戻す。origin が無い古い下書きは、復元した内容を基準にする（5.13.1B）
           const o = d.origin && typeof d.origin.text === "string" ? d.origin : null;
