@@ -529,7 +529,7 @@
   <span class="sep"></span>
 
   <div class="tb-group">
-    <label title="章・話の始まりを色付け表示"><input type="checkbox" id="opt-head" checked> 見出し</label>
+    <label title="章・幕・話の始まりを色付け表示"><input type="checkbox" id="opt-head" checked> 見出し</label>
     <button id="btn-head-cfg" title="見出しの検出ルールを設定" style="padding:4px 8px;font-size:12px;">⚙</button>
   </div>
 
@@ -678,7 +678,7 @@
 <div id="overlay-head">
   <div class="dialog wide">
     <h2>見出し設定</h2>
-    <p>行の先頭にある記号・キーワードで「章や話の始まり」を検出し、本文とミニマップに色を付けます。<br>
+    <p>行の先頭にある記号・キーワードで「章・幕（レベル1）や話・回（レベル2）の始まり」を検出し、本文とミニマップに色を付けます。<br>
        行頭の半角／全角スペース・タブは無視して判定します。</p>
 
     <h3>組み込みルール</h3>
@@ -686,12 +686,12 @@
 
     <h3>記号（空白か改行で区切って入力）</h3>
     <div class="fld">
-      <span><span class="sw" style="background:#c62828"></span>レベル1 ／ 章・話</span>
+      <span><span class="sw" style="background:#c62828"></span>レベル1 ／ 章・幕</span>
       <textarea id="cfg-lv1" spellcheck="false"></textarea>
-      <p class="hint">例: <code>#</code> <code>§</code> <code>■</code> ／ その記号で始まる行を章見出しとして扱います</p>
+      <p class="hint">例: <code>#</code> <code>§</code> <code>■</code> ／ その記号で始まる行を章・幕の見出しとして扱います</p>
     </div>
     <div class="fld">
-      <span><span class="sw" style="background:#2e7d32"></span>レベル2 ／ 場面・小見出し</span>
+      <span><span class="sw" style="background:#2e7d32"></span>レベル2 ／ 話・回</span>
       <textarea id="cfg-lv2" spellcheck="false"></textarea>
       <p class="hint">長い記号が優先されます（<code>##</code> はレベル2、<code>#</code> はレベル1 と使い分けられます）</p>
     </div>
@@ -789,20 +789,20 @@
   const body = () => $("edit-body");
 
   /* =======================================================
-     見出し検出（章・話の始まり）― ユーザー設定式
+     見出し検出（章・幕＝Lv1／話・回＝Lv2 の始まり）― ユーザー設定式
      ======================================================= */
   // 組み込みルール（チェックボックスで ON/OFF）
   const BUILTIN = {
-    chapterNum: { lv: 1, re: /^第[0-9０-９一二三四五六七八九十百千壱弐参]+[章話節部幕巻回]/,
-      label: "「第○章」「第○話」など", ex: "第一章／第1話／第三幕／第十二回" },
-    chapterWord: { lv: 1, re: /^(?:序章|序|終章|最終話|プロローグ|エピローグ|幕間|間章|閑話|あとがき|まえがき|前書き|後書き)/,
-      label: "章を表す語で始まる行", ex: "序章／終章／プロローグ／エピローグ／幕間／あとがき" },
-    bracket: { lv: 2, re: /^【[^】]*】/,
-      label: "【…】で始まる行", ex: "【全体】／【伏線】" },
-    ruleLine: { lv: 2, re: /^[-=＝─━*＊_＿~〜]{3,}$/,
-      label: "区切り線（同じ記号が3つ以上だけの行）", ex: "───────／＝＝＝／***" }
+    chapterNum: { lv: 1, re: /^第[0-9０-９一二三四五六七八九十百千壱弐参]+[章幕部巻]/,
+      label: "「第○章」「第○幕」など", ex: "第一章／第1章／第三幕／第二部" },
+    chapterWord: { lv: 1, re: /^(?:序章|序|終章|プロローグ|エピローグ|幕間|間章|あとがき|まえがき|前書き|後書き)/,
+      label: "章・幕を表す語で始まる行", ex: "序章／終章／プロローグ／エピローグ／幕間／あとがき" },
+    episodeNum: { lv: 2, re: /^第[0-9０-９一二三四五六七八九十百千壱弐参]+[話回節]/,
+      label: "「第○話」「第○回」など", ex: "第一話／第1話／第一回／第十二回" },
+    episodeWord: { lv: 2, re: /^(?:最終話|閑話)/,
+      label: "話・回を表す語で始まる行", ex: "最終話／閑話" }
   };
-  const BUILTIN_ORDER = ["chapterNum", "chapterWord", "bracket", "ruleLine"];
+  const BUILTIN_ORDER = ["chapterNum", "chapterWord", "episodeNum", "episodeWord"];
   /* Lv3：行頭見出しではなく、本文中の ** / *** 囲み（inline:true） */
   const BUILTIN_LV3 = {
     starBlue: {
@@ -821,7 +821,7 @@
 
   const HEAD_DEFAULT = {
     builtin: {
-      chapterNum: true, chapterWord: true, bracket: true, ruleLine: true,
+      chapterNum: true, chapterWord: true, episodeNum: true, episodeWord: true,
       starBlue: true, starRed: true
     },
     lv1: "# ＃ §",
