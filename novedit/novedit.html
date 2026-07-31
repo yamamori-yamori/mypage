@@ -825,7 +825,7 @@
       starBlue: true, starRed: true
     },
     lv1: "# ＃ §",
-    lv2: "▼ ▽ ■ □ ● 〇 ## ＃＃"
+    lv2: "▼ ▽ ■ □ ● 〇 ○ ## ＃＃"
   };
 
   const parseTokens = str => [...new Set(String(str || "").split(/[\s\n]+/).filter(Boolean))];
@@ -2498,19 +2498,28 @@
      消さないので「いつ保存されたか」がいつでも確認できる。
      表示のたびに fitToolbar を呼ぶ（iPad で ［↶］ が隠れないようロゴから落とす）。 */
   const pad2 = n => (n < 10 ? "0" : "") + n;
-  function setAutosaveNote(ok) {
+  /* 自動保存の表示。★文言はツールバーの幅で切り替える（5.8 / 5.15.5）。
+     広いときは「ブラウザに」を付けて【ファイルには書いていない】ことを伝える。
+     狭いときは短くする——長いと iPad で［↶ 戻す］が overflow で消える。
+     切り替えるのは fitToolbar()（幅を知っているのはあちら）。ここは状態を持つだけ。 */
+  let autosaveState = null;             // { ok: boolean, time: "HH:MM:SS" } ／ null＝表示なし
+  function renderAutosaveNote(compact) {
     const el = $("autosave-note");
-    if (ok) {
-      const d = new Date();
-      /* 長いと iPad で［↶ 戻す］が overflow で消える。時刻は残す。 */
-      el.textContent = "自動保存 " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
+    if (!autosaveState) { el.textContent = ""; el.classList.remove("failed"); el.title = ""; return; }
+    if (autosaveState.ok) {
+      el.textContent = (compact ? "自動保存 " : "ブラウザに自動保存 ") + autosaveState.time;
       el.classList.remove("failed");
       el.title = "ブラウザに自動保存しました。次に開いたとき復元できます（ファイルには書かれていません）";
     } else {
-      el.textContent = "⚠ 自動保存不可";
+      el.textContent = compact ? "⚠ 自動保存不可" : "⚠ ブラウザに自動保存できません";
       el.classList.add("failed");
       el.title = "ブラウザの保存領域に書けませんでした。［ファイル保存］で手元に残してください";
     }
+  }
+  function setAutosaveNote(ok) {
+    const d = new Date();
+    autosaveState = { ok: !!ok, time: pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()) };
+    renderAutosaveNote(false);          // まず長い文言。入らなければ fitToolbar が縮める
     fitToolbar();
   }
 
@@ -3765,11 +3774,14 @@
   function fitToolbar() {
     const tb = $("toolbar");
     tb.classList.remove("narrow", "narrow2");
+    renderAutosaveNote(false);             /* ★毎回いちばん長い状態に戻してから測り直す */
     const room = () => tb.scrollWidth <= tb.clientWidth + 1;
     if (room()) return;
-    tb.classList.add("narrow");            /* ver / クレジット */
+    tb.classList.add("narrow");            /* ① ver / クレジット */
     if (room()) return;
-    tb.classList.add("narrow2");           /* ロゴを消し、自動保存と Undo を残す */
+    tb.classList.add("narrow2");           /* ② ロゴ（自動保存と Undo は残す） */
+    if (room()) return;
+    renderAutosaveNote(true);              /* ③ 自動保存の文言を短く（「ブラウザに」を落とす） */
   }
 
   setupMinimapDrag("mm-left", () => $("ref-body"), "left");
