@@ -2,7 +2,6 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<!-- viewport-fit=cover は現状維持（作者確認 2026-07-30）。env() 未使用の理由は仕様書 2 章 -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>novedit — 資料を読みながら書くエディタ</title>
 <!-- iPad/iOS ホーム画面（Web App）。standalone で Safari の URL 欄を出さない（縦view と同じ方針・rev54） -->
@@ -29,6 +28,7 @@
     --ref-bg: #FAF4E4;      /* 左ペイン本文：クリーム（編集不可の合図） */
     --ref-line: #c9c0a4;    /* クリーム背景の上で使う罫線・破線 */
     --ref-mut: #857e6a;     /* クリーム背景の上で使う文字色（暖色系グレー） */
+    --mm-bg-left: #EFE7D2;  /* 左ミニマップの下地（本文より一段濃い） */
     --origin-bg: #E9ECEE;   /* 「初期」タブの本文：グレー（凍結された内容） */
     --hit: #ffe082;
     --hit-cur: #ffab40;
@@ -63,6 +63,7 @@
   }
 
   /* ---------- toolbar ---------- */
+  /* rev52: 文字サイズはそのまま、高さ・ボタン余白だけ詰める（48→42） */
   #toolbar {
     height: var(--toolbar-h);
     background: var(--ink); color: #fff;
@@ -85,13 +86,11 @@
     padding: 4px 10px; letter-spacing: .02em;
   }
   #toolbar #btn-undo:hover { background: #26a69a; }
-  #toolbar button:disabled { opacity: .7; cursor: progress; }   /* ツール実行中 */
+  #toolbar button:disabled { opacity: .7; cursor: progress; }   /* ツール実行中（rev45） */
   #toolbar label { font-size: 12px; display: flex; align-items: center; gap: 4px; color: #cfd8dc; cursor: pointer; white-space: nowrap; }
-  #toolbar input[type="number"] { padding: 3px 5px; border-radius: 3px; border: 1px solid #546e7a; background: var(--ink2); color: #fff; font-size: 13px; }
+  #toolbar select, #toolbar input[type="number"] { padding: 3px 5px; border-radius: 3px; border: 1px solid #546e7a; background: var(--ink2); color: #fff; font-size: 13px; }
   #toolbar input.capped { border-color: #ef6c00; background: #4e342e; }
-  /* 幅 46px（旧 58px）。★理由: 幅 800px で fitToolbar が 2 段階とも効いても 21px はみ出していた（L-3）。
-     入力は 2 つあるので、ここを 12px 細くするだけで 24px ぶん空く。3 桁（120）も収まる。 */
-  #toolbar input[type="number"] { width: 46px; }
+  #toolbar input[type="number"] { width: 58px; }
   #toolbar .app-meta { font-size: 11px; color: #90a4ae; white-space: nowrap; }
   #toolbar .tb-group.push { margin-left: auto; }   /* ここから右がメニュー */
   /* 幅が足りないときに落とす順（5.15）。JS が fitToolbar() で付け外しする。
@@ -203,11 +202,6 @@
     padding: 2px 4px; border-radius: 3px; flex-shrink: 0;
   }
   .tab:hover .x, .tab.active .x { visibility: visible; }
-  /* ★タッチ環境では × を常に出す。iOS は「タップで hover の見た目が変わる要素」の
-     1 回目のタップを hover 表示だけに使い、マウス系イベントを送らない。
-     資料タブは hover で × が hidden→visible に変わるので、切り替えに 2 タップ要っていた
-     （常設タブは × を持たないので 1 タップ）。詳細は構築仕様書 5.3.2B。 */
-  @media (hover: none) { .tab .x { visibility: visible; } }
   .tab .x:hover { background: #b0bec5; color: #fff; }
   /* 常設タブは役割ごとに色を分ける。「初期」＝動かない基準（グレー）／
      「変更」＝いま何が変わっているか（橙）。資料タブとも見分けられるようにする。 */
@@ -229,7 +223,7 @@
   @keyframes pulse { from { opacity: .6 } to { opacity: 1 } }
   #tab-add { flex-shrink: 0; padding: 0 12px; font-size: 15px; color: #607d8b; background: transparent; border: none; cursor: pointer; }
   #tab-add:hover { background: #dfe6e9; }
-  /* ラベル「復元」は幅を食うので矢印のみ。意味は title / tooltip に任せる */
+  /* rev52: ラベル「復元」は幅を食うので矢印のみ。意味は title / tooltip に任せる */
   #tab-undo {
     flex-shrink: 0; display: none; align-items: center; justify-content: center;
     padding: 0 8px; min-width: 28px; font-size: 14px; line-height: 1; color: #00695c; background: #d7f0ec;
@@ -264,7 +258,7 @@
   .searchbar button { border: 1px solid var(--line); background: #fff; color: #546e7a; border-radius: 3px; padding: 3px 8px; font-size: 12px; cursor: pointer; line-height: 1.4; white-space: nowrap; flex-shrink: 0; }
   .searchbar button:hover { background: var(--panel-bg); }
   .searchbar button.on { background: #dcedc8; border-color: #aed581; color: #33691e; }
-  /* 常に「N / M」のヒット数（5.3.4） */
+  /* 常に「N / M」のヒット数（5.3.4）。旧 ＋12 −8 用の .p / .m は rev41 で削除 */
   .searchbar .count { font-size: 11px; color: #78909c; min-width: 52px; text-align: right; flex-shrink: 0; }
   /* 左検索窓は半分まで。残りをコンテキストボタンに使う */
   #ref-q { flex: 1 1 40%; max-width: 50%; }
@@ -286,9 +280,10 @@
   .pane-body::-webkit-scrollbar { width: 0; height: 0; }
   .pane-inner {
     margin: 0 auto;
-    /* 左右は同幅にする。片側だけ厚いと max-width + margin:auto の中心がズレて
-       中身が片方へ寄って見える
-       左右 3px。合計 WIDTH_PAD=6（+MM 24px で表示幅を 1 文字分稼ぎやすく） */
+    /* rev39: 左右同幅にして max-width + margin:auto の中心がズレないようにする
+       （rev37 の MM側6/反対12 は中身が右へ寄って見えた）
+       rev48: 左右 4px（旧6）。合計 WIDTH_PAD=8
+       rev51: 左右 3px。合計 WIDTH_PAD=6（+MM 24px で表示幅を 1 文字分稼ぎやすく） */
     padding: 16px 3px 60vh;
     white-space: pre-wrap; word-break: break-word;
     line-height: 1.9; font-size: 15px; color: #212121; font-family: inherit;
@@ -311,11 +306,13 @@
   /* ---------- 差分ビュー（左ペインのシステムタブ） ---------- */
   /* 行マーカー（− ＋）は行の中に置かず、絶対配置で外に出す。
      インラインの箱として行頭に置くと、その 1.5em が user-select:none の領域になり、
-     「本文の左の余白からドラッグしても選択が始まらない」状態になる。
-     → マーカーは絶対配置で本文の外へ。.dl 自身には padding を持たせない。
-     溝は #ref-inner の左右パディングの配分で作り、【左右の合計は必ず通常タブと同じ
-     WIDTH_PAD に保つ】（通常 3+3 ／ 変更 5+1）。本文の内容ボックス幅が変わらないので
-     折り返しが揃う。却下案は構築仕様書 5.13.3D。 */
+     「本文の左の余白からドラッグしても選択が始まらない」という状態になる。
+     余白を .dl 自身の padding にしておけば、そこから普通に選択を始められる。 */
+  /* 「変更」タブは行頭にマーカーの溝が必要だが、本文の折り返しは通常タブと
+     完全に一致させたい。そこで .dl には padding を持たせず、
+     #ref-inner の左右パディングの【合計を通常タブと同じ WIDTH_PAD】左へ寄せて溝を作る。
+     本文の幅（= 内容ボックスの幅）が通常タブと同じになるので折り返しが揃う。
+     rev51: 通常 3+3=6 ／ 変更 左5+右1=6（rev48 は 4+4／7+1） */
   #ref-inner.diff-view { padding-left: 5px; padding-right: 1px; }
 
   .dl {
@@ -355,11 +352,14 @@
   }
 
   /* ---------- right pane layers ---------- */
+  #edit-body { overflow-y: auto; }
   #mirror {
     position: absolute; z-index: 0; visibility: hidden; pointer-events: none;
     white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word; border: 0; margin: 0;
   }
-  #hd-layer, #hit-layer { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+  #hd-layer, #hit-layer { position: absolute; inset: 0; pointer-events: none; }
+  #hd-layer { z-index: 0; }
+  #hit-layer { z-index: 0; }
   #hd-layer .hdr { position: absolute; border-radius: 2px; }
   #hd-layer .hdr.l1 { background: var(--hd1-bg); box-shadow: -3px 0 0 var(--hd1); }
   #hd-layer .hdr.l2 { background: var(--hd2-bg); box-shadow: -3px 0 0 var(--hd2); }
@@ -385,6 +385,7 @@
   #edit-area {
     position: relative; z-index: 1;
     display: block; margin: 0 auto;
+    /* rev51: 左右とも 3px（rev48 は 4。本文幅へ） */
     padding: 16px 3px 60vh;
     width: 100%; border: none; resize: none; outline: none; background: transparent;
     font-family: inherit; font-size: 15px; line-height: 1.9; color: #212121;
@@ -430,10 +431,7 @@
   #edit-empty.dim  { opacity: .35; transition: opacity .15s; }
   #edit-empty.hide { display: none; }
 
-  /* ドラッグ中は枠を緑の実線に。
-     ★2行目は冗長ではない。#ref-empty .hint-box（id 1＋class 1）は
-       .pane.drop-active .empty-hint .hint-box（class 4）より詳細度が高く border-color を勝ち取るので、
-       左ペインだけ緑にならない。id を含むセレクタで上書きする必要がある。消さないこと。 */
+  /* ドラッグ中は枠を緑の実線に */
   .pane.drop-active .empty-hint .hint-box,
   #pane-ref.drop-active .empty-hint .hint-box { border: 2px solid #66bb6a; background: #f3f8f1; color: #2e5c33; }
   #pane-ref.drop-active #ref-body { background: #f7f8f2; }
@@ -476,9 +474,11 @@
   .dialog .hint { font-size: 11px; color: #90a4ae; margin: 3px 0 0; }
   #cfg-preview { font-size: 11.5px; color: #00695c; background: #e0f2f1; border-radius: 3px; padding: 7px 10px; margin: 14px 0 0; line-height: 1.7; }
 
-  /* 画面中央。下端だと長い原稿のツール実行中に視線が届きにくい */  
+  /* 画面中央（rev46）。下端だと長い原稿のツール実行中に視線が届きにくい */  
   #toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(38,50,56,.92); color: #fff; font-size: 12px; padding: 8px 16px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; max-width: min(90vw, 480px); text-align: center; }
   #toast.show { opacity: 1; }
+  /* アンカー付き（#btn-undo 直下など）。中央配置を外し JS が top/right を書く（rev60） */
+  #toast.near { top: auto; left: auto; right: auto; transform: none; }
 
 </style>
 <!-- Google tag (gtag.js) — https のみ（file://・http ローカルでは読み込まない） -->
@@ -514,7 +514,7 @@
 
   <span class="sep"></span>
 
-  <div class="tb-group">
+  <div class="tb-group" id="tb-tools">
     <button id="btn-tools" aria-haspopup="true" aria-expanded="false"
             title="原稿全体のテキスト整形（すべて Ctrl+Z で元に戻せます）">ツール ▾</button>
   </div>
@@ -592,7 +592,7 @@
       <button id="ref-prev" title="前へ">▲</button>
       <button id="ref-next" title="次へ">▼</button>
       <span class="count" id="ref-count">0 / 0</span>
-      <button id="ref-act" hidden></button>
+      <button id="ref-act" class="act" hidden></button>
     </div>
     <div class="pane-body" id="ref-body">
       <div class="pane-inner" id="ref-inner"></div>
@@ -745,45 +745,19 @@
     widthPref: 40,               // 表示幅の「希望値」。実効値は effWidthChars() で上限を掛ける
     fileHandle: null,            // 開いたファイルのハンドル（保存ダイアログの初期フォルダに使う）
     showHead: true,
+    lineWise: true,              // 行単位挿入は常時ON（Ver.1.0 で設定項目を廃止）
     headCfg: null,               // 見出し検出ルール（起動時に既定値を入れる）
-    origin: { text: "", name: "" },      // 右ペインの「初期」
+    origin: { text: "", name: "", at: 0 },  // 右ペインの「初期」
     diffStale: true,             // 差分の再計算が必要か
+    diffFollow: true,            // 「変更」タブは常に右のカーソル行へ追従する（固定）
     eol: "lf",                    // ツール＞保存する改行コード。"lf"|"crlf"。既定 lf（現状維持。保存時のみ適用＝5.14）
     sepPat: ""                    // ツール＞区切り行パターン（改行区切りで複数可）。行全体一致で判定（5.14）
   };
   const SYS = { ORIGIN: "origin", DIFF: "diff" };   // システムタブ（閉じられない）
-  const MM_BG_L = "#EFE7D2";                        // 左ミニマップの下地（仕様 5.2C。canvas 塗りなので CSS 変数は持たない）
+  const MM_BG_L = "#EFE7D2";                        // 左ミニマップの下地（仕様 5.2C）
   const MM_BG_ORIGIN = "#DFE4E6";                   // 「初期」タブのときの下地（グレー）
-  const MM_BG_R = "#eceff1";                        // 右ミニマップの下地（左と同じく定義元は1か所）
   const LINEWISE_MIME = "application/x-novedit-linewise";
-  /* 変更マーカーの色と最小の太さ。★drawMinimap の中に置くと【スクロールのたびに作り直す】
-     ことになるので外に出してある。MIN_BAR 未満だと 3,000 行クラスで見えなくなる。 */
-  const DIFF_MARK_COLOR = { del: "#d32f2f", add: "#2e7d32", chg: "#ef6c00" };
-  const MIN_BAR = 2.5;
-  /* MM canvas 上下の余白（枠用）。★drawMinimap と setupMinimapDrag の両方が使う。
-     別々に書くと片方だけ変えたときに青枠とクリック位置がずれる（5.5.2）。 */
-  const MM_OUT_Y = 1;
-  /* 重なるマーカーを1本にまとめる（手順・症状・実測は構築仕様書 5.5.1B）。h は MM 内側の高さ。
-     ★固定グリッドに丸める方式は使わない。chg の2行はすぐ隣なのに
-       グリッドの境目をまたぐと別々のままになり、橙にならない。 */
-  function packMarks(marks, nLines, h) {
-    const row = h / Math.max(1, nLines);
-    const pts = marks.map(m => ({ y: (m.i / nLines) * h, k: m.k })).sort((a, b) => a.y - b.y);
-    const out = [];
-    for (const p of pts) {
-      const last = out[out.length - 1];
-      if (last && p.y < last.y + last.h) {          // 直前の棒に食い込む
-        if (last.k !== p.k) last.k = "chg";
-        last.h = Math.max(last.h, p.y + MIN_BAR - last.y);
-      } else if (last && last.k === p.k && p.y <= last.y + last.h + row * 1.05) {
-        last.h = p.y + MIN_BAR - last.y;            // 同じ種別の連続行 → 伸ばす
-      } else out.push({ y: p.y, k: p.k, h: MIN_BAR });
-    }
-    return out;
-  }
   let tabSeq = 0, hitEls = [], armedTab = null, armTimer = null;
-  /* タブ切り替えを受けるイベント。PointerEvent が無い環境だけ mousedown に落とす（5.3.2B） */
-  const TAB_ACTIVATE_EV = window.PointerEvent ? "pointerdown" : "mousedown";
 
   const ta = () => $("edit-area");
   const body = () => $("edit-body");
@@ -806,12 +780,12 @@
   /* Lv3：行頭見出しではなく、本文中の ** / *** 囲み（inline:true） */
   const BUILTIN_LV3 = {
     starBlue: {
-      kind: "blue", open: "***", close: "***",
+      lv: 3, kind: "blue", open: "***", close: "***",
       label: "「***文字列***」を青の太字",
       ex: "***注意*** → 青太字（本文の途中でも可）"
     },
     starRed: {
-      kind: "red", open: "**", close: "**",
+      lv: 3, kind: "red", open: "**", close: "**",
       label: "「**文字列**」を赤の太字",
       ex: "**重要** → 赤太字（本文の途中でも可）"
     }
@@ -1051,9 +1025,9 @@
         const fs = Math.round(+s.fontSize);
         $("opt-font").value = Math.max(10, Math.min(28, fs || 15));
       }
-      if (s.widthChars) state.widthPref = clampWidth(+s.widthChars);
+      if (s.widthChars) state.widthPref = Math.max(16, Math.min(120, +s.widthChars));
       if (typeof s.ratio === "number") {
-        let r = clampRatio(s.ratio);
+        let r = Math.min(.85, Math.max(.15, s.ratio));
         // rev40 以前の半幅ズレや round 片寄りで 0.5 近傍に残った値は 1:1 に戻す
         if (Math.abs(r - 0.5) < 0.012) r = 0.5;
         state.ratio = r;
@@ -1071,7 +1045,7 @@
     } catch (_) {}
     if (!state.headCfg) state.headCfg = JSON.parse(JSON.stringify(HEAD_DEFAULT));
     headC = compileHead(state.headCfg);
-    $("tool-eol-" + state.eol).checked = true;   // ラジオへ反映
+    $("tool-eol-" + state.eol).checked = true;   // ラジオへ反映（値は crlf/lf のみに検証済み）
     $("tool-sep-pat").value = state.sepPat || "";
   }
   function saveSettings() {
@@ -1088,10 +1062,6 @@
      指定しただけ無駄になるので、右ペインに収まる文字数を上限にする（12章 #34）。 */
   const WIDTH_PAD = 6;           // .pane-inner / textarea の左右パディング合計（rev51: 左右3+3）
   const WIDTH_MIN = 16, WIDTH_HARD_MAX = 120;
-  const RATIO_MIN = .15, RATIO_MAX = .85;      // 左右ペインの分割比の可動域
-  /* 上下限の判断は必ずこの2つを通す（設定の読み込み・スピナー・スプリッタで値がずれないように）。 */
-  const clampWidth = v => Math.max(WIDTH_MIN, Math.min(WIDTH_HARD_MAX, v));
-  const clampRatio = v => Math.min(RATIO_MAX, Math.max(RATIO_MIN, v));
 
   function maxWidthChars() {
     const fs = +$("opt-font").value || 15;
@@ -1110,12 +1080,26 @@
     return Math.max(WIDTH_MIN, Math.min(state.widthPref, maxWidthChars()));
   }
 
-  /* ---- 文字サイズ・表示幅の変更時のスクロール比例補正（5.1B / 12章 #10）----
-     ★スクローラは #ref-body / #edit-body。ta() で書くと右ペインの補正が黙って
-       何もしなくなる（textarea は overflow:hidden なので scrollTop が常に 0）。 */
+  /* ---- 文字サイズ・表示幅の変更時にスクロールを比例補正する（B-2 / 12章 #10） ----
+     scroll はピクセル値。15→22 で総高さが 1.5 倍近くなるので、そのままでは読んでいた
+     場所を見失う。前後の scrollHeight から比 r=新/旧 を出して掛け直す。
+
+     【スクローラを間違えないこと】左は #ref-body、右は #edit-body。
+     <textarea> は overflow:hidden で autoGrow() が height を直接いじるので、
+     ta().scrollTop は常に 0・ta().scrollHeight も本文の高さではない。ここを ta() で
+     書くと右ペインの補正が黙って何もしなくなる（rev41 の初版がこの誤りだった）。
+
+     【非アクティブなタブ】DOM に載っていないので測れない。アクティブな左ペインで
+     測った比を流用するが、その左が「スクロールできる状態」でないと比は 1 になる
+     （scrollHeight は clientHeight を下回らない＋.pane-inner の下に 60vh の余白がある）。
+     短いタブや空の「初期」タブを開いたまま文字サイズを変える、は普通に起きるので、
+     測れないときは文字サイズの比（行の高さは font-size に比例する）で代用する。
+     幅だけの変更（reflowWidth）では折り返しが各タブで違い代用が効かないので、
+     非アクティブなタブには触らない。実測できるアクティブ側だけを直す。 */
   let lastFs = 0;                       // 直前に適用した文字サイズ（B-2 の代用比に使う）
 
-  /** 右ペイン補正の申し送り（applyPendingRightFix で消費）。★TDZ 事故を避けるため前で宣言。 */
+  /** applySettings() が rAF へ渡す右ペイン補正の申し送り（applyPendingRightFix で消費）。
+   *  applySettings より前で宣言しておく（TDZ 事故を避ける）。 */
   let pendingRightFix = null;
 
   function applySettings() {
@@ -1144,11 +1128,18 @@
     $("ref-inner").style.maxWidth = px + "px";
     ta().style.fontSize = fs + "px";
     ta().style.maxWidth = px + "px";
-    /* ---- 新しい scrollHeight を測って比例補正する（5.1B）----
-       左は同期で測れる。右は autoGrow() が height を確定させるまで測れないので
-       refreshOverlay() の rAF から applyPendingRightFix() で当てる。非アクティブは推定。
-       ★「ここで autoGrow() を同期で呼んでから測る」方式は失敗する（古いレイアウトの
-         最大値でクランプされる）。実測値と副作用は構築仕様書 5.1B。 */
+    /* ---- ここで新しい scrollHeight を測って比例補正する（rev41 B-2 / rev42 で作り直し）----
+       ①左ペインは height 指定が無く自然に伸びるので、ここで同期に測って直せる
+       ②右ペインは autoGrow() が textarea の height を明示指定するまで高さが確定しないので、
+         【refreshOverlay() の rAF で autoGrow() の直後に】当てる（applyPendingRightFix）
+       ③非アクティブなタブは推定するしかないので、文字サイズが変わったときだけ触る
+
+       rev42 の初版は「ここで autoGrow() を同期で呼んでから測る」方式にしたが、うまくいかなかった。
+       実測：期待 22766 に対し scrollTop が 17033.33 になる＝【古いレイアウトの最大値でクランプ
+       された】値（17523 − clientHeight）。同期に測った直後の代入は間に合わないことがある。
+       さらに autoGrow() が height:"auto" を経由するあいだに #edit-body.scrollTop が失われ、
+       比が 1 のとき（＝サイズが変わっていないとき）誰も戻さないという副作用も出た
+       （症状：右ペインを途中まで送って「変更」タブに切り替えると左が先頭に飛ぶ）。 */
     const ok = r => isFinite(r) && r > 0 && Math.abs(r - 1) > 0.001;
     const rl = beforeL > 0 ? rb.scrollHeight / beforeL : 1;
     if (topL > 0 && ok(rl)) rb.scrollTop = Math.round(topL * rl);
@@ -1166,14 +1157,18 @@
     if (act) act.scroll = rb.scrollTop;
     lastFs = fs;
 
-    /* ミニマップは上で scrollTop を書き換えたときの scroll イベントで描き直るので、
-       ここで drawAll() を呼ばない（「変更」タブがアクティブだと drawMinimap が
-       computeDiff() を同期で呼び、文字サイズのスピナーを回すたびに LCS が走る）。 */
+    /* refreshOverlay() は rAF で autoGrow → drawMinimap("right") まで通す。
+       左右のミニマップは上で scrollTop を書き換えたときの scroll イベントで描き直るので、
+       ここで drawAll() を呼ばない（"変更" タブがアクティブだと drawMinimap が
+       computeDiff() を同期で呼ぶため、文字サイズのスピナーを回すたびに LCS が走る）。 */
     refreshOverlay();
-    /* 左ミニマップだけは明示的に描き直す。
-       ★scrollTop に同じ値（先頭なら必ずそう）を代入するとブラウザは scroll を出さないので、
-         scroll 任せだと折り返しが変わっても青枠が古いまま残る。
-       "left" だけ呼ぶ（右は refreshOverlay の rAF が描く）。詳細は構築仕様書 5.1B 罠⑤。 */
+    /* ★rev42: 左ミニマップだけは明示的に描き直す。
+       症状：左ペインが先頭（scrollTop 0）のまま文字サイズ／表示幅を変えると、折り返しが
+       変わったのに青枠の高さが古いまま残る。
+       原因：左MMの描き直しを #ref-body の scroll イベントに任せていた。上の比例補正で
+       scrollTop が同じ値（0 のときは必ずそう）だとブラウザは scroll を出さないので誰も描き直さない。
+       drawAll() ではなく "left" だけ呼ぶ（右は refreshOverlay の rAF が描く）。
+       state.diffStale が false なら drawMinimap("left") は computeDiff() を呼ばないので LCS は走らない。 */
     requestAnimationFrame(() => drawMinimap("left"));
   }
 
@@ -1212,7 +1207,7 @@
     requestAnimationFrame(() => {
       rafPending = false;
       autoGrow();
-      applyPendingRightFix();        // autoGrow で高さが確定した【直後に】測って当てる
+      applyPendingRightFix();        // ★rev42: autoGrow で高さが確定した直後に測って当てる
       syncMirrorStyle(); syncMirrorText();
       buildHeadLayer(); buildHitLayer(); updateCaret(); drawMinimap("right");
       updateEditEmpty();
@@ -1221,9 +1216,9 @@
   /** 右ペインの空状態ヒント（仕様 5.6C）
    *  空＋非フォーカス → 100%／空＋フォーカス → 35%／1文字でも入ったら消す */
   let composing = false;
-  /* ［新規］の直後はプログラムからフォーカスしているだけで、人が書き始めたわけではない。
-     ここで 35% に落とすと「押したらガイドが薄れた＝壊れた？」に見える。
-     実際にクリックするかキーを打つまでは 100% のままにする。 */
+  /* ［新規］の直後は execCommand のためにプログラムからフォーカスしているだけで、
+     人が書き始めたわけではない。ここで 35% に落とすと「押したらガイドが薄れた＝壊れた？」に
+     見える（rev55）。実際にクリックするかキーを打つまでは 100% のままにする。 */
   let dimHold = false;
   function updateEditEmpty() {
     const hint = $("edit-empty"), t = ta();
@@ -1234,7 +1229,7 @@
 
   function autoGrow() {
     const t = ta(), eb = body();
-    /* height:"auto" を経由するあいだ中身が一瞬縮み、ブラウザが #edit-body の
+    /* ★rev42: height:"auto" を経由するあいだ中身が一瞬縮み、ブラウザが #edit-body の
        scrollTop をクランプして「読んでいた位置」を失う。前後で必ず戻す。
        これを入れないと、サイズが変わっていない（＝比例補正が働かない）ときに
        右ペインが黙って先頭へ飛び、「変更」タブの追従もそれに引きずられる。 */
@@ -1318,7 +1313,7 @@
       const d = Math.abs(i - mid);
       if (d < bestD) { bestD = d; best = [i, B.indexOf(s)]; }
     }
-    return best;
+    return best && best[1] >= 0 ? best : null;
   }
 
   function middleDiff(A, B) {
@@ -1350,20 +1345,12 @@
   }
 
   /** 文字単位: 共通の前後を除いた中央を「変更部分」として返す */
-  /* 共通の接頭（p 文字）と接尾（s 文字）の長さだけを返す。
-     ★similarity() はこの 2 つの数しか要らない。slice を作ると 21,000 行の差分で
-       【6 本 × 変更行数】の文字列を生成して即捨てることになる（5.13.2）。 */
-  function commonSpan(d, a) {
+  function charSpans(d, a) {
     let p = 0;
     const lim = Math.min(d.length, a.length);
     while (p < lim && d[p] === a[p]) p++;
     let s = 0;
     while (s < d.length - p && s < a.length - p && d[d.length - 1 - s] === a[a.length - 1 - s]) s++;
-    return { p: p, s: s };
-  }
-  /** 文字単位の強調に使う 3 分割（前方一致 / 違う部分 / 後方一致）。chg 行のときだけ呼ぶ。 */
-  function charSpans(d, a) {
-    const c = commonSpan(d, a), p = c.p, s = c.s;
     return {
       d: [d.slice(0, p), d.slice(p, d.length - s), d.slice(d.length - s)],
       a: [a.slice(0, p), a.slice(p, a.length - s), a.slice(a.length - s)]
@@ -1371,8 +1358,9 @@
   }
   function similarity(x, y) {
     if (!x.length && !y.length) return 1;
-    const c = commonSpan(x, y);          // slice を作らない（旧 charSpans 版は 6 本捨てていた）
-    return (2 * (c.p + c.s)) / (x.length + y.length);
+    const c = charSpans(x, y);
+    const same = c.d[0].length + c.d[2].length;
+    return (2 * same) / (x.length + y.length);
   }
 
   /** 差分 → 表示用の行配列 */
@@ -1445,8 +1433,8 @@
 
   /**
    * 差分からミニマップ用のマーカーを作る。
-   *  L … 差分ビュー（「変更」タブ）の表示行に対応（削除=赤 / 追加=緑）。
-   *  右ミニマップには変更マーカーを出さない。map/rev は左右の行対応用。
+   *  marksL … 差分ビュー（「変更」タブ）の表示行に対応（削除=赤 / 追加=緑）
+   *  右ミニマップには変更マーカーを出さない（rev30）。map/rev は左右の行対応用。
    */
   function buildDiffMarks(rows) {
     const L = [], map = [], rev = [];
@@ -1508,15 +1496,14 @@
   }
 
   function setOrigin(text, name) {
-    state.origin = { text: text, name: name || state.fileName };
+    state.origin = { text: text, name: name || state.fileName, at: Date.now() };
     const o = state.tabs.find(x => x.kind === SYS.ORIGIN);
     if (o) { o.text = state.origin.text; o.heads = null; o.scroll = 0; }
     state.diffStale = true;
     computeDiff();                       // 差分マーカーを即座に更新する
     // 「初期」「変更」の中身が差し替わったので、検索も必ずやり直す（5.4D）
     if (isSysActive(SYS.DIFF) || isSysActive(SYS.ORIGIN)) runRefSearch();
-    /* ★右ミニマップは描き直さない。右 MM が読むのは ta().value / state.edHits / state.caret /
-       edHeads() で、setOrigin はそのどれも変えない（右 MM に変更マーカーは出ない）。 */
+    drawMinimap("right");
   }
   const isSysActive = kind => { const t = activeTabObj(); return !!t && t.kind === kind; };
 
@@ -1531,12 +1518,15 @@
      「揃ったから左は動かないはず」に頼ると必ずズレて左が飛ぶ。 */
   let followNoScroll = false;
 
-  /** 追従の発火条件は「右にフォーカスがあり、かつカーソルが実際に動いたとき」だけ（5.13.4B）。
-   *  ★左ペインをクリックすると blur するが、blur も updateCaret を通るので、
-   *    フォーカスの判定が無いと読んでいた位置を奪われる。
-   *  force = true はタブ切替や「右をここへ」など明示的な操作のとき。 */
+  /**
+   * 追従の発火条件は「右ペインにフォーカスがあり、かつカーソルが実際に動いたとき」だけ。
+   *  - 左ペインをクリックすると textarea が blur するが、そこで追従すると
+   *    読んでいた位置が奪われる（blur も updateCaret を通るため要注意）
+   *  - 右ペインのスクロールだけでは追従しない（中途半端に動くのを防ぐ）
+   * force = true はタブ切替や「右をここへ」など、明示的な操作のとき。
+   */
   function syncDiffToCaret(force) {
-    if (!isSysActive(SYS.DIFF)) return;
+    if (!state.diffFollow || !isSysActive(SYS.DIFF)) return;
     if (!force) {
       if (document.activeElement !== ta()) return;
       if (state.caret === lastSyncCaret) return;
@@ -1603,10 +1593,10 @@
       if (diffLineEls[mid].offsetTop <= top) lo = mid; else hi = mid - 1;
     }
     const el = diffLineEls[lo];
-    const v = ta().value;
-    const ni = Math.min(t.revMap[lo] != null ? t.revMap[lo] : 0, v.split("\n").length - 1);
+    const ni = Math.min(t.revMap[lo] != null ? t.revMap[lo] : 0, ta().value.split("\n").length - 1);
 
     // その行の先頭オフセット
+    const v = ta().value;
     let off = 0;
     for (let k = 0; k < ni; k++) {
       const nx = v.indexOf("\n", off);
@@ -1636,8 +1626,7 @@
   let diffTimer = null;
   function scheduleDiff() {
     state.diffStale = true;
-    // 非アクティブでも再計算する。タブ tooltip の ＋N行 −N行（diffTitle）と
-    // 左ミニマップ用の t.marks が、表示していなくても最新である必要があるため。
+    // 右ミニマップの差分マーカーを保つため、非アクティブでも再計算する。
     // ただし入力が止まってから（「変更」タブ表示中は短め）
     clearTimeout(diffTimer);
     const wait = isSysActive(SYS.DIFF) ? 600 : 1200;
@@ -1648,8 +1637,7 @@
         // 再描画で位置がずれるので、右を触っている最中だけ位置を取り直す
         if (document.activeElement === ta()) syncDiffToCaret(true);
       }
-      /* ★ここでも右ミニマップは描き直さない。入力のたびに onEdit()→refreshOverlay() の rAF が
-         既に描いており、この時点で右 MM の入力は何も変わっていない。 */
+      drawMinimap("right");
     }, wait);
   }
 
@@ -1702,7 +1690,7 @@
     if (state.closed.length) {
       const last = state.closed[state.closed.length - 1];
       chip.title = "「" + last.name + "」を復元（残り" + state.closed.length + "件）";
-    } else chip.title = "";   // ★消し忘れると、非表示でも古い文言が読み上げ等に残る
+    }
   }
   function setActiveTab(id) {
     if (state.activeTab === id) return;
@@ -1714,8 +1702,8 @@
   }
   function restoreScroll() {
     const t = activeTabObj();
-    // 「変更」タブは、保存位置ではなくカーソル行に合わせる（追従は常時ON）
-    if (t && t.kind === SYS.DIFF) {
+    // 「変更」タブで追従ONのときは、保存位置ではなくカーソル行に合わせる
+    if (t && t.kind === SYS.DIFF && state.diffFollow) {
       requestAnimationFrame(() => { syncDiffToCaret(true); drawMinimap("left"); });
       return;
     }
@@ -1731,7 +1719,7 @@
   function disarm() {
     if (armedTab) {
       const el = $("tabbar").querySelector('.tab[data-id="' + armedTab + '"] .x');
-      if (el) el.classList.remove("armed");
+      if (el) { el.classList.remove("armed"); el.textContent = "×"; }
     }
     armedTab = null;
     clearTimeout(armTimer);
@@ -1740,6 +1728,7 @@
     disarm();
     armedTab = id;
     xEl.classList.add("armed");
+    xEl.textContent = "×";
     toast("もう一度「×」をクリックすると閉じます");
     armTimer = setTimeout(disarm, 2500);
   }
@@ -1774,9 +1763,7 @@
         ? '<span class="pin">◉</span><span class="name"></span>'
         : '<span class="name"></span><span class="x" title="閉じる（2回クリック）">×</span>';
       el.querySelector(".name").textContent = t.name;
-      /* ★pointerdown で受ける。mousedown は iOS が 1 回目のタップで送ってこないことがある
-         （5.3.2B）。preventDefault は【しない】——Safari で click を食う。 */
-      el.addEventListener(TAB_ACTIVATE_EV, e => { if (!e.target.classList.contains("x")) { disarm(); setActiveTab(t.id); } });
+      el.addEventListener("mousedown", e => { if (!e.target.classList.contains("x")) { disarm(); setActiveTab(t.id); } });
       el.addEventListener("mouseleave", () => { if (armedTab === t.id) disarm(); });
       const x = el.querySelector(".x");
       if (x) x.addEventListener("click", e => {
@@ -1798,7 +1785,7 @@
   const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
   /** 左ペインの空状態判定（仕様 5.2B）
-   *  常設タブ「初期」「変更」があるため「資料タブ0件か」では判定できない。
+   *  常設タブ「初期」「差分」があるため「資料タブ0件か」では判定できない。
    *  アクティブタブの「表示内容が空か」で判定する。 */
   function refIsEmpty() {
     const t = activeTabObj();
@@ -1808,11 +1795,19 @@
     return t.text === "";                                    // 空の資料タブ
   }
 
-  /** 左ミニマップを【レイアウト確定後に】描き直す。
-   *  innerHTML を差し替えた直後に同期で測ると、まだ新しい高さでレイアウトされておらず
-   *  scrollTop のクランプも済んでいないので、青枠が実際とまるで違う位置に出る。
-   *  ★クランプで値が変わらなければ scroll イベントも出ないため、誰も描き直さない。
-   *  → 1 フレーム待ってから測る。症状・実測値・確認手順は構築仕様書 5.5。 */
+  /** 左ミニマップを【レイアウト確定後に】描き直す（rev59）。
+   *  症状: 「初期」を張り直す・タブを切り替えるなど【左ペインの中身が短くなる】場面で、
+   *        青枠が実際の表示位置とまるで違うところ（例: canvas 884px 中の 805px）に描かれる。
+   *        スクロールしても直らないことがある。
+   *  原因: renderRef() は innerHTML を差し替えた【直後に同期で】drawMinimap("left") を呼んでいた。
+   *        この時点ではブラウザがまだ新しい高さでレイアウトしておらず、
+   *        はみ出した scrollTop のクランプも済んでいない。
+   *        つまり【古い高さと古いスクロール位置】で枠を描いていた。
+   *        そのあと scrollTop がクランプされても、値が変わらなければ scroll イベントは出ないので
+   *        誰も描き直さない（AGENTS.md 罠⑧・罠 3b と同じ型）。
+   *  対策: 1 フレーム待ってから測る。applySettings() が rev41 で同じ対策を入れているのと同じ理由。
+   *  確認: 400 行の資料を下までスクロール →［←現状を初期に設定］で 80 行に差し替え →
+   *        左ペインの青枠が先頭に来ること（下に張り付かないこと）。 */
   let leftMMPending = false;
   function drawLeftMM() {
     if (leftMMPending) return;
@@ -1824,10 +1819,11 @@
     const t = activeTabObj(), inner = $("ref-inner");
     const empty = refIsEmpty();
     $("ref-body").classList.toggle("origin-view", !!t && t.kind === SYS.ORIGIN);
-    inner.classList.toggle("diff-view", !!t && t.kind === SYS.DIFF);
+    $("ref-inner").classList.toggle("diff-view", !!t && t.kind === SYS.DIFF);
     updateRefSearchEnabled();
     $("ref-empty").style.display = empty ? "flex" : "none";
     if (empty) { inner.innerHTML = ""; diffLineEls = []; curLineEl = null; drawLeftMM(); return; }
+    if (!t) { inner.innerHTML = ""; drawLeftMM(); return; }
 
     /* 保険：ヒットが「古いテキスト」に対するものだったら作り直す（5.4D）。
        文字オフセットは元テキストと1対1なので、テキストが差し替わった状態で
@@ -1945,7 +1941,7 @@
     return !!activeTabObj() && !refIsEmpty();      // 「変更」タブでも検索できる（5.13.6B）
   }
   function updateRefSearchEnabled() {
-    const q = $("ref-q"), ok = refSearchable();
+    const q = $("ref-q"), t = activeTabObj(), ok = refSearchable();
     q.disabled = !ok;
     // 使えない理由を欄そのものに書く。黙って無効だと「壊れている」と受け取られる
     q.placeholder = ok ? "左ペインを検索" : "資料を開くと検索できます";
@@ -1977,9 +1973,9 @@
     updateCount("ref"); renderRef();
     const rb = $("ref-body");
     const t = activeTabObj();
-    const target = t && t.kind === SYS.DIFF
-      ? $("ref-inner").querySelector(".dl.hit-cur")
-      : $("ref-inner").querySelector("mark.cur");
+    let target = null;
+    if (t && t.kind === SYS.DIFF) target = $("ref-inner").querySelector(".dl.hit-cur");
+    else target = $("ref-inner").querySelector("mark.cur");
     if (target) { rb.scrollTop = target.offsetTop - rb.clientHeight / 2; rememberScroll(); drawMinimap("left"); }
   }
   function updateCount(which) {
@@ -1993,9 +1989,6 @@
   /* =======================================================
      右ペイン：検索
      ======================================================= */
-  /* オーバーレイに描くヒットの上限。★1001 件目以降は hitEls に入らないので、
-     edIdx が 1000 以上だと現在ヒットが着色されない（選択とスクロールは動く）。
-     これは仕様。上げるなら「現在ヒットだけは常に描く」を先に用意すること（5.4）。 */
   const HIT_RENDER_CAP = 1000;
   function buildHitLayer() {
     /* 保険：ヒットが古いテキストに対するものなら作り直す（5.4D）。
@@ -2040,6 +2033,7 @@
     state.edIdx = (state.edIdx + d + state.edHits.length) % state.edHits.length;
     const h = state.edHits[state.edIdx];
     ta().setSelectionRange(h.start, h.end);
+    state.caret = h.start;
     scrollToOffset(h.start);
     markCurrentHit(); updateCount("ed"); updateCaret(); drawMinimap("right");
   }
@@ -2054,7 +2048,7 @@
      ======================================================= */
   function insertText(text) {
     let ok = false;
-    try { ok = document.execCommand("insertText", false, text); } catch (_) {}
+    try { ok = document.execCommand("insertText", false, text); } catch (_) { ok = false; }
     if (!ok) { const t = ta(); t.setRangeText(text, t.selectionStart, t.selectionEnd, "end"); }
   }
   function replaceOne() {
@@ -2081,17 +2075,8 @@
     let out = "", pos = 0;
     for (const h of hits) { out += src.slice(pos, h.start) + rep; pos = h.end; }
     out += src.slice(pos);
-    const t = ta(), keep = body().scrollTop, caret = t.selectionStart;
-    /* ★全文の差し替えなので value 代入＋自前 Undo（5.15.3 と同じ経路）。
-       execCommand("insertText") に全文を渡すと 12万字で約10秒フリーズする（未処置 L-1 で解消）。
-       Ctrl+Z 1 回で全件戻るのは undoStep() が控えを 1 つ持つことで保つ。
-       keepView を付けているので、取り消したときにスクロールとキャレットが飛ばない。 */
-    markUndo({ text: src, name: state.fileName, handle: state.fileHandle,
-               origin: state.origin, dirty: state.dirty, prevTabId: null,
-               label: "すべて置換", keepView: true, scroll: keep, caret: caret });
-    setWholeDoc(out);
-    const at = Math.min(caret, out.length);
-    t.setSelectionRange(at, at);
+    const keep = body().scrollTop, t = ta();
+    t.focus(); t.select(); insertText(out);
     body().scrollTop = keep;
     onEdit(true); runEdSearch(); $("ed-r").focus();
     toast(hits.length + "件を置換しました（Ctrl+Z で元に戻せます）");
@@ -2099,17 +2084,10 @@
 
   /* =======================================================
      ツール：原稿全体のテキスト整形（仕様書 5.14）
-     文章を書き換える機能は execCommand("insertText") 経由＝ Ctrl+Z 1回で戻る（制約 #4）。
-     適用範囲は全文固定。改行コードだけは保存時にのみ適用する（textarea は CRLF を保持できない）。
+     4機能とも execCommand("insertText") 経由で書き換える＝ Ctrl+Z 1回で戻る（制約 #4）。
+     適用範囲は全文固定（選択範囲は見ない）。改行コードの変換だけは保存時にのみ適用し、
+     textarea の中身（value）は変えない（textarea は仕様上 CRLF を保持できないため）。
      ======================================================= */
-  /* 整形3種の共通定型。★末尾の改行は「行」ではないので split の最後の空要素を外し、
-     組み立て直したあとに必ず戻す（忘れると末尾が増減する）。 */
-  const splitBody = src => {
-    const endsNL = /\n$/.test(src);
-    const lines = src.split("\n");
-    return { endsNL: endsNL, ls: endsNL ? lines.slice(0, -1) : lines };
-  };
-  const joinBody = (lines, endsNL) => lines.join("\n") + (endsNL ? "\n" : "");
   const isBlankLine = s => /^[ 　\t]*$/.test(s);   // 空・空白/タブだけの行（両方を「空行」とみなす）
   const isSerif = s => /^[ 　\t]*[「『]/.test(s);   // セリフ判定は「」『』の行頭のみ（（）〈〉は対象外＝作者確定）
   const withEol = s => state.eol === "crlf" ? s.replace(/\n/g, "\r\n") : s;
@@ -2124,27 +2102,33 @@
     const t = line.trim();
     for (let i = 0; i < pats.length; i++) {
       const p = pats[i];
-      if (t === p.trim()) return true;
+      if (line === p || t === p.trim()) return true;
     }
     return false;
   }
 
   /** 空行を削除。line === "" だけを消す。空白/タブだけの行（意図的な「間」）は残す。末尾改行の有無は保つ */
   function removeBlankLines(src) {
-    const bd = splitBody(src), ls = bd.ls;
+    const endsNL = /\n$/.test(src);
+    const lines = src.split("\n");
+    const ls = endsNL ? lines.slice(0, -1) : lines;
     const kept = ls.filter(l => l !== "");
-    return { text: joinBody(kept, bd.endsNL), count: ls.length - kept.length };
+    let text = kept.join("\n");
+    if (endsNL) text += "\n";
+    return { text: text, count: ls.length - kept.length };
   }
 
   /**
-   * 空行を入れる（4種）。隣接2行の「境界」ごとに入れるかを先に決めてから組み立てる
+   * 空行を入れる（3種）。隣接2行の「境界」ごとに入れるかを先に決めてから組み立てる
    * （行ごとに前後別々に判定すると、連続する対象行の間で二重に入ってしまうため）。
    * どちらかの行がすでに空行（空白/タブだけも含む）なら増やさない＝連続空行を作らない。
    * kind: "head"／"serif-narr"／"serif-all"／"sep"（区切り行の前後。state.sepPat）
-   * 既知の限界は novedit_未処置課題.md H-1（複数行にまたがるセリフ）。
+   * 既知の限界：複数行にまたがるセリフの2行目以降は行頭が「で始まらないため判定できない（未処置課題）。
    */
   function insertBlankLines(kind, src) {
-    const bd = splitBody(src), ls = bd.ls;   // ★bd の名はループ内の b（行文字列）と衝突させないため
+    const endsNL = /\n$/.test(src);
+    const lines = src.split("\n");
+    const ls = endsNL ? lines.slice(0, -1) : lines;
     const n = ls.length;
     if (n < 2) return { text: src, count: 0 };
     const out = [ls[0]];
@@ -2161,25 +2145,32 @@
       if (need) { out.push(""); count++; }
       out.push(b);
     }
-    return { text: joinBody(out, bd.endsNL), count: count };
+    let text = out.join("\n");
+    if (endsNL) text += "\n";
+    return { text: text, count: count };
   }
 
   /** 段落頭を全角空白（　）で字下げ。対象外：空行／全角・半角空白・タブで字下げ済み（触らない＝確定事項）／見出し行／セリフ行 */
   function indentParagraphs(src) {
-    const bd = splitBody(src);
+    const endsNL = /\n$/.test(src);
+    const lines = src.split("\n");
+    const ls = endsNL ? lines.slice(0, -1) : lines;
     let count = 0;
-    const out = bd.ls.map(line => {
+    const out = ls.map(line => {
       if (isBlankLine(line) || /^[ 　\t]/.test(line) || headLevel(line) > 0 || isSerif(line)) return line;   // 全角/半角空白・タブで字下げ済みの行は触らない（確定事項）
       count++;
       return "　" + line;
     });
-    return { text: joinBody(out, bd.endsNL), count: count };
+    let text = out.join("\n");
+    if (endsNL) text += "\n";
+    return { text: text, count: count };
   }
 
-  /* 整形の共通経路（5.14.1）。execCommand を通して Ctrl+Z 1 手にする。
-     ★t.select() の直後はキャレットが文末へ行くので必ず戻す。scrollTop も復元する。
-     ★state.edHits は元テキストにしか対応しないので runEdSearch() で作り直す（5.4D）。
-     ★全文 insertText は同期ブロックする。「処理中…」を描画してから二重 rAF で本体処理へ。 */
+  /* 整形の共通経路。replaceAll()（上）と同じ手順：execCommand を通して Ctrl+Z 対象にする。
+     罠：t.select() の直後はキャレットが文末へ行くので必ず戻す。scrollTop も復元する（毎回画面が飛ぶ事故を防ぐ）。
+     罠：state.edHits は元テキストにしか対応しないので runEdSearch() で作り直す（5.4D と同じ理由）。
+     罠：全文 insertText は長い原稿で同期ブロックする。メニューを閉じて「処理中…」を描画してから
+         二重 rAF で本体処理に入る（rev45）。同一経路の再入は toolBusy で拒否。 */
   let toolBusy = false;
   function applyTransform(label, fn) {
     if (toolBusy) { toast("前の処理が終わるまでお待ちください"); return; }
@@ -2220,34 +2211,30 @@
     });
   }
 
-  /* ---- ドロップダウンの開閉配線（ツール／保存で共通。5.14.6）----
-     ★#toolbar 内に absolute で置けないので position:fixed ＋ 開くたびに座標を置き直す。
-     ★mousedown の preventDefault は使わない（Safari が click を食う）。
-     align "left"|"right" ／ beforeOpen が false を返したら開かない ／ 戻り値は closeMenu。 */
-  function setupDropMenu(btnId, menuId, align, beforeOpen) {
-    const btn = $(btnId), menu = $(menuId);
-    const place = () => {
+  /* ---- ツールメニューの開閉配線 ----
+     罠：#toolbar はボタン直下にドロップダウンを描けないことがあるため position:fixed で開き、
+     開くたびに JS でボタン直下の座標へ置き直す。
+     罠：ボタン操作で textarea からフォーカスが外れると execCommand が効かない。
+       旧実装は mousedown で preventDefault してフォーカスを残していたが、
+       Safari（とくにタッチ）ではそれが click 自体を食って「1回目無反応」になる（rev72）。
+       → preventDefault は使わず、実行直前に t.focus() する（applyTransform 内）。 */
+  let closeToolsMenu = () => {};
+  (function () {
+    const btn = $("btn-tools"), menu = $("tools-menu");
+    function place() {
       const r = btn.getBoundingClientRect();
+      menu.style.left = Math.round(r.left) + "px";
       menu.style.top = Math.round(r.bottom + 4) + "px";
-      if (align === "right") {
-        /* ★右端のボタン用。右揃えにし、画面に入らなければ左へ寄せる。
-           offsetWidth は .show が付いてから測る（display:none だと 0 になる）。 */
-        menu.style.left = "0px";
-        const w = menu.offsetWidth || 250;
-        menu.style.left = Math.max(4, Math.min(Math.round(r.right - w), window.innerWidth - w - 4)) + "px";
-      } else {
-        menu.style.left = Math.round(r.left) + "px";
-      }
-    };
-    const closeMenu = () => {
+    }
+    function openMenu() {
+      place(); menu.classList.add("show");
+      btn.setAttribute("aria-expanded", "true"); menu.setAttribute("aria-hidden", "false");
+    }
+    function closeMenu() {
       menu.classList.remove("show");
       btn.setAttribute("aria-expanded", "false"); menu.setAttribute("aria-hidden", "true");
-    };
-    const openMenu = () => {
-      if (beforeOpen && beforeOpen() === false) return;
-      menu.classList.add("show"); place();
-      btn.setAttribute("aria-expanded", "true"); menu.setAttribute("aria-hidden", "false");
-    };
+    }
+    closeToolsMenu = closeMenu;
     btn.addEventListener("click", e => {
       e.stopPropagation();
       menu.classList.contains("show") ? closeMenu() : openMenu();
@@ -2257,12 +2244,6 @@
       closeMenu();
     });
     document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });
-    return closeMenu;
-  }
-
-  let closeToolsMenu = () => {};
-  (function () {
-    closeToolsMenu = setupDropMenu("btn-tools", "tools-menu", "left");
 
     $("tool-blank-del").addEventListener("click", () => applyTransform("空行を削除", removeBlankLines));
     $("tool-blank-head").addEventListener("click", () => applyTransform("空行を入れる（見出しの前後）", s => insertBlankLines("head", s)));
@@ -2287,19 +2268,49 @@
   })();
 
   /* ---- 保存メニューの開閉配線（5.9）----
-     配線は setupDropMenu に寄せてある。ここは保存メニュー固有の 2 点だけ。
-     ★Safari（Apple WebKit）は上書き UI を出さず、開かずに「保存先を選ぶ」へ直行する。
-     ★［上書き保存］は「どこへ書くか」が見えていないと押せないので、開くたびに保存先を書く。 */
+     ツールメニューと同じ position:fixed 方式。開くたびにボタン直下へ置き直す。
+     ［上書き保存］は「どこへ書くか」が見えていないと押せないので、開くたびに保存先を書く。
+     ★rev65: Safari（Apple WebKit）は上書き UI を出さず、常に保存先を選ぶ経路だけにする。
+     ★rev72: mousedown preventDefault は Safari で click を食うので使わない。 */
   (function () {
-    const closeMenu = setupDropMenu("btn-save", "save-menu", "right", () => {
-      if (!allowOverwriteUI()) { saveAsTxt(); return false; }   // 開かずに直行
-      $("save-over").hidden = false;
-      $("save-over-hint").hidden = false;
-      const h = state.fileHandle;
-      $("save-over-hint").textContent = h
-        ? "「" + h.name + "」に、ダイアログを出さずに書き込みます"
-        : "保存先がまだ決まっていません。1回目は保存ダイアログが出ます";
+    const btn = $("btn-save"), menu = $("save-menu");
+    function place() {
+      const r = btn.getBoundingClientRect();
+      menu.style.top = Math.round(r.bottom + 4) + "px";
+      /* 保存ボタンはツールバーのほぼ右端にある。左揃えだと画面外へ出るので右揃えにし、
+         それでも入らなければ左へ寄せる。 */
+      menu.style.left = "0px";
+      const w = menu.offsetWidth || 250;
+      menu.style.left = Math.max(4, Math.min(Math.round(r.right - w), window.innerWidth - w - 4)) + "px";
+    }
+    function openMenu() {
+      const over = allowOverwriteUI();
+      $("save-over").hidden = !over;
+      $("save-over-hint").hidden = !over;
+      if (over) {
+        const h = state.fileHandle;
+        $("save-over-hint").textContent = h
+          ? "「" + h.name + "」に、ダイアログを出さずに書き込みます"
+          : "保存先がまだ決まっていません。1回目は保存ダイアログが出ます";
+      }
+      menu.classList.add("show"); place();
+      btn.setAttribute("aria-expanded", "true"); menu.setAttribute("aria-hidden", "false");
+    }
+    function closeMenu() {
+      menu.classList.remove("show");
+      btn.setAttribute("aria-expanded", "false"); menu.setAttribute("aria-hidden", "true");
+    }
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      /* Safari: メニューを挟まずすぐ「保存先を選ぶ」（上書きが無いので一段省略） */
+      if (!allowOverwriteUI()) { saveAsTxt(); return; }
+      menu.classList.contains("show") ? closeMenu() : openMenu();
     });
+    document.addEventListener("click", e => {
+      if (!menu.classList.contains("show") || e.target === btn || menu.contains(e.target)) return;
+      closeMenu();
+    });
+    document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });
     $("save-over").addEventListener("click", () => { closeMenu(); saveOverwrite(); });
     $("save-as").addEventListener("click", () => { closeMenu(); saveAsTxt(); });
   })();
@@ -2307,7 +2318,11 @@
   /* =======================================================
      ドラッグ＆ドロップ
      ======================================================= */
-  /** DOM ノード上の位置（node, nodeOffset）を root 全体での文字オフセットに直す。 */
+  /**
+   * 左ペインの選択範囲が「行として完結しているか」を判定し、
+   * 行単位ならば前後の余白まで含めて切り出し、末尾に改行を付けて返す。
+   * これにより連続してドロップしても毎回 Enter を押す必要がなくなる。
+   */
   function charOffsetInRoot(root, node, nodeOffset) {
     let off = 0, done = false;
     (function walk(n) {
@@ -2323,11 +2338,6 @@
     return off;
   }
 
-  /**
-   * 左ペインの選択範囲が「行として完結しているか」を判定し、
-   * 行単位ならば前後の余白まで含めて切り出し、末尾に改行を付けて返す。
-   * これにより連続してドロップしても毎回 Enter を押す必要がなくなる。
-   */
   function buildDragPayload() {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
@@ -2338,7 +2348,7 @@
     const t = activeTabObj();
     const root = $("ref-inner").querySelector(".rtext") || $("ref-inner");
     const r = sel.getRangeAt(0);
-    if (!t || !root.contains(r.startContainer) || !root.contains(r.endContainer)) {
+    if (!state.lineWise || !t || !root.contains(r.startContainer) || !root.contains(r.endContainer)) {
       return { text: raw, lineWise: false };
     }
 
@@ -2411,7 +2421,7 @@
     $("pane-edit").classList.remove("drop-overwrite");
     body().classList.remove("drop-overwrite");
     // dragover 中は getData() が使えないため、独自 MIME の有無で行単位かを判別する
-    $("drop-caret").classList.toggle("linewise", types.includes(LINEWISE_MIME));
+    $("drop-caret").classList.toggle("linewise", state.lineWise && types.includes(LINEWISE_MIME));
     syncMirrorStyle(); syncMirrorText();
     showDropCaret(offsetFromPoint(e.clientX, e.clientY));
   }));
@@ -2445,7 +2455,7 @@
     // 行単位（末尾が改行）の場合、行の途中に落とされたら先頭にも改行を足して
     // 独立した行として挿入する。挿入後キャレットは次行の先頭に残る
     let ins = text;
-    const lineWise = ins.endsWith("\n");
+    const lineWise = state.lineWise && ins.endsWith("\n");
     if (lineWise && off > 0 && t.value[off - 1] !== "\n") ins = "\n" + ins;
 
     t.focus(); t.setSelectionRange(off, off);
@@ -2496,7 +2506,7 @@
   /* 自動保存の状態はトーストではなく、ツールバーの空き領域に出したままにする（5.8）。
      本文の上に何も重ならないので、書いている最中でも視界を邪魔しない。
      消さないので「いつ保存されたか」がいつでも確認できる。
-     表示のたびに fitToolbar を呼ぶ（iPad で ［↶］ が隠れないようロゴから落とす）。 */
+     rev69: 文言を短くし、表示のたびに fitToolbar（iPad で Undo が隠れないようロゴを落とす）。 */
   const pad2 = n => (n < 10 ? "0" : "") + n;
   function setAutosaveNote(ok) {
     const el = $("autosave-note");
@@ -2517,7 +2527,7 @@
   /** 下書きを LocalStorage に保存する。成功したら true を返す（5.8） */
   function autoSave(quiet) {
     const payload = { name: state.fileName, text: ta().value, at: Date.now(),
-                      origin: { text: state.origin.text, name: state.origin.name } };
+                      origin: { text: state.origin.text, name: state.origin.name, at: state.origin.at } };
     try {
       localStorage.setItem(LS_DRAFT, JSON.stringify(payload));
       if (!quiet) setAutosaveNote(true);
@@ -2545,7 +2555,7 @@
     readFile(file, (name, text) => {
       const t = ta();
       /* Ctrl+Z で読み込みを取り消せるように、読む前の状態を控える（5.15.3）。
-         本文の差し替えは value 代入。execCommand は 12万字で 10 秒かかる（構築仕様書 5.15.3）。 */
+         ★rev57: 本文の差し替えは value 代入。execCommand は 12万字で 10 秒かかる（上のコメント）。 */
       markUndo({ text: t.value, name: state.fileName, handle: state.fileHandle,
                  origin: state.origin, dirty: state.dirty, prevTabId: null,
                  label: "ファイルの読み込み" });
@@ -2593,12 +2603,22 @@
   /* ---- 「新規」（仕様 5.15）----
      右ペインを空にして、まっさらな状態から書き始める。
      ファイルの読み込みは空状態ヒントのクリック／ドロップから行える。
-     左ペインの参照タブには触らない（資料は原稿と独立して持つもの）。 */
-  /* ===== 本文まるごとの差し替えと、その取り消し（5.15.3）=====
-     差し替えは value 代入（execCommand は 12万字で約10秒）。取り消しは自前で持つ（undoMarks）。
-     ★value 代入をしてもブラウザの Undo 履歴は【消えるとは限らない】。古い履歴に触らせないため、
-       「差し替え直後の本文（markedText）に戻ってきたら、そこから先の Ctrl+Z は必ず自前で受ける」
-       という関所を置く。実測値と rev55〜57 の経緯は構築仕様書 5.15.3。 */
+     左ペインの参照タブには触らない。資料は原稿と独立して持つものなので、
+     新規のたびに閉じられると「もう一度開き直す」手間だけが増える。 */
+  /* ===== 本文まるごとの差し替えと、その取り消し（5.15.3 / rev57） =====
+
+     rev56 は［新規］と［読み込み］を execCommand で通し、ブラウザの Undo 履歴に載せていた。
+     【12万字のファイルで約10秒フリーズし、ブラウザが警告を出した】（作者実測 2026-07-29）。
+     execCommand は 1 手ぶんの Undo レコードを作るため、長い原稿では現実的でない。
+
+     → 本文の差し替えは <b>value 代入</b>（12万字でも一瞬）に戻し、
+        取り消しは<b>ブラウザの履歴に頼らず自前で持つ</b>。Ctrl+Z と ↶ を横取りして、
+        控え（undoMarks）から名前・保存先・「初期」ごと戻す。
+
+     ★ここが肝：value 代入をしても、ブラウザの Undo 履歴は【消えるとは限らない】。
+       rev55 の不具合（読み込んだ本文の後ろに、消したはずの原稿が湧く）はこれが原因だった。
+       古い履歴に触らせないため、「差し替え直後の本文（markedText）に戻ってきたら、
+       そこから先の Ctrl+Z は必ず自前で受ける」という関所を置く。 */
   let undoMarks = [];                 // [{text, name, handle, origin, dirty, prevTabId, label}]
   const UNDO_MARK_MAX = 10;
   let markedText = null;              // 直近の差し替えの【結果】本文。関所の位置
@@ -2645,15 +2665,7 @@
     }
     setWholeDoc(p.text);
     state.fileName = p.name; state.fileHandle = p.handle; state.dirty = p.dirty;
-    /* 既定は先頭へ戻す（［新規］／読み込みは別の原稿になるので、途中位置を保つ意味がない）。
-       ★keepView は「同じ原稿の中身だけが変わった」控え（すべて置換）用。
-         ここで先頭へ飛ばすと、置換を取り消した瞬間に読んでいた場所を失う。 */
-    if (p.keepView) {
-      const at = Math.min(p.caret || 0, p.text.length);
-      t.setSelectionRange(at, at); body().scrollTop = p.scroll || 0; state.caret = at;
-    } else {
-      t.setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;
-    }
+    t.setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;
     setOrigin(p.origin.text, p.origin.name);
     renderRef(); restoreScroll();
     updateHeader(); runEdSearch(); refreshOverlay();
@@ -2661,16 +2673,18 @@
     return true;
   }
 
-  /** ［新規］で捨てられる【右ペインの原稿】を、ふつうの資料タブとして左に残す（5.15.2）。
-   *  ★システムタブにはしない（閉じられないタブが増えると資料を並べる場所が痩せる）。
-   *  ★［新規］を続けて押しても増やさない（1枚を上書きする）。 */
+  /** ［新規］で捨てられる【右ペインの原稿】を、ふつうの資料タブとして左ペインに残す（5.15.2 / rev56）。
+   *  書き手が読み返したいのは「初期」ではなく【いま書いていたもの】なので、本文そのものを入れる。
+   *  システムタブにはしない。閉じられない・並びが固定されるタブが増えると、
+   *  資料を並べる場所が痩せていくため。閉じれば ↩ で戻せる既存の仕組みにも乗る。
+   *  ［新規］を続けて押しても増やさない（1枚を上書きする）。溜まっても読まないので。 */
   const PREV_EDIT_TAB = "前の編集";
   function stashPrevEdit(text, name) {
     if (!text) return null;                       // 空の原稿は残す意味がない
     /* ↩ で復元したタブは prevEdit の印を失っているので、名前でも拾う。
        拾えないと［新規］のたびに同名タブが増える。 */
     let t = state.tabs.find(x => !x.kind && (x.prevEdit || x.name === PREV_EDIT_TAB));
-    if (t) { t.text = text; t.heads = null; t.scroll = 0; }   // t.html は kind 付きタブしか読まない
+    if (t) { t.text = text; t.heads = null; t.html = null; t.scroll = 0; }
     else { t = addTab(PREV_EDIT_TAB, text, false, 0, null); }
     t.prevEdit = true;
     t.note = "「" + (name || "無題.txt") + "」の本文（［新規］を押す直前の右ペイン）";
@@ -2682,9 +2696,11 @@
     const t = ta(), eb = body();
     // 捨てる前の【右ペインの原稿】を資料タブに退避する
     const prevTab = stashPrevEdit(t.value, state.fileName);
-    /* ★左ペインを守る（5.15.2）。ORIGIN を空にするとシステムタブの中身も空になり、
-       資料タブを持っているのに「資料を読み込んでください」と出てしまう。資料タブへ逃がす。
-       資料が1枚も無いときは本当に空なのでヒントが出るのが正しい。 */
+    /* 左ペインを守る（5.15.2 / rev55）。ORIGIN を空にすると「初期」「変更」タブの中身も空になり、
+       左ペインが空状態ヒントに落ちて「参照用」が出る。資料タブを持っているのに
+       「資料を読み込んでください」と言われるのは事実と違うので、資料タブへ逃がす。
+       「初期」を見ていた人には「前の編集」を見せるのがいちばん連続する。
+       資料が1枚も無いときは本当に空なので、ヒントが出るのが正しい。 */
     const act = activeTabObj();
     if (act && act.kind) {
       const refTabs = state.tabs.filter(x => !x.kind);
@@ -2728,30 +2744,17 @@
      原稿は差し替えず、いまのカーソル位置に中身を入れる。
      execCommand を使うので Ctrl+Z 1回で戻せる。 */
   function insertFileAtCaret(file) {
-    /* ★先に「読み込み中」を出す（5.9B）。待たされるのは FileReader ＋ insertText の両方。
-       ★トーストを出しただけでは塗られる前に同期処理が始まるので、二重 rAF で描画を挟む
-         （ツールの整形と同じ手。5.14.1）。表示時間は完了トーストが上書きするまで長めに取る。 */
-    toast("「" + file.name + "」を読み込み中…", 120000);
     readFile(file, (name, text) => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          try {
-            const t = ta();
-            let ins = text;
-            const off = t.selectionStart;
-            // ファイルは常に「かたまり」なので、行の途中に落とさない
-            if (off > 0 && t.value[off - 1] !== "\n") ins = "\n" + ins;
-            if (!ins.endsWith("\n")) ins += "\n";
-            t.focus(); t.setSelectionRange(off, off);   // 選択があっても消さず、キャレット位置に入れる
-            insertText(ins);
-            onEdit();                                  // dirty・検索・オーバーレイ・変更タブをまとめて更新
-            toast("「" + name + "」を挿入しました（" + text.length.toLocaleString() + "文字）");
-          } catch (err) {
-            /* 失敗しても「読み込み中…」が 2 分残らないようにする */
-            toast("「" + name + "」の挿入に失敗しました");
-          }
-        });
-      });
+      const t = ta();
+      let ins = text;
+      const off = t.selectionStart;
+      // ファイルは常に「かたまり」なので、行の途中に落とさない
+      if (off > 0 && t.value[off - 1] !== "\n") ins = "\n" + ins;
+      if (!ins.endsWith("\n")) ins += "\n";
+      t.focus(); t.setSelectionRange(off, off);   // 選択があっても消さず、キャレット位置に入れる
+      insertText(ins);
+      onEdit();                                    // dirty・検索・オーバーレイ・変更タブをまとめて更新
+      toast("「" + name + "」を挿入しました（" + text.length.toLocaleString() + "文字）");
     });
   }
   /* ---- 保存（仕様 5.9） ----
@@ -2779,7 +2782,7 @@
     try {
       if (await h.queryPermission(o) === "granted") return true;
       return await h.requestPermission(o) === "granted";
-    } catch (_) { return false; }
+    } catch (err) { return false; }
   }
 
   /** 上書き保存（Ctrl+S。仕様 5.9.2）。Safari では呼ばれず saveAsTxt へ（rev65）。 */
@@ -2855,8 +2858,8 @@
     if (!/\.[^./\\]+$/.test(n)) n += ".txt";
     return n.length > 120 ? n.slice(0, 120) : n;
   }
-  /** File System Access API が使えないときの出口（5.9.3）。共有シート → download の順に試す。
-   *  戻り値は呼び出し側では見ていない（どの経路でもトーストで結果を伝える）。 */
+/** FSA が使えない／Safari 用の出口（5.9.3 / rev61–65）。
+   *  @returns {"shared"|"downloaded"|"cancelled"|"failed"} */
   async function exportTxt(text, name, fellBack) {
     /* iPhone/iPad: 共有シート →「ファイルに保存」で場所を選ぶ */
     if (preferShareFirst()) {
@@ -2864,16 +2867,13 @@
       if (r === "shared" || r === "cancelled") return r;
     }
 
-    /* 共通のフォールバック：download で落とす（Safari だけでなく、Chrome で
-       showSaveFilePicker が失敗した fellBack=true の経路もここへ来る）。
-       Safari は保存場所を「毎回確認」にしてもらう案内を downloadTxt 側で出す。 */
+    /* Mac Safari: download。場所は「毎回確認」。file:// の空欄許可は rev66 トースト。 */
     if (await downloadTxt(text, name, fellBack)) return "downloaded";
     if (await copyTxtFallback(text, name, fellBack)) return "downloaded";
     return "failed";
   }
 
-  /** 共有を先に試すか。standalone 表示（ホーム画面から起動／PWA インストール）のときは真。
-   *  主対象は iPhone/iPad だが、デスクトップの PWA でも真になりうる。 */
+  /** 共有を先に試すか（iPhone/iPad のみ）。 */
   function preferShareFirst() {
     try {
       if (typeof navigator !== "undefined" && navigator.standalone) return true;
@@ -2936,7 +2936,7 @@
 
   async function downloadTxt(text, name, fellBack) {
     try {
-      /* 許可ダイアログが前面に出る前に、空欄の意味をトーストで先に出す。
+      /* 許可ダイアログが前面に出る前に、空欄の意味をトーストで先に出す（rev66）。
          二重 rAF で1フレーム描画を挟む（ダイアログで JS が止まっても直前までは見える）。 */
       if (safariEmptyDlPromptLikely()) {
         toast("Safariが『“”でのダウンロードを許可』と聞いたら［許可］を。"
@@ -2969,7 +2969,7 @@
       }
       toast(msg);
       return true;
-    } catch (_) {
+    } catch (err) {
       return false;
     }
   }
@@ -2985,9 +2985,14 @@
     const wrap = canvas.parentElement;
     const pane = isL ? $("ref-body") : body();
     const dpr = window.devicePixelRatio || 1;
-    // canvas 内の余白。上下 1px は 1 行目の見出しが枠に埋もれないため。
-    // 左右は【本文に接する側を厚く】して、色棒・青枠・キャレットが隣ペインに
-    // 張り付いて「はみ出してる」ように見えないようにする（構築仕様書 5.5.2）。
+    // 上下 1px は canvas 内の余白（1行目見出しが枠に埋もれない）
+    // 左右も canvas 内余白。本文に接する側を厚くして、色棒・青枠・キャレットが
+    // 隣ペインに張り付いて「はみ出してる」ように見えないようにする
+    // （左MMの右端＝左ペイン本文、右MMの左端＝右ペイン本文）
+    // rev35: 左右 3px 枠＋全幅赤で本文側に 1px にじむ報告 → X_NEAR を 4 に、
+    // マーカーも本文側 inset を 2 にして端を避ける
+    // rev48: X_NEAR 4→3／rev51: マーカー用 inset は残しつつ、青枠は canvas 端まで（下）
+    const MM_OUT_Y = 1;
     const X_NEAR = 2;   // 本文に接する側（マーカー clip。青枠は pad を使わない）
     const X_FAR  = 1;   // ウィンドウ端側
     const padL = isL ? X_FAR : X_NEAR;
@@ -3005,9 +3010,9 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     // 半ピクセルにじみを抑える（特に全幅の赤棒）
     ctx.imageSmoothingEnabled = false;
-    const t = activeTabObj();
+    const t0 = activeTabObj();
     // 下地は wrap 全体（余白帯も同色で、にじみを隠す）
-    ctx.fillStyle = isL ? (t && t.kind === SYS.ORIGIN ? MM_BG_ORIGIN : MM_BG_L) : MM_BG_R;
+    ctx.fillStyle = isL ? (t0 && t0.kind === SYS.ORIGIN ? MM_BG_ORIGIN : MM_BG_L) : "#eceff1";
     ctx.fillRect(0, 0, w0, H);
     // これ以降は内側矩形だけに描く（はみ出し禁止）
     ctx.save();
@@ -3016,6 +3021,7 @@
     ctx.clip();
     ctx.translate(padL, MM_OUT_Y);
 
+    const t = t0;
     const refEmpty = isL && refIsEmpty();
     const text = isL ? (refEmpty || !t ? "" : t.text) : ta().value;
     const total = text.length;
@@ -3056,6 +3062,7 @@
       // 見出しマーカー：Lv1＝赤系・全幅／Lv2＝緑・幅55%（本文の見出し色と揃える）
       // 変更の赤緑と同系だが、「変更」タブでは見出しを描かない、で役割を分ける
       // Lv3（** / ***）は本文中の強調で件数が多く、ミニマップには出さない
+      // 右 MM に変更ガターは出さない（rev30）ので、右の赤緑は見出しのみ
       if (headsOn() && !isDiffTab) {
         for (const hd of (isL ? tabHeads(t) : edHeads())) {
           if (hd.lv === 3) continue;
@@ -3073,15 +3080,47 @@
         }
       }
 
-      // 変更マーカー（左「変更」タブのみ。右ミニマップには出さない＝変更の分布は左だけで示す）
+      // 変更マーカー（左「変更」タブのみ。右 MM には出さない → rev30）
+      const DC = { del: "#d32f2f", add: "#2e7d32", chg: "#ef6c00" };
+      const MIN_BAR = 2.5;   // これ未満だと 3,000 行クラスで見えなくなる
+
+      /* 重なるマーカーを1本にまとめる。
+         del と add が重なったら（＝chg の2行が潰れたら）橙にする。
+         まとめないと、後から描いたほうが先のものを覆って
+         「赤しか出ない」「色が出ない」という見え方になる。
+
+         固定グリッドに丸める方式は使わない。chg の2行はすぐ隣なのに
+         グリッドの境目をまたぐと別々のままになり、橙にならない。
+         y 順に並べて「直前の棒と重なるか」で判定する。 */
+      function packMarks(marks, nLines) {
+        // y と高さ h を持つ棒にまとめる。
+        // ① 重なったら種別を合成（del+add→chg）
+        // ② 同じ種別が隣の行で連続していたら1本の長い棒にする
+        const row = h / Math.max(1, nLines);
+        const pts = marks.map(m => ({ y: (m.i / nLines) * h, k: m.k })).sort((a, b) => a.y - b.y);
+        const out = [];
+        for (const p of pts) {
+          const last = out[out.length - 1];
+          if (last && p.y < last.y + last.h) {          // 直前の棒に食い込む
+            if (last.k !== p.k) last.k = "chg";
+            last.h = Math.max(last.h, p.y + MIN_BAR - last.y);
+          } else if (last && last.k === p.k && p.y <= last.y + last.h + row * 1.05) {
+            // 同じ種別の連続行 → 伸ばす
+            last.h = p.y + MIN_BAR - last.y;
+          } else out.push({ y: p.y, k: p.k, h: MIN_BAR });
+        }
+        return out;
+      }
+
       if (isDiffTab) {
         // 「変更」タブ：本文側 2px・窓端 1px（枠・窓端・本文境界のどれにも張り付かない）
         if (state.diffStale || !t.marks) computeDiff();
-        for (const b of packMarks(t.marks || [], n, h)) {
-          ctx.fillStyle = DIFF_MARK_COLOR[b.k];
+        for (const b of packMarks(t.marks || [], n)) {
+          ctx.fillStyle = DC[b.k];
           ctx.fillRect(xMark0, b.y, markMaxW, b.h);
         }
       }
+      // 右ミニマップには変更マーカーを描かない（rev30）。変更の分布は左「変更」タブのみ。
       // 検索ヒット（「変更」タブでも描く）
       const hits = isL ? state.refHits : state.edHits;
       const cur = isL ? state.refIdx : state.edIdx;
@@ -3118,10 +3157,10 @@
 
     ctx.restore(); // clip 解除
 
-    // ビューポート枠：塗りなし。最小高さ 8px。左右 4px・上下 2px。色 #2196f3
-    // 左右は pad を使わず canvas 端まで（外縁 x=0 と x=w0）。
+    // ビューポート枠（rev50–51）：塗りなし。最小高さ 8px。左右 4px・上下 2px。色 #2196f3
+    // rev51: 左右は pad を使わず canvas 端まで（外縁 x=0 と x=w0）。
     //        以前の padL/padR 分の隙間は「中の余白」で本文幅には効いていなかったが、
-    //        見た目の空きを無くし、MM 列幅（--minimap-w: 24px）は本文へ回す。
+    //        見た目の空きを無くし、あわせて MM 列幅自体を 27→24 に下げて本文へ回す。
     // 下限で伸ばすときは「真の表示範囲の中心」に枠の中心を合わせる（上端固定だとズレて見える）
     if (!refEmpty && total > 0 && pane.scrollHeight - pane.clientHeight > 0) {
       const vr = visibleLineRange(isL, lineOf, n);
@@ -3129,8 +3168,8 @@
       const b = Math.max(a, Math.min(n - 1, vr.bot));
       const y1 = MM_OUT_Y + (a / n) * h;
       const y2 = MM_OUT_Y + ((b + 1) / n) * h;
-      const lwTB = 2;   // 上下
-      const lwLR = 4;   // 左右は太く（細いと本文の色棒に埋もれる）
+      const lwTB = 2;   // 上下（rev50: 1→2）
+      const lwLR = 4;   // 左右を太く（rev49: 3→4）
       const MIN_VP = 8;
       // 線の中心を lwLR/2 と w0-lwLR/2 に置く → 外縁が canvas の左右端に一致
       const fx = lwLR / 2;
@@ -3146,7 +3185,7 @@
       if (fy + fh > yMax) fy = yMax - fh;
       if (fy < yMin) { fy = yMin; fh = Math.max(MIN_VP, Math.min(fh, yMax - fy)); }
       const xL = fx, xR = fx + fw, yT = fy, yB = fy + fh;
-      ctx.strokeStyle = "#2196f3";  // 枠青の判定は「G が R より 60 以上大きい」。変えるならこれを保つ
+      ctx.strokeStyle = "#2196f3";  // rev50: 旧 #1976d2 より鮮やか（G−R は依然 60+）
       ctx.lineCap = "butt";
       // 左右（太い）
       ctx.lineWidth = lwLR;
@@ -3165,8 +3204,10 @@
   }
 
   /* =======================================================
-     ミニマップ：行 ⇔ 画面の対応（枠の描画・クリック・ドラッグが全部ここを通る）
-     ★「見えている行」を実測する。比率で近似すると折り返しがある原稿で必ずずれる（5.5.2）。
+     ミニマップ：行 ⇔ 画面の対応
+     枠の描画・クリック・ドラッグがすべてここを通る。
+     「見えている行の範囲」を実測するので、折り返しがあっても枠が実際の
+     表示エリアとぴったり一致する。比率で近似すると必ずずれる。
      ======================================================= */
 
   /** root 内の文字オフセットに対応する (テキストノード, ノード内オフセット) */
@@ -3212,9 +3253,6 @@
     return val;
   }
 
-  /* ヒットテストを打つ x 座標。★ペインの左端ちょうどだと余白や見出しの箱に当たるので少し内側、
-     広いペインでも 30px までに留める（中央だと折り返し行の途中を拾いやすい）。 */
-  const hitX = r => r.left + Math.min(30, Math.max(4, r.width / 2));
   function computeVisibleLineRange(isL, lineOf, n) {
     if (isL) {
       const rb = $("ref-body"), r = rb.getBoundingClientRect();
@@ -3228,7 +3266,7 @@
         };
         return { top: find(rb.scrollTop), bot: find(rb.scrollTop + rb.clientHeight - 1) };
       }
-      const x = hitX(r);
+      const x = r.left + Math.min(30, Math.max(4, r.width / 2));
       const o1 = refOffsetAt(x, r.top + 2), o2 = refOffsetAt(x, r.bottom - 2);
       // 両方取れたときだけヒットテストを採用。
       // 片方でも null のとき 0 / n-1 にすると、起動直後や #overlay 表示中に
@@ -3238,7 +3276,7 @@
         return { top: top, bot: Math.max(top, bot) };
       }
       // lineDocY はヒットテスト不要（Range のレイアウト座標）。復元ダイアログ中でも可
-      const byY = visibleLinesByLineDocY(n);
+      const byY = visibleLinesByLineDocY(true, n);
       if (byY) return byY;
       // 最終手段：まだレイアウトが無いときだけ先頭付近の仮枠（全高にはしない）
       const viewLines = Math.max(1, Math.min(n, Math.round(n * rb.clientHeight / Math.max(1, rb.scrollHeight))));
@@ -3249,18 +3287,19 @@
     // （getComputedStyle をスクロールごとに走らせると重い）
     const eb = body(), r = eb.getBoundingClientRect();
     syncMirrorText();
-    const x = hitX(r);
+    const x = r.left + Math.min(30, Math.max(4, r.width / 2));
     return { top: lineOf(offsetFromPoint(x, r.top + 2)), bot: lineOf(offsetFromPoint(x, r.bottom - 2)) };
   }
 
   /**
    * 行のドキュメント Y（lineDocY）から、いまのスクロールで見えている行範囲を二分探索。
-   * caretRangeFromPoint が使えないときの左ペイン【専用】。失敗時は null。
+   * caretRangeFromPoint が使えないときの左ペイン用。失敗時は null。
    */
-  function visibleLinesByLineDocY(n) {
-    const y0 = lineDocY(true, 0);
+  function visibleLinesByLineDocY(isL, n) {
+    if (n < 1) return { top: 0, bot: 0 };
+    const y0 = lineDocY(isL, 0);
     if (y0 == null) return null;
-    const pane = $("ref-body");
+    const pane = isL ? $("ref-body") : body();
     const yTop = pane.scrollTop;
     const yBot = pane.scrollTop + Math.max(0, pane.clientHeight - 1);
     // targetY 以下の最大行
@@ -3268,7 +3307,7 @@
       let lo = 0, hi = n - 1, ans = 0;
       while (lo <= hi) {
         const mid = (lo + hi) >> 1;
-        const y = lineDocY(true, mid);
+        const y = lineDocY(isL, mid);
         if (y == null) { hi = mid - 1; continue; }
         if (y <= targetY) { ans = mid; lo = mid + 1; }
         else hi = mid - 1;
@@ -3281,12 +3320,6 @@
   }
 
   /** 指定した論理行の、スクロールコンテンツ内でのY座標（px）。取れなければ null */
-  /** テキスト txt の line 行目（0 始まり）の先頭文字オフセット。行が足りなければ最後の行頭を返す。 */
-  function lineStartOffset(txt, line) {
-    let off = 0;
-    for (let k = 0; k < line; k++) { const nx = txt.indexOf("\n", off); if (nx < 0) break; off = nx + 1; }
-    return off;
-  }
   function lineDocY(isL, line) {
     if (isL) {
       const rb = $("ref-body"), t = activeTabObj();
@@ -3295,7 +3328,9 @@
         return el ? el.offsetTop : null;
       }
       const root = $("ref-inner").querySelector(".rtext") || $("ref-inner");
-      const off = lineStartOffset(root.textContent || "", line);
+      const txt = root.textContent || "";
+      let off = 0;
+      for (let k = 0; k < line; k++) { const nx = txt.indexOf("\n", off); if (nx < 0) break; off = nx + 1; }
       const p = nodeAtOffset(root, off);
       if (!p) return null;
       const rg = document.createRange();
@@ -3306,7 +3341,9 @@
       if (!rc || (!rc.height && !rc.top)) return null;
       return rc.top - rb.getBoundingClientRect().top + rb.scrollTop;
     }
-    const eb = body(), off = lineStartOffset(ta().value, line);
+    const eb = body(), v = ta().value;
+    let off = 0;
+    for (let k = 0; k < line; k++) { const nx = v.indexOf("\n", off); if (nx < 0) break; off = nx + 1; }
     syncMirrorStyle(); syncMirrorText();
     const rc = rectForOffset(off);
     if (!rc) return null;
@@ -3316,6 +3353,8 @@
   function setupMinimapDrag(canvasId, getPane, side) {
     const canvas = $(canvasId);
     let dragging = false;
+    // drawMinimap の MM_OUT_Y と同じ。上下 1px は枠用余白で、行対応には使わない
+    const MM_OUT_Y = 1;
     const jump = clientY => {
       const r = canvas.getBoundingClientRect();
       const contentH = r.height - MM_OUT_Y * 2;
@@ -3335,7 +3374,7 @@
       pane.scrollTop = docY == null
         ? Math.max(0, Math.min(max, p * pane.scrollHeight - half))
         : Math.max(0, Math.min(max, docY - half));
-      if (isL) rememberScroll();
+      if (side === "left") rememberScroll();
       drawMinimap(side);
     };
     canvas.addEventListener("pointerdown", e => {
@@ -3363,7 +3402,7 @@
     // ダブルクリックで 1:1 に戻す（誤って右寄りに保存された ratio の救済）
     sp.addEventListener("dblclick", () => {
       state.ratio = 0.5;
-      relayoutPanes();
+      applyRatio(); reflowWidth(); refreshOverlay(); drawMinimap("left"); updateTabNav();
       saveSettings();
       toast("ペイン比率を 1:1 に戻しました");
     });
@@ -3372,8 +3411,8 @@
       const r = $("main").getBoundingClientRect();
       const avail = r.width - MM * 2 - SPL;
       // マウス位置＝スプリッタの【中心】とみなす（半幅を引かないと中央で離しても右へ寄る）
-      state.ratio = clampRatio((e.clientX - r.left - MM - SPL / 2) / avail);
-      relayoutPanes();
+      state.ratio = Math.min(.85, Math.max(.15, (e.clientX - r.left - MM - SPL / 2) / avail));
+      applyRatio(); reflowWidth(); refreshOverlay(); drawMinimap("left"); updateTabNav();
     });
     const end = () => { if (dragging) { dragging = false; sp.classList.remove("dragging"); saveSettings(); refreshOverlay(); } };
     ["pointerup", "pointercancel", "lostpointercapture"].forEach(ev => sp.addEventListener(ev, end));
@@ -3383,18 +3422,9 @@
      トースト
      ======================================================= */
   let toastTimer = null;
-  /* toast を特定ボタンの直下に出すときだけセット（#btn-undo 用）。
+  /* toast を特定ボタンの直下に出すときだけセット（#btn-undo 用・rev60）。
      Ctrl+Z 経路は触らない。toast() が読んだ直後に呼ぶ側が null に戻してよい。 */
   let toastAt = null;
-  /* 中央配置に戻す。CSS 側に .near の宣言は無いので、JS が書いたインラインを消すのが唯一の手段。 */
-  const unanchor = t => {
-    t.classList.remove("near");
-    t.style.top = t.style.left = t.style.right = t.style.transform = "";
-  };
-  /* ★rev73: #toast.near の CSS 宣言は削除した（top/left/right/transform を JS が必ず
-     インラインで全部書くので、CSS 側は元から一度も効いていなかった）。
-     .near クラス自体は「いまアンカー配置か」を表す目印として残している——
-     自己診断版がこれを読んで配置を検査する。CSS を探しても無いのが正しい。 */
   /* ms 省略時 1800。長い処理の「処理中…」は大きな ms を渡し、完了 toast で上書きする（rev45）
      toastAt があるときは中央ではなく、その要素の直下・右寄せ（iPad キーボードで中央が隠れる対策） */
   function toast(msg, ms) {
@@ -3409,11 +3439,15 @@
       /* 右端ボタン想定：ボタン右辺に右寄せ。はみ出す分は 8px 余白を残す */
       t.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + "px";
       t.style.transform = "none";
-    } else unanchor(t);
+    } else {
+      t.classList.remove("near");
+      t.style.top = t.style.left = t.style.right = t.style.transform = "";
+    }
     t.classList.add("show");
     toastTimer = setTimeout(() => {
       t.classList.remove("show");
-      unanchor(t);
+      t.classList.remove("near");
+      t.style.top = t.style.left = t.style.right = t.style.transform = "";
     }, ms == null ? 1800 : ms);
   }
 
@@ -3534,18 +3568,19 @@
 
   const t0 = ta();
   t0.addEventListener("input", () => onEdit());
-  /* 関所（markedText）の武装／解除（5.15.3）。
+  /* 関所（markedText）の武装／解除（5.15.3 / rev57）。
      ・人が編集したら解除する（その編集を戻すのはブラウザの仕事）
      ・ブラウザの undo で【差し替え直後の本文まで戻ってきたら】再武装する
-       ★再武装しないと、次の Ctrl+Z が value 代入で切れた古い履歴に届き、
-         消したはずの原稿が湧く。 */
+       ここで再武装しないと、次の Ctrl+Z が value 代入で切れた古い履歴に届き、
+       消したはずの原稿が湧く（rev55 の不具合）。 */
   t0.addEventListener("input", e => {
     const it = e.inputType || "";
     if (it === "historyUndo" || it === "historyRedo") {
-      /* ★キーボード以外の経路（右クリック → 元に戻す、ブラウザの編集メニュー）は
-         keydown を通らず undoStep() の関所をすり抜けるので、ここで検知して押し戻す。
-         素通しさせると value 代入より前の古い履歴が生きていて、まったく無関係な
-         過去のテキストが本文に湧く（自己診断で実証済み。構築仕様書 5.15.3）。 */
+      /* ★rev58: キーボード以外の経路（右クリック → 元に戻す、ブラウザの編集メニュー）は
+         keydown を通らないので undoStep() の関所をすり抜ける。
+         そこで通り抜けた結果をここで検知して押し戻す。
+         【自己診断で実証済み】素通しさせると、value 代入より前の古い履歴が生きていて、
+         まったく無関係な過去のテキストが本文に湧く。 */
       if (!editedSinceMark && markedText !== null && t0.value !== markedText) {
         t0.value = markedText;
         t0.setSelectionRange(0, 0);
@@ -3565,9 +3600,7 @@
     const act = $("ref-act").dataset.act;
     if (act === "rebase") {
       setOrigin(ta().value, state.fileName);
-      /* ★setOrigin は「初期」「変更」タブが出ているときだけ runRefSearch() を通り、その中で
-         updateCount("ref") と renderRef() を済ませている。無条件に呼ぶと 2 回組み直すことになる。 */
-      if (!isSysActive(SYS.ORIGIN) && !isSysActive(SYS.DIFF)) { renderRef(); updateCount("ref"); }
+      renderRef(); updateCount("ref");
       toast("「初期」を右ペインの現在の内容に再設定しました");
     } else if (act === "tohere") {
       rightToHere();
@@ -3592,7 +3625,7 @@
   $("opt-width").addEventListener("input", () => {
     const v = +$("opt-width").value;
     if (!v) return;                                   // 入力途中の空欄は無視
-    state.widthPref = clampWidth(v);
+    state.widthPref = Math.max(WIDTH_MIN, Math.min(WIDTH_HARD_MAX, v));
     const mx = maxWidthChars();
     if (state.widthPref > mx) toast("いまのペイン幅で表示できるのは全角 " + mx + " 文字までです");
     applySettings(); saveSettings();
@@ -3689,7 +3722,7 @@
     toast("見出し設定を適用しました（左 " + (t ? tabHeads(t).length : 0) + "件 / 右 " + edHeads().length + "件）");
   });
 
-  window.addEventListener("resize", () => { fitToolbar(); relayoutPanes(); });
+  window.addEventListener("resize", () => { fitToolbar(); applyRatio(); reflowWidth(); refreshOverlay(); drawMinimap("left"); updateTabNav(); });
   /* 離脱時：まず下書きを保存し、【保存できなかったときだけ】確認を出す（5.8B）。
      ブラウザの確認文は差し替えられず「行った変更が保存されない可能性があります」と出る。
      下書きが保存できているのにこれを出すと、事実と違うことを言うことになる。 */
@@ -3704,7 +3737,7 @@
   function focusSearchBox() {
     const left = $("ref-q"), right = $("ed-q");
     const target = document.activeElement === t0 ? right : (left.disabled ? right : left);
-    target.focus();
+    if (!target.disabled) target.focus();
   }
 
   document.addEventListener("keydown", e => {
@@ -3721,18 +3754,21 @@
     else if (k === "h") { e.preventDefault(); toggleReplace(true); }
   });
 
-  /* ---- 元に戻す（5.15.4）----
-     ★click 内で先に t.focus() する。フォーカスが textarea から外れると execCommand("undo")
-       が何にも効かない。mousedown の preventDefault は Safari で click 自体を食うので使わない。
-     undo が成功すると input が inputType:"historyUndo" で飛ぶので、dirty・検索・差分の更新は
-     既存の入力経路に任せる（ここでは呼ばない）。
-     ボタン経路だけ toastAt を付けて結果をボタン直下に出す（iPad のキーボード対策）。 */
+  /* ---- 元に戻す（5.15）----
+     罠：ボタンを押すと textarea からフォーカスが外れ、execCommand("undo") が何にも効かなくなる。
+     → click 内で先に t.focus() する。mousedown preventDefault は Safari で click を食うので使わない（rev72）。
+     undo が成功すると input イベントが inputType:"historyUndo" で飛ぶので、
+     dirty・検索・差分の更新は既存の入力経路がそのまま面倒を見る（ここでは呼ばない）。
+     ★rev60: ボタン経路だけ toastAt を付け、結果トーストをボタン直下へ出す。
+       Ctrl+Z は従来どおり中央（または無言のブラウザ Undo）。iPad でキーボードが中央を隠す対策。 */
   $("btn-undo").addEventListener("click", () => {
     const t = ta();
     t.focus();
     toastAt = $("btn-undo");
     try {
-      if (undoStep()) return;      // ［新規］／読み込みは履歴に載せていないので自前で戻す（5.15.3）
+      // ［新規］／［読み込み］は履歴に載せていないので自前で戻す（5.15.3 / rev57）
+      // undoStep 内の toast も toastAt 経由でボタン直下に出る
+      if (undoStep()) return;
       const before = t.value;
       try { document.execCommand("undo"); } catch (_) {}
       // execCommand の戻り値は当てにならない（false でも戻っていることがある）ので本文で見る
@@ -3743,14 +3779,12 @@
     }
   });
 
-  /* ---- ツールバーの幅合わせ（5.15.5）----
-     子は縮めず nowrap。足りなければ ①クレジット＋ver ②ロゴ の順に落とす（自動保存表示は残す）。
-     ★測る前に class を外す。setAutosaveNote からも呼ぶ。 */
-  /* ペイン幅・表示幅を当て直して描き直す（resize / スプリッタで共通）。
-     ★applyRatio() の後に reflowWidth()（grid 書き換え直後は clientWidth が古い。5.1B）。 */
-  const relayoutPanes = () => {
-    applyRatio(); reflowWidth(); refreshOverlay(); drawMinimap("left"); updateTabNav();
-  };
+  /* ---- ツールバーの幅合わせ（5.15 / rev68–69）----
+     子は縮めず nowrap。足りなければ：
+       1) クレジット＋ver（.app-meta）
+       2) アプリ名ロゴ（.app-title）← 自動保存が出て Undo が隠れるときはここまで落とす
+     自動保存表示は残す（操作ボタンより情報優先度は低いが、ロゴよりは残す）。
+     測る前に class を外す。setAutosaveNote からも呼ぶ（rev69）。 */
   function fitToolbar() {
     const tb = $("toolbar");
     tb.classList.remove("narrow", "narrow2");
