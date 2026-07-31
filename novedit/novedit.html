@@ -824,8 +824,8 @@
       chapterNum: true, chapterWord: true, bracket: true, ruleLine: true,
       starBlue: true, starRed: true
     },
-    lv1: "# ＃ § ■",
-    lv2: "## ### ＃＃ ＃＃＃ §§ ◆ ◇ ▼ ▲ ★ ☆ ● ○ ※ ＊"
+    lv1: "# ＃ §",
+    lv2: "▼ ▽ ■ □ ● 〇 ## ＃＃"
   };
 
   const parseTokens = str => [...new Set(String(str || "").split(/[\s\n]+/).filter(Boolean))];
@@ -2738,13 +2738,24 @@
           try {
             const t = ta();
             let ins = text;
-            const off = t.selectionStart;
+            const off = t.selectionStart;               // 選択があっても消さず、キャレット位置に入れる
             // ファイルは常に「かたまり」なので、行の途中に落とさない
             if (off > 0 && t.value[off - 1] !== "\n") ins = "\n" + ins;
             if (!ins.endsWith("\n")) ins += "\n";
-            t.focus(); t.setSelectionRange(off, off);   // 選択があっても消さず、キャレット位置に入れる
-            insertText(ins);
+            /* ★execCommand は挿す量に比例して遅い（10万字＋10万字で返らない）。
+               全文の差し替えと同じ扱いにする（5.9B / 5.4B）。 */
+            const src = t.value;
+            markUndo({ text: src, name: state.fileName, handle: state.fileHandle,
+                       origin: state.origin, dirty: state.dirty, prevTabId: null,
+                       label: "ファイルの挿入", keepView: true,
+                       scroll: body().scrollTop, caret: off });
+            setWholeDoc(src.slice(0, off) + ins + src.slice(off));
+            const at = off + ins.length;                // 挿したかたまりの直後（execCommand と同じ位置）
+            t.focus(); t.setSelectionRange(at, at);
             onEdit();                                  // dirty・検索・オーバーレイ・変更タブをまとめて更新
+            /* ★execCommand はキャレットを自動で画面内に寄せていた。value 代入では寄らない。
+               rectForOffset はミラー経由なので、先に本文を同期する（rAF を待たない）。 */
+            syncMirrorStyle(); syncMirrorText(); scrollToOffset(at);
             toast("「" + name + "」を挿入しました（" + text.length.toLocaleString() + "文字）");
           } catch (err) {
             /* 失敗しても「読み込み中…」が 2 分残らないようにする */
