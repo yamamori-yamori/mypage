@@ -2176,10 +2176,16 @@
     return { text: joinBody(out, bd.endsNL), count: count };
   }
 
-  /* 整形の共通経路（5.14.1）。execCommand を通して Ctrl+Z 1 手にする。
-     ★t.select() の直後はキャレットが文末へ行くので必ず戻す。scrollTop も復元する。
+  /* 整形の共通経路（5.14.1）。
+     ★全文の差し替えなので value 代入＋自前 Undo（5.15.3 と同じ経路）。rev84 で execCommand から移行。
+       execCommand("insertText") に全文を渡すと、Blink が【改行ごとに編集コマンドを分割する】ため
+       行数に対して二乗的に遅くなる（rev83 実測・Chrome 150 / 10万字 2,562行：全文 5,105ms に対し、
+       同じ文字数でも改行ゼロなら 419ms。value 代入は 2.4ms）。
+       5.15.3（読み込み・rev57）→ replaceAll（すべて置換・rev76）→ insertFileAtCaret（挿入・rev81）
+       と潰してきた同じ穴の【4本目にして最後】。整形だけが取り残されていた。
+     ★keepView 付きで控えるので、Ctrl+Z 1 手で戻り、そのときスクロールもキャレットも飛ばない。
      ★state.edHits は元テキストにしか対応しないので runEdSearch() で作り直す（5.4D）。
-     ★全文 insertText は同期ブロックする。「処理中…」を描画してから二重 rAF で本体処理へ。 */
+     ★整形ロジック自体は 10万字で 3ms 以内。「処理中…」の二重 rAF は巨大原稿の保険として残す。 */
   let toolBusy = false;
   function applyTransform(label, fn) {
     if (toolBusy) { toast("前の処理が終わるまでお待ちください"); return; }
@@ -2203,8 +2209,13 @@
             return;
           }
           const keep = body().scrollTop;
-          const caret = Math.min(t.selectionStart, r.text.length);
-          t.focus(); t.select(); insertText(r.text);
+          const caret0 = t.selectionStart;                       // 控えに入れる【整形前】の位置
+          const caret = Math.min(caret0, r.text.length);
+          markUndo({ text: src, name: state.fileName, handle: state.fileHandle,
+                     origin: state.origin, dirty: state.dirty, prevTabId: null,
+                     label: label, keepView: true, scroll: keep, caret: caret0 });
+          setWholeDoc(r.text);
+          t.focus();
           t.setSelectionRange(caret, caret);
           body().scrollTop = keep;
           onEdit(true); runEdSearch();
