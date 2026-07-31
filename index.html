@@ -203,6 +203,10 @@
     display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem;
     min-width: 0; min-height: 0;
   }
+  /* note 画面プレビューが1枚だけのときは右枠を横いっぱい（サムネ幅は2枚時と同じ） */
+  .app-shots:has(> :only-child) {
+    grid-template-columns: 1fr;
+  }
   .app-shots a {
     display: block; border: 1px solid var(--line); border-radius: 8px;
     overflow: hidden; background: #ebe4d8; line-height: 0;
@@ -223,6 +227,23 @@
     background: transparent; color: var(--ink); cursor: pointer;
   }
   .btn:hover { background: var(--ink); color: var(--paper); }
+  .btn.is-disabled,
+  span.btn.is-disabled {
+    border-color: #cfc6b6; color: var(--muted); cursor: default;
+    pointer-events: none; opacity: 0.85;
+  }
+  .btn.is-disabled:hover,
+  span.btn.is-disabled:hover {
+    background: transparent; color: var(--muted);
+  }
+  .app-thumb.is-static { cursor: default; }
+  .app-thumb.is-static:hover { border-color: var(--line); box-shadow: none; }
+  .app-shots .shot-placeholder {
+    display: grid; place-items: center; min-height: 140px; max-height: 180px;
+    border: 1px dashed #cfc6b6; border-radius: 8px; background: #f3efe6;
+    color: var(--muted); font-size: 0.72rem; text-align: center; padding: 0.75rem;
+    line-height: 1.5;
+  }
 
   .novel-list { display: grid; gap: 0.6rem; }
   .novel {
@@ -427,7 +448,7 @@
     <div class="id-card primary">
       <div class="label">WEB · TOOLS · THIS REPO</div>
       <h2>やまもりやもり</h2>
-      <p>一般向けWeb小説・note・自作アプリ（novdiff／マンガエディタ／オーディオブック）。この GitHub Pages のリポジトリ名義。</p>
+      <p>一般向けWeb小説・note・自作アプリ（縦view／novedit／novdiff／マンガエディタ／オーディオブック）。この GitHub Pages のリポジトリ名義。</p>
       <span class="tag">一般向けWeb小説 / ツール</span>
     </div>
     <div class="id-card primary">
@@ -489,40 +510,6 @@
     <div class="apps">
       <div class="app">
         <div class="app-head">
-          <div class="app-icon" style="background:linear-gradient(160deg,#263238,#607d8b)">nov<br>diff</div>
-          <div>
-            <h3>日本語小説テキスト比較アプリ novdiff</h3>
-            <p>古い版と新しい版を左右に並べ、文字単位の差分を色付けして推敲できるブラウザツール。完全ローカル／無料。</p>
-          </div>
-          <div class="app-actions">
-            <a class="btn" href="./novdiff/novdiff.html"
-               target="_blank" rel="noopener noreferrer">WEB版</a>
-            <a class="btn" href="https://note.com/yamamoriyamori/n/n8909c512fe72"
-               target="_blank" rel="noopener noreferrer">紹介note</a>
-          </div>
-        </div>
-        <div class="app-thumbs">
-          <a class="app-thumb" href="https://note.com/yamamoriyamori/n/n8909c512fe72"
-             target="_blank" rel="noopener noreferrer"
-             aria-label="novdiff 紹介noteのサムネイル">
-            <img
-              src="https://assets.st-note.com/production/uploads/images/296050152/rectangle_large_type_2_a36be29d256a30648f94af3571bebd3a.png?fit=bounds&amp;quality=85&amp;width=1280"
-              alt="novdiff紹介noteのアイキャッチ"
-              width="1280" height="670" loading="lazy" decoding="async"
-              referrerpolicy="no-referrer" />
-          </a>
-          <div class="app-shots" aria-label="アプリ画面のプレビュー">
-            <a href="https://note.com/yamamoriyamori/n/n8909c512fe72" target="_blank" rel="noopener noreferrer">
-              <img
-                src="https://assets.st-note.com/img/1784532934-vyflz6EskwTIgp9Ni81dC52j.png"
-                alt="novdiffの画面"
-                loading="lazy" decoding="async" referrerpolicy="no-referrer" />
-            </a>
-          </div>
-        </div>
-      </div>
-      <div class="app">
-        <div class="app-head">
           <div class="app-icon" style="background:linear-gradient(160deg,#5c3d1e,#c4a574)">縦<br>view</div>
           <div>
             <h3>公募用小説ビューア 縦view</h3>
@@ -550,6 +537,66 @@
               <img
                 src="https://assets.st-note.com/img/1784740836-feygrvQAcX1DHPqkmK3pClSR.png"
                 alt="縦viewの画面"
+                loading="lazy" decoding="async" referrerpolicy="no-referrer" />
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="app">
+        <div class="app-head">
+          <div class="app-icon" style="background:linear-gradient(160deg,#1f3d2b,#6b9b7a)">nov<br>edit</div>
+          <div>
+            <h3>左を参照して左で書くエディタ novedit</h3>
+            <p>左ペインに資料・原稿を置き、参照しながら執筆できるブラウザエディタ。単一HTML・完全ローカル／無料。</p>
+          </div>
+          <div class="app-actions">
+            <a class="btn" href="./novedit/novedit.html"
+               target="_blank" rel="noopener noreferrer">WEB版</a>
+            <span class="btn is-disabled" title="紹介noteは準備中です" aria-disabled="true">紹介note（準備中）</span>
+          </div>
+        </div>
+        <div class="app-thumbs">
+          <div class="app-thumb is-static"
+               aria-label="novedit 紹介noteのサムネイル（仮・note公開後に差し替え）">
+            <img
+              src="./novedit/novedit_サムネ.png"
+              alt="novedit紹介noteのアイキャッチ（仮）"
+              width="1728" height="910" loading="lazy" decoding="async" />
+          </div>
+          <div class="app-shots" aria-label="アプリ画面のプレビュー（note公開後に追加）">
+            <div class="shot-placeholder">画面プレビューは<br>紹介note公開後に追加</div>
+          </div>
+        </div>
+      </div>
+      <div class="app">
+        <div class="app-head">
+          <div class="app-icon" style="background:linear-gradient(160deg,#263238,#607d8b)">nov<br>diff</div>
+          <div>
+            <h3>日本語小説テキスト比較アプリ novdiff</h3>
+            <p>古い版と新しい版を左右に並べ、文字単位の差分を色付けして推敲できるブラウザツール。完全ローカル／無料。</p>
+          </div>
+          <div class="app-actions">
+            <a class="btn" href="./novdiff/novdiff.html"
+               target="_blank" rel="noopener noreferrer">WEB版</a>
+            <a class="btn" href="https://note.com/yamamoriyamori/n/n8909c512fe72"
+               target="_blank" rel="noopener noreferrer">紹介note</a>
+          </div>
+        </div>
+        <div class="app-thumbs">
+          <a class="app-thumb" href="https://note.com/yamamoriyamori/n/n8909c512fe72"
+             target="_blank" rel="noopener noreferrer"
+             aria-label="novdiff 紹介noteのサムネイル">
+            <img
+              src="https://assets.st-note.com/production/uploads/images/296050152/rectangle_large_type_2_a36be29d256a30648f94af3571bebd3a.png?fit=bounds&amp;quality=85&amp;width=1280"
+              alt="novdiff紹介noteのアイキャッチ"
+              width="1280" height="670" loading="lazy" decoding="async"
+              referrerpolicy="no-referrer" />
+          </a>
+          <div class="app-shots" aria-label="アプリ画面のプレビュー">
+            <a href="https://note.com/yamamoriyamori/n/n8909c512fe72" target="_blank" rel="noopener noreferrer">
+              <img
+                src="https://assets.st-note.com/img/1784532934-vyflz6EskwTIgp9Ni81dC52j.png"
+                alt="novdiffの画面"
                 loading="lazy" decoding="async" referrerpolicy="no-referrer" />
             </a>
           </div>
