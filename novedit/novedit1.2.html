@@ -565,13 +565,24 @@
   <label class="tm-radio"><input type="radio" name="tool-eol" id="tool-eol-lf" value="lf" checked> Mac・Unix（LF）</label>
 </div>
 
-<!-- 保存のドロップダウン（5.9）。ツールと同じ position:fixed 方式。 -->
+<!-- 保存のドロップダウン（5.9）。ツールと同じ position:fixed 方式。
+     Chrome: 上書き／名前を付けて保存。iOS（preferShareFirst）: ファイル名入力／共有シート直行。
+     Mac Safari はメニューを出さず saveAsTxt 直行（rev65）。 -->
 <div id="save-menu" class="dropmenu" role="menu" aria-hidden="true">
   <div class="tm-h">ファイルに保存する</div>
-  <button type="button" id="save-over" role="menuitem"><span class="tm-key">Ctrl+S</span>上書き保存</button>
-  <div class="tm-hint" id="save-over-hint"></div>
-  <button type="button" id="save-as" role="menuitem"><span class="tm-key">Ctrl+Shift+S</span>名前を付けて保存…</button>
-  <div class="tm-hint">保存先とファイル名を選び直します</div>
+  <div id="save-chrome-group">
+    <button type="button" id="save-over" role="menuitem"><span class="tm-key">Ctrl+S</span>上書き保存</button>
+    <div class="tm-hint" id="save-over-hint"></div>
+    <button type="button" id="save-as" role="menuitem"><span class="tm-key">Ctrl+Shift+S</span>名前を付けて保存…</button>
+    <div class="tm-hint">保存先とファイル名を選び直します</div>
+  </div>
+  <div id="save-ios-group" hidden>
+    <div class="tm-hint" id="save-ios-name-hint"></div>
+    <button type="button" id="save-ios-rename" role="menuitem">ファイル名を入力…</button>
+    <div class="tm-hint">名前だけ変えてメニューに戻ります。入力欄の「ダイアログを表示しない」は押さないでください</div>
+    <button type="button" id="save-ios-share" role="menuitem">共有シートで保存</button>
+    <div class="tm-hint">いまのファイル名のまま共有シートを開きます（場所は「ファイルに保存」で）</div>
+  </div>
 </div>
 
 <div id="main">
@@ -2313,21 +2324,49 @@
   })();
 
   /* ---- 保存メニューの開閉配線（5.9）----
-     配線は setupDropMenu に寄せてある。ここは保存メニュー固有の 2 点だけ。
-     ★Safari（Apple WebKit）は上書き UI を出さず、開かずに「保存先を選ぶ」へ直行する。
-     ★［上書き保存］は「どこへ書くか」が見えていないと押せないので、開くたびに保存先を書く。 */
+     配線は setupDropMenu に寄せてある。
+     ★Chrome: 上書き／名前を付けて保存の 2 択。
+     ★iOS（preferShareFirst）: ファイル名入力（prompt→メニューに戻る）／共有シート直行。
+       毎回 prompt すると Safari の「ダイアログを表示しない」を誤タップしやすい（rev91）。
+     ★Mac Safari: メニューなし・saveAsTxt 直行（rev65）。 */
   (function () {
     const closeMenu = setupDropMenu("btn-save", "save-menu", "right", () => {
-      if (!allowOverwriteUI()) { saveAsTxt(); return false; }   // 開かずに直行
-      $("save-over").hidden = false;
-      $("save-over-hint").hidden = false;
-      const h = state.fileHandle;
-      $("save-over-hint").textContent = h
-        ? "「" + h.name + "」に、ダイアログを出さずに書き込みます"
-        : "保存先がまだ決まっていません。1回目は保存ダイアログが出ます";
+      const ios = preferShareFirst();
+      const chrome = allowOverwriteUI();
+      if (!chrome && !ios) { saveAsTxt(); return false; }   // Mac Safari 等
+      $("save-chrome-group").hidden = !chrome;
+      $("save-ios-group").hidden = !ios;
+      if (chrome) {
+        const h = state.fileHandle;
+        $("save-over-hint").textContent = h
+          ? "「" + h.name + "」に、ダイアログを出さずに書き込みます"
+          : "保存先がまだ決まっていません。1回目は保存ダイアログが出ます";
+      }
+      if (ios) {
+        const n = state.fileName || "無題.txt";
+        $("save-ios-name-hint").textContent = "いまの名前：「" + n + "」";
+      }
     });
     $("save-over").addEventListener("click", () => { closeMenu(); saveOverwrite(); });
     $("save-as").addEventListener("click", () => { closeMenu(); saveAsTxt(); });
+    /* iOS: 名前だけ。prompt 後はメニューを開き直す（共有は別ボタン）。 */
+    $("save-ios-rename").addEventListener("click", () => {
+      closeMenu();
+      const cur = state.fileName || "無題.txt";
+      const n = askSaveFileName(cur);
+      if (n === null) {
+        toast("ファイル名の変更をキャンセルしました");
+      } else {
+        state.fileName = n;
+        updateHeader();
+        toast(n === cur ? "ファイル名はそのままです" : "ファイル名を「" + n + "」にしました。共有シートで保存できます");
+      }
+      /* prompt 直後に dropmenu を開く。次フレームでないと click-outside で即閉じることがある */
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => { $("btn-save").click(); });
+      });
+    });
+    $("save-ios-share").addEventListener("click", () => { closeMenu(); saveShareDirect(); });
   })();
 
   /* =======================================================
@@ -2852,8 +2891,10 @@
     } catch (_) { return false; }
   }
 
-  /** 上書き保存（Ctrl+S。仕様 5.9.2）。Safari では呼ばれず saveAsTxt へ（rev65）。 */
+  /** 上書き保存（Ctrl+S。仕様 5.9.2）。
+   *  iOS は共有シート直行（prompt なし）。Mac Safari は saveAsTxt（名前＋download）。 */
   async function saveOverwrite() {
+    if (preferShareFirst()) { saveShareDirect(); return; }
     if (!allowOverwriteUI() || !state.fileHandle) { saveAsTxt(); return; }
     const text = withEol(ta().value);
     try {
@@ -2872,6 +2913,13 @@
       toast("上書きできませんでした（" + (err && err.name || "不明") + "）。［名前を付けて保存］に切り替えます");
       saveAsTxt();
     }
+  }
+
+  /** iOS: いまの fileName のまま共有シート（prompt なし・rev91）。 */
+  async function saveShareDirect() {
+    const text = withEol(ta().value);
+    const name = state.fileName || "無題.txt";
+    await exportTxt(text, name, false);
   }
 
   async function saveAsTxt() {
@@ -2898,9 +2946,8 @@
         return;
       }
     }
-    /* Safari / iOS 等: 上書き API は無いので、先にファイル名を聞く（rev67 / rev89）。
-       デフォルトは現在の fileName。キャンセルで中止。
-       その後の出口は従来どおり（iOS=共有シート、Mac Safari=download「毎回確認」）。 */
+    /* iOS の「名前を付けて保存」経路はメニューの［ファイル名を入力］に分離（rev91）。
+       ここへ来るのは主に Mac Safari 等（メニュー省略の直行）。名前を聞いてから export。 */
     {
       const n = askSaveFileName(name);
       if (n === null) return;
@@ -3927,7 +3974,23 @@
     /* Ctrl+Z は原則ブラウザ任せ（制約 #4）。ただし［新規］／［読み込み］だけは
        履歴に載せていないので、自前で戻せるときに限って横取りする（5.15.3 / rev57）。 */
     if (k === "z" && !e.shiftKey) { if (undoStep()) e.preventDefault(); return; }
-    if (k === "s") { e.preventDefault(); (e.shiftKey || !allowOverwriteUI()) ? saveAsTxt() : saveOverwrite(); }
+    if (k === "s") {
+      e.preventDefault();
+      /* iOS: Ctrl+S＝共有直行／Shift＝名前だけ（メニューと同じ。毎回 prompt しない）。 */
+      if (preferShareFirst()) {
+        if (e.shiftKey) {
+          const cur = state.fileName || "無題.txt";
+          const n = askSaveFileName(cur);
+          if (n === null) return;
+          state.fileName = n; updateHeader();
+          toast("ファイル名を「" + n + "」にしました");
+        } else {
+          saveShareDirect();
+        }
+        return;
+      }
+      (e.shiftKey || !allowOverwriteUI()) ? saveAsTxt() : saveOverwrite();
+    }
     else if (k === "f") { e.preventDefault(); focusSearchBox(); }
     else if (k === "h") { e.preventDefault(); toggleReplace(true); }
   });
