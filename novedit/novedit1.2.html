@@ -566,10 +566,10 @@
 </div>
 
 <!-- 保存のドロップダウン（5.9）。ツールと同じ position:fixed 方式。
-     Chrome: 上書き／名前を付けて保存。iOS（preferShareFirst）: ファイル名入力／共有シート直行。
+     Chrome: 上書き／名前を付けて保存。iOS（preferShareFirst）: メニュー内で名前編集＋共有（prompt 禁止）。
      Mac Safari はメニューを出さず saveAsTxt 直行（rev65）。 -->
 <div id="save-menu" class="dropmenu" role="menu" aria-hidden="true">
-  <div class="tm-h">ファイルに保存する</div>
+  <div class="tm-h" id="save-menu-h">ファイルに保存する</div>
   <div id="save-chrome-group">
     <button type="button" id="save-over" role="menuitem"><span class="tm-key">Ctrl+S</span>上書き保存</button>
     <div class="tm-hint" id="save-over-hint"></div>
@@ -577,11 +577,13 @@
     <div class="tm-hint">保存先とファイル名を選び直します</div>
   </div>
   <div id="save-ios-group" hidden>
-    <div class="tm-hint" id="save-ios-name-hint"></div>
-    <button type="button" id="save-ios-rename" role="menuitem">ファイル名を入力…</button>
-    <div class="tm-hint">名前だけ変えてメニューに戻ります。入力欄の「ダイアログを表示しない」は押さないでください</div>
+    <div class="tm-hint">保存するファイル名（共有シートの前にここで決める）</div>
+    <div class="tm-field">
+      <input type="text" id="save-ios-name" autocomplete="off" spellcheck="false"
+             enterkeyhint="done" aria-label="保存するファイル名">
+    </div>
     <button type="button" id="save-ios-share" role="menuitem">共有シートで保存</button>
-    <div class="tm-hint">いまのファイル名のまま共有シートを開きます（場所は「ファイルに保存」で）</div>
+    <div class="tm-hint">上の名前で共有シートを開きます。場所はシートの「ファイルに保存」で</div>
   </div>
 </div>
 
@@ -2326,8 +2328,8 @@
   /* ---- 保存メニューの開閉配線（5.9）----
      配線は setupDropMenu に寄せてある。
      ★Chrome: 上書き／名前を付けて保存の 2 択。
-     ★iOS（preferShareFirst）: ファイル名入力（prompt→メニューに戻る）／共有シート直行。
-       毎回 prompt すると Safari の「ダイアログを表示しない」を誤タップしやすい（rev91）。
+     ★iOS（preferShareFirst）: メニュー内 input で名前編集＋［共有シートで保存］。
+       window.prompt は使わない（Safari の「ダイアログを表示しない」誤タップ防止・rev91）。
      ★Mac Safari: メニューなし・saveAsTxt 直行（rev65）。 */
   (function () {
     const closeMenu = setupDropMenu("btn-save", "save-menu", "right", () => {
@@ -2336,37 +2338,42 @@
       if (!chrome && !ios) { saveAsTxt(); return false; }   // Mac Safari 等
       $("save-chrome-group").hidden = !chrome;
       $("save-ios-group").hidden = !ios;
+      /* iOS では見出し「ファイルに保存する」が押せない項目に見えるので隠す */
+      $("save-menu-h").hidden = !!ios;
       if (chrome) {
+        $("save-menu-h").hidden = false;
         const h = state.fileHandle;
         $("save-over-hint").textContent = h
           ? "「" + h.name + "」に、ダイアログを出さずに書き込みます"
           : "保存先がまだ決まっていません。1回目は保存ダイアログが出ます";
       }
       if (ios) {
-        const n = state.fileName || "無題.txt";
-        $("save-ios-name-hint").textContent = "いまの名前：「" + n + "」";
+        $("save-ios-name").value = state.fileName || "無題.txt";
+        /* 自動 focus しない（キーボードが即出ると共有だけしたいときに邪魔） */
       }
     });
     $("save-over").addEventListener("click", () => { closeMenu(); saveOverwrite(); });
     $("save-as").addEventListener("click", () => { closeMenu(); saveAsTxt(); });
-    /* iOS: 名前だけ。prompt 後はメニューを開き直す（共有は別ボタン）。 */
-    $("save-ios-rename").addEventListener("click", () => {
+    /* iOS: メニュー内の名前を採用して共有（prompt なし） */
+    $("save-ios-share").addEventListener("click", () => {
+      const raw = $("save-ios-name").value;
+      const name = sanitizeSaveName(raw, state.fileName || "無題.txt");
+      state.fileName = name;
+      updateHeader();
+      $("save-ios-name").value = name;
       closeMenu();
-      const cur = state.fileName || "無題.txt";
-      const n = askSaveFileName(cur);
-      if (n === null) {
-        toast("ファイル名の変更をキャンセルしました");
-      } else {
-        state.fileName = n;
-        updateHeader();
-        toast(n === cur ? "ファイル名はそのままです" : "ファイル名を「" + n + "」にしました。共有シートで保存できます");
-      }
-      /* prompt 直後に dropmenu を開く。次フレームでないと click-outside で即閉じることがある */
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => { $("btn-save").click(); });
-      });
+      saveShareDirect();
     });
-    $("save-ios-share").addEventListener("click", () => { closeMenu(); saveShareDirect(); });
+    /* 入力中の document click でメニューが閉じないよう、フィールド内操作は止める必要は
+       setupDropMenu が menu.contains で除外済み。Enter で共有。 */
+    $("save-ios-name").addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        $("save-ios-share").click();
+      }
+    });
+    /* メニュー内クリックが btn の toggle とぶつからないように */
+    $("save-ios-name").addEventListener("click", e => { e.stopPropagation(); });
   })();
 
   /* =======================================================
@@ -3976,14 +3983,10 @@
     if (k === "z" && !e.shiftKey) { if (undoStep()) e.preventDefault(); return; }
     if (k === "s") {
       e.preventDefault();
-      /* iOS: Ctrl+S＝共有直行／Shift＝名前だけ（メニューと同じ。毎回 prompt しない）。 */
+      /* iOS: Ctrl+S＝共有直行。Shift はメニューを開いて名前欄へ（prompt 禁止）。 */
       if (preferShareFirst()) {
         if (e.shiftKey) {
-          const cur = state.fileName || "無題.txt";
-          const n = askSaveFileName(cur);
-          if (n === null) return;
-          state.fileName = n; updateHeader();
-          toast("ファイル名を「" + n + "」にしました");
+          $("btn-save").click();
         } else {
           saveShareDirect();
         }
