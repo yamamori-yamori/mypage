@@ -476,7 +476,7 @@
   .dialog .hint { font-size: 11px; color: #90a4ae; margin: 3px 0 0; }
   #cfg-preview { font-size: 11.5px; color: #00695c; background: #e0f2f1; border-radius: 3px; padding: 7px 10px; margin: 14px 0 0; line-height: 1.7; }
 
-  /* 画面中央。下端だと長い原稿のツール実行中に視線が届きにくい */
+  /* 画面中央。下端だと長い原稿のツール実行中に視線が届きにくい */  
   #toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(38,50,56,.92); color: #fff; font-size: 12px; padding: 8px 16px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; max-width: min(90vw, 480px); text-align: center; }
   #toast.show { opacity: 1; }
 
@@ -572,11 +572,6 @@
   <div class="tm-hint" id="save-over-hint"></div>
   <button type="button" id="save-as" role="menuitem"><span class="tm-key">Ctrl+Shift+S</span>名前を付けて保存…</button>
   <div class="tm-hint">保存先とファイル名を選び直します</div>
-  <div class="tm-sep"></div>
-  <div id="save-ios-group" hidden>
-    <button type="button" id="btn-save-rename" role="menuitem">文書名変更</button>
-    <button type="button" id="btn-save-direct" role="menuitem">保存</button>
-  </div>
 </div>
 
 <div id="main">
@@ -2305,48 +2300,19 @@
   /* ---- 保存メニューの開閉配線（5.9）----
      配線は setupDropMenu に寄せてある。ここは保存メニュー固有の 2 点だけ。
      ★Safari（Apple WebKit）は上書き UI を出さず、開かずに「保存先を選ぶ」へ直行する。
-     ★［上書き保存］は「どこへ書くか」が見えていないと押せないので、開くたびに保存先を書く。
-     ★iOS（preferShareFirst）: 2つの選択肢を表示 — 「文書名変更」「保存」。 */
+     ★［上書き保存］は「どこへ書くか」が見えていないと押せないので、開くたびに保存先を書く。 */
   (function () {
     const closeMenu = setupDropMenu("btn-save", "save-menu", "right", () => {
       if (!allowOverwriteUI()) { saveAsTxt(); return false; }   // 開かずに直行
-
       $("save-over").hidden = false;
       $("save-over-hint").hidden = false;
       const h = state.fileHandle;
       $("save-over-hint").textContent = h
         ? "「" + h.name + "」に、ダイアログを出さずに書き込みます"
         : "保存先がまだ決まっていません。1回目は保存ダイアログが出ます";
-
-      /* iOS: 文書名変更 / 保存 の2択を表示 */
-      if (preferShareFirst()) {
-        $("save-ios-group").hidden = false;
-      } else {
-        $("save-ios-group").hidden = true;
-      }
     });
     $("save-over").addEventListener("click", () => { closeMenu(); saveOverwrite(); });
     $("save-as").addEventListener("click", () => { closeMenu(); saveAsTxt(); });
-
-    /* iOS 用: 文書名変更 — ファイル名だけ prompt で変えてから保存 */
-    $("btn-save-rename").addEventListener("click", async () => {
-      closeMenu();
-      const text = withEol(ta().value);
-      let name = state.fileName || "無題.txt";
-      const newName = askSaveFileName(name);
-      if (newName === null) return;
-      state.fileName = newName;
-      updateHeader();
-      await exportTxt(text, newName, false);
-    });
-
-    /* iOS 用: そのまま保存 — 共有シート / download */
-    $("btn-save-direct").addEventListener("click", async () => {
-      closeMenu();
-      const text = withEol(ta().value);
-      let name = state.fileName || "無題.txt";
-      await exportTxt(text, name, false);
-    });
   })();
 
   /* =======================================================
@@ -2893,9 +2859,10 @@
         return;
       }
     }
-    /* Safari 等: 上書き API は無いが、ファイル名はここで指定できる（rev67）。
-       場所は download／Safari「毎回確認」。iPad 共有はシート側で名前が付くので省略。 */
-    if (!preferShareFirst()) {
+    /* Safari / iOS 等: 上書き API は無いので、先にファイル名を聞く（rev67 / rev89）。
+       デフォルトは現在の fileName。キャンセルで中止。
+       その後の出口は従来どおり（iOS=共有シート、Mac Safari=download「毎回確認」）。 */
+    {
       const n = askSaveFileName(name);
       if (n === null) return;
       name = n;
@@ -2909,7 +2876,10 @@
   function askSaveFileName(current) {
     const cur = current || "無題.txt";
     try {
-      const r = window.prompt("保存するファイル名（場所は次のダウンロードで）", cur);
+      const hint = preferShareFirst()
+        ? "保存するファイル名（次の共有シートで場所を選べます）"
+        : "保存するファイル名（場所は次のダウンロードで）";
+      const r = window.prompt(hint, cur);
       if (r === null) return null;
       return sanitizeSaveName(r, cur);
     } catch (_) { return cur; }
@@ -3639,19 +3609,25 @@
     prevSelEnd = e;
   });
 
-  /* ---- 選択部分の文字数（rev86→87）----
-       マウス「mouseup」またはキーボード「Shift の状態変化」「selectionchange」で計算・表示。
-       ドラッグ中はトーストが出ないためチラつきがなく、処理も軽くなる。
-       文字数は「改行を除いた全文字」（日本語小説の一般的な規約）。
-       選択を解除する、またはフォーカスを外すと隠れる。
-       document レベルで mouseup を拾うので、テキストエリア外でのマウス離しでも対応。 */
+  /* ---- 選択部分の文字数（rev86→87→89）----
+       マウス mouseup、または Shift を離したときに表示。
+       Shift 押下中は出さない／消す（見出しジャンプや範囲拡張の邪魔にしない）。
+       ドラッグ中も出さない（チラつき防止）。文字数は改行除く。
+       選択解除・フォーカス外しで隠れる。mouseup は document レベル。 */
+    let shiftDown = false;
+    const hideSelToast = () => {
+      const el = $("toast");
+      if (el.dataset.sel) { delete el.dataset.sel; el.classList.remove("show"); unanchor(el); }
+    };
     const updateSelCount = () => {
       const t = ta(), el = $("toast");
       const s = t.selectionStart, e = t.selectionEnd;
       if (document.activeElement !== t || s == null || e == null || e <= s) {
-        if (el.dataset.sel) { delete el.dataset.sel; el.classList.remove("show"); unanchor(el); }
+        hideSelToast();
         return;
       }
+      /* Shift 押下中は表示しない（keyup の Shift 離しで出す） */
+      if (shiftDown) { hideSelToast(); return; }
       const n = t.value.substring(s, e).replace(/\n/g, "").length;
       el.textContent = "選択部分：" + n.toLocaleString("ja-JP") + "文字";
       syncMirrorText();
@@ -3665,19 +3641,23 @@
       el.style.left = Math.round(left) + "px";
       el.style.top = Math.round(top) + "px";
     };
-    /* マウス離しで1回（document レベルで拾う＝テキストエリア外でも対応） */
     document.addEventListener("mouseup", () => { if (document.activeElement === t0) updateSelCount(); });
-    /* Shift キーの状態変化で1回（Shift押中→離し / 離し→押中） */
-    let lastShiftState = false;
     document.addEventListener("keydown", (ev) => {
       if (document.activeElement !== t0) return;
-      const curShift = ev.shiftKey;
-      lastShiftState = curShift;   // keydown で状態更新（テストが keydown dispatch するため）
+      if (ev.shiftKey) {
+        if (!shiftDown) hideSelToast();
+        shiftDown = true;
+      }
     });
     document.addEventListener("keyup", (ev) => {
       if (document.activeElement !== t0) return;
-      const curShift = ev.shiftKey;
-      if (lastShiftState && !curShift) updateSelCount();   // Shift 離し
+      const isShiftKey = ev.key === "Shift" || ev.code === "ShiftLeft" || ev.code === "ShiftRight";
+      if (isShiftKey) {
+        shiftDown = false;
+        updateSelCount();   // 離したときだけ表示
+      } else {
+        shiftDown = !!ev.shiftKey;
+      }
     });
 
   // 左検索バーのコンテキストボタン
@@ -3840,61 +3820,49 @@
     const heads = edHeads().filter(h => h.lv === 1 || h.lv === 2);
     if (!heads.length) return false;
 
-    // Shift 押中: 選択範囲の端から検索。
-    // 非Shift: caret で検索。
-    const anchor = t.selectionStart;
-    const endPos = t.selectionEnd;
-    let base, searchAnchor;
-    if (shift) {
-      // 選択中: dir>0(↓) は far(endPos) から次を検索・スキップ判定、dir<0(↑) は near(anchor) から前を検索・スキップ判定。
-      // これにより「見出しが選択範囲内」でも次の見出しへスキップし、選択が縮まない。
-      searchAnchor = (dir > 0) ? endPos : anchor;
-      base   = (dir > 0) ? endPos : anchor;   // スキップ判定も同じ端で見る
+    const s0 = t.selectionStart, s1 = t.selectionEnd, len = t.value.length;
+    const selDir = t.selectionDirection || "none";
+    /* anchor=固定端 / focus=動く端。textarea の selectionDirection に合わせる。
+       旧実装は Shift+↑ が常に selectionStart 側を動かしていたため、
+       Shift+↓↓↑ が Shift+↓ に戻らず、範囲内・隣接見出しにも当たらなかった（rev89）。 */
+    let anchor, focus;
+    if (s0 === s1) {
+      anchor = focus = s0;
+    } else if (selDir === "backward") {
+      anchor = s1; focus = s0;
     } else {
-      base = t.selectionStart;
-      searchAnchor = base;
+      anchor = s0; focus = s1; /* forward / none */
     }
+
+    /* 停泊点のレール:
+       - 折りたたみ（キャレット）: ↓＝見出し直前行末 (start-1)、↑＝見出し直後行頭 (end+1)
+       - 選択 forward: 両矢印とも start-1 レール（↓↓↑＝↓ になる）
+       - 選択 backward: 両矢印とも end+1 レール（↑↑↓＝↑ になる）
+       ちょうど停泊点上なら > / < で隣へ進む（スキップと同義）。 */
+    let rail;
+    if (s0 === s1) rail = dir > 0 ? "end" : "start";
+    else if (selDir === "backward") rail = "start";
+    else rail = "end"; /* forward / none（選択あり） */
+
+    const raw = heads.map(h => (rail === "end" ? h.start - 1 : h.end + 1));
+    const stops = [...new Set(raw.map(x => Math.max(0, Math.min(x, len))))].sort((a, b) => a - b);
+    if (!stops.length) return false;
 
     let target = -1;
-
     if (dir > 0) {
-      // Cmd/Ctrl+↓: 次の見出しを探す（searchAnchor より後）
-      const nIdx = heads.findIndex(h => h.start > searchAnchor);
-      if (nIdx < 0) return false;
-      const n = heads[nIdx];
-      // カーソルが「この見出しの直前文末」にある → その見出しをスキップしてさらに次へ
-      if (base === n.start - 1) {
-        const nn = heads.find(h => h.start > n.start);
-        if (!nn) return false;
-        target = nn.start - 1;
-      } else {
-        target = n.start - 1;
-      }
+      const n = stops.find(p => p > focus);
+      if (n === undefined) return false;
+      target = n;
     } else {
-      // Cmd/Ctrl+↑: 前の見出しを探す（searchAnchor より前）
-      const rev = [...heads].reverse();
-      let pIdx = -1;
-      for (let i = 0; i < rev.length; i++) { if (rev[i].start < searchAnchor) { pIdx = rev.length - 1 - i; break; } }
-      if (pIdx < 0) return false;
-      const p = heads[pIdx];
-      // カーソルが「この見出しの直後文頭」にある → その見出しをスキップしてさらに前へ
-      if (base === p.end + 1) {
-        const pp = [...heads].reverse().find(h => h.start < p.start);
-        if (!pp) return false;
-        target = pp.end + 1;
-      } else {
-        target = p.end + 1;
+      for (let i = stops.length - 1; i >= 0; i--) {
+        if (stops[i] < focus) { target = stops[i]; break; }
       }
+      if (target < 0) return false;
     }
 
-    target = Math.max(0, Math.min(target, t.value.length));
     if (shift) {
-      // 選択範囲の端(target側)を移動。dir>0(↓) は endPos を target へ、dir<0(↑) は anchor を target へ。
-      if (dir > 0) {
-        t.setSelectionRange(anchor, target);
-      } else {
-        t.setSelectionRange(target, endPos);
-      }
+      if (target >= anchor) t.setSelectionRange(anchor, target, "forward");
+      else t.setSelectionRange(target, anchor, "backward");
     } else {
       t.setSelectionRange(target, target);
     }
