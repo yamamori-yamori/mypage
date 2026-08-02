@@ -730,7 +730,22 @@
   const DIFF_WARN_LINES = 20000;  // 差分の表示行がこれを超えたら警告トースト（12章 #18）
   const LS_DRAFT = "novedit.draft.v1";
   const LS_SETTINGS = "novedit.settings.v1";
+  const LS_TAB = "novedit.tabId";
   const ZWSP = "​";
+  /* タブ識別子。sessionStorage＝タブ単位（閉じたら消える）。localStorage 下書きは1本のまま、
+     他タブが上書きしたら storage で検知してこのタブの自動保存だけ止める（キー増殖なし）。 */
+  const draftTabId = (() => {
+    try {
+      let id = sessionStorage.getItem(LS_TAB);
+      if (!id) {
+        id = Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+        sessionStorage.setItem(LS_TAB, id);
+      }
+      return id;
+    } catch (_) {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+    }
+  })();
 
   const state = {
     tabs: [],            // {id, name, text, scroll, heads}
@@ -2495,6 +2510,7 @@
      編集 / 保存
      ======================================================= */
   let saveTimer = null;
+  let autosavePaused = false;   // 他タブが LS_DRAFT を更新 → このタブは自動保存しない
   function onEdit(skipSearch) {
     state.dirty = true;
     updateHeader();
@@ -2502,7 +2518,7 @@
     refreshOverlay();
     scheduleDiff();
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(autoSave, AUTOSAVE_MS);
+    if (!autosavePaused) saveTimer = setTimeout(autoSave, AUTOSAVE_MS);
   }
   /* 自動保存の状態はトーストではなく、ツールバーの空き領域に出したままにする（5.8）。
      本文の上に何も重ならないので、書いている最中でも視界を邪魔しない。
@@ -2513,11 +2529,15 @@
      広いときは「ブラウザに」を付けて【ファイルには書いていない】ことを伝える。
      狭いときは短くする——長いと iPad で［↶ 戻す］が overflow で消える。
      切り替えるのは fitToolbar()（幅を知っているのはあちら）。ここは状態を持つだけ。 */
-  let autosaveState = null;             // { ok: boolean, time: "HH:MM:SS" } ／ null＝表示なし
+  let autosaveState = null;  // { ok, paused?, time } ／ null＝表示なし
   function renderAutosaveNote(compact) {
     const el = $("autosave-note");
     if (!autosaveState) { el.textContent = ""; el.classList.remove("failed"); el.title = ""; return; }
-    if (autosaveState.ok) {
+    if (autosaveState.paused) {
+      el.textContent = compact ? "⚠ 自動保存停止" : "⚠ 他ブラウザ検知。自動保存停止";
+      el.classList.add("failed");
+      el.title = "別のブラウザ（または別タブ）が下書きを更新したため、こちらの自動保存を止めました。［ファイル保存］で手元に残してください";
+    } else if (autosaveState.ok) {
       el.textContent = (compact ? "自動保存 " : "ブラウザに自動保存 ") + autosaveState.time;
       el.classList.remove("failed");
       el.title = "ブラウザに自動保存しました。次に開いたとき復元できます（ファイルには書かれていません）";
@@ -2533,10 +2553,21 @@
     renderAutosaveNote(false);          // まず長い文言。入らなければ fitToolbar が縮める
     fitToolbar();
   }
+  function pauseAutosaveOtherTab() {
+    if (autosavePaused) return;
+    autosavePaused = true;
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    autosaveState = { ok: false, paused: true };
+    renderAutosaveNote(false);
+    fitToolbar();
+    toast("他ブラウザを検知したため、自動保存を止めました。［ファイル保存］で手元に残してください");
+  }
 
   /** 下書きを LocalStorage に保存する。成功したら true を返す（5.8） */
   function autoSave(quiet) {
-    const payload = { name: state.fileName, text: ta().value, at: Date.now(),
+    if (autosavePaused) return false;
+    const payload = { name: state.fileName, text: ta().value, at: Date.now(), tabId: draftTabId,
                       origin: { text: state.origin.text, name: state.origin.name } };
     try {
       localStorage.setItem(LS_DRAFT, JSON.stringify(payload));
@@ -2555,6 +2586,14 @@
       }
     }
   }
+  /* 他タブの localStorage 更新のみ届く（同一タブの setItem では発火しない） */
+  window.addEventListener("storage", e => {
+    if (e.key !== LS_DRAFT || e.newValue == null) return;
+    try {
+      const d = JSON.parse(e.newValue);
+      if (d && d.tabId && d.tabId !== draftTabId) pauseAutosaveOtherTab();
+    } catch (_) {}
+  });
   function updateHeader() {
     $("edit-fname").textContent = state.fileName;
     $("edit-dirty").textContent = state.dirty ? " ●" : "";
@@ -3795,6 +3834,8 @@
      下書きが保存できているのにこれを出すと、事実と違うことを言うことになる。 */
   window.addEventListener("beforeunload", e => {
     if (!state.dirty) return;
+    /* 他タブで自動保存停止中は LS_DRAFT を上書きしない。dirty のままなら離脱確認を出す */
+    if (autosavePaused) { e.preventDefault(); e.returnValue = ""; return; }
     const saved = autoSave(true);              // 離脱中なのでトーストや表示は出さない
     if (saved) return;                         // 失われるものは無い → 何も出さない
     e.preventDefault(); e.returnValue = "";    // 保存できなかった → ここで止める
