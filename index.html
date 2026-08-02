@@ -162,6 +162,51 @@
     border: 1px solid #e7cfc0; padding: 0.12rem 0.45rem; border-radius: 4px;
   }
   .note { margin-top: 0.75rem; font-size: 0.72rem; color: var(--muted); }
+  .works-text-link {
+    margin: 0 0 1rem;
+  }
+  .works-text-link a {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    background: var(--card);
+    border: 1px solid var(--line);
+    text-decoration: none;
+    color: inherit;
+    transition: 0.2s;
+  }
+  .works-text-link a:hover {
+    border-color: #d6c4b0;
+    box-shadow: 0 8px 20px rgba(28,25,23,0.05);
+    transform: translateY(-1px);
+  }
+  .works-text-link .wt-label {
+    flex: 0 0 auto;
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    border: 1px solid #e7cfc0;
+    background: #fff8f3;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .works-text-link .wt-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.88rem;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .works-text-link .wt-go {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .works-text-link a:hover .wt-go { color: var(--accent); }
 
   .apps { display: grid; gap: 0.85rem; }
   .app {
@@ -467,12 +512,16 @@
 <main>
   <section id="works">
     <h2>商業作品</h2>
-    <p class="sec-desc">
-      書店・電子で手に取れる作品。えっちな異世界へあなたをご案内。クレジットは
-      <strong style="color:var(--ink);font-weight:500">ろりたけんじ</strong>
-      名義です。
-    </p>
     <div class="rule"></div>
+    <p class="works-text-link">
+      <a href="https://yanmaga.jp/comics/%E7%95%B0%E4%B8%96%E7%95%8C%E8%BB%A2%E7%A7%BB%E3%81%97%E3%81%9F%E4%BF%BA%E3%81%AF%E3%80%81H%E3%81%AE%E3%81%9F%E3%81%B3%E3%81%AB%E3%82%AC%E3%83%81%E3%83%A3%E3%82%92%E5%BC%95%E3%81%8F%EF%BC%81%E3%82%82%E3%81%A3%E3%81%A6%E3%81%8F%E3%82%8C%E3%80%81%E4%BF%BA%E3%81%AE%E7%B2%BE%E5%8A%9B%EF%BC%81"
+         target="_blank" rel="noopener noreferrer"
+         title="ヤンマガWebで読む（連載中）">
+        <span class="wt-label">ヤンマガWeb</span>
+        <span class="wt-title">連載中のコミカライズ『異世界転移した俺は、Hのたびにガチャを引く！～もってくれ、俺の精力！～』</span>
+        <span class="wt-go" aria-hidden="true">→</span>
+      </a>
+    </p>
     <div class="works">
       <a class="work"
          href="https://amzn.to/4vFdqU6"
