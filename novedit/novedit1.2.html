@@ -476,7 +476,7 @@
   .dialog .hint { font-size: 11px; color: #90a4ae; margin: 3px 0 0; }
   #cfg-preview { font-size: 11.5px; color: #00695c; background: #e0f2f1; border-radius: 3px; padding: 7px 10px; margin: 14px 0 0; line-height: 1.7; }
 
-  /* 画面中央。下端だと長い原稿のツール実行中に視線が届きにくい */  
+  /* 画面中央。下端だと長い原稿のツール実行中に視線が届きにくい */
   #toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(38,50,56,.92); color: #fff; font-size: 12px; padding: 8px 16px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; max-width: min(90vw, 480px); text-align: center; }
   #toast.show { opacity: 1; }
 
@@ -572,6 +572,11 @@
   <div class="tm-hint" id="save-over-hint"></div>
   <button type="button" id="save-as" role="menuitem"><span class="tm-key">Ctrl+Shift+S</span>名前を付けて保存…</button>
   <div class="tm-hint">保存先とファイル名を選び直します</div>
+  <div class="tm-sep"></div>
+  <div id="save-ios-group" hidden>
+    <button type="button" id="btn-save-rename" role="menuitem">文書名変更</button>
+    <button type="button" id="btn-save-direct" role="menuitem">保存</button>
+  </div>
 </div>
 
 <div id="main">
@@ -2300,19 +2305,48 @@
   /* ---- 保存メニューの開閉配線（5.9）----
      配線は setupDropMenu に寄せてある。ここは保存メニュー固有の 2 点だけ。
      ★Safari（Apple WebKit）は上書き UI を出さず、開かずに「保存先を選ぶ」へ直行する。
-     ★［上書き保存］は「どこへ書くか」が見えていないと押せないので、開くたびに保存先を書く。 */
+     ★［上書き保存］は「どこへ書くか」が見えていないと押せないので、開くたびに保存先を書く。
+     ★iOS（preferShareFirst）: 2つの選択肢を表示 — 「文書名変更」「保存」。 */
   (function () {
     const closeMenu = setupDropMenu("btn-save", "save-menu", "right", () => {
       if (!allowOverwriteUI()) { saveAsTxt(); return false; }   // 開かずに直行
+
       $("save-over").hidden = false;
       $("save-over-hint").hidden = false;
       const h = state.fileHandle;
       $("save-over-hint").textContent = h
         ? "「" + h.name + "」に、ダイアログを出さずに書き込みます"
         : "保存先がまだ決まっていません。1回目は保存ダイアログが出ます";
+
+      /* iOS: 文書名変更 / 保存 の2択を表示 */
+      if (preferShareFirst()) {
+        $("save-ios-group").hidden = false;
+      } else {
+        $("save-ios-group").hidden = true;
+      }
     });
     $("save-over").addEventListener("click", () => { closeMenu(); saveOverwrite(); });
     $("save-as").addEventListener("click", () => { closeMenu(); saveAsTxt(); });
+
+    /* iOS 用: 文書名変更 — ファイル名だけ prompt で変えてから保存 */
+    $("btn-save-rename").addEventListener("click", async () => {
+      closeMenu();
+      const text = withEol(ta().value);
+      let name = state.fileName || "無題.txt";
+      const newName = askSaveFileName(name);
+      if (newName === null) return;
+      state.fileName = newName;
+      updateHeader();
+      await exportTxt(text, newName, false);
+    });
+
+    /* iOS 用: そのまま保存 — 共有シート / download */
+    $("btn-save-direct").addEventListener("click", async () => {
+      closeMenu();
+      const text = withEol(ta().value);
+      let name = state.fileName || "無題.txt";
+      await exportTxt(text, name, false);
+    });
   })();
 
   /* =======================================================
@@ -2918,12 +2952,9 @@
 
   async function tryShareTxt(text, name) {
     if (typeof navigator === "undefined" || typeof navigator.share !== "function") return "unavailable";
-    /* iOS: 共有シートでファイル名を指定できる（Mac Safari と同じ）。デフォルトは現在のファイル名。 */
-    const shareName = askSaveFileName(name);
-    if (shareName === null) return "cancelled";
     let file;
     try {
-      file = new File([text], shareName, { type: "text/plain" });
+      file = new File([text], name, { type: "text/plain" });
     } catch (_) {
       return "unavailable";
     }
@@ -2933,9 +2964,9 @@
       }
     } catch (_) { return "unavailable"; }
     try {
-      await navigator.share({ files: [file], title: shareName });
+      await navigator.share({ files: [file], title: name });
       state.dirty = false; updateHeader();
-      toast("「" + shareName + "」を共有シートに渡しました。「ファイルに保存」で場所を選べます");
+      toast("「" + name + "」を共有シートに渡しました。「ファイルに保存」で場所を選べます");
       return "shared";
     } catch (err) {
       if (err && err.name === "AbortError") return "cancelled";
