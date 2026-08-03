@@ -461,20 +461,38 @@
     font-size: 20px; padding: 14px 34px; font-weight: 700;
     border-radius: 6px; line-height: 1.2;
   }
-  .dialog .ck { display: flex; align-items: flex-start; gap: 7px; font-size: 12px; color: #455a64; margin: 5px 0; line-height: 1.6; cursor: pointer; }
-  .dialog .ck input { margin-top: 3px; flex-shrink: 0; }
-  .dialog .ck .ex { color: #90a4ae; font-size: 11px; }
-  .dialog .fld { margin: 8px 0 4px; }
-  .dialog .fld > span { display: inline-block; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
-  .dialog .fld .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
-  .dialog textarea {
-    width: 100%; min-height: 46px; font-size: 14px; line-height: 1.7;
-    padding: 6px 8px; border: 1px solid var(--line); border-radius: 3px; resize: vertical;
-    font-family: inherit;
+  .dialog .ck { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #455a64; margin: 4px 0; line-height: 1.45; cursor: pointer; }
+  .dialog .ck input { margin: 0; flex-shrink: 0; }
+  .dialog .ck > span { min-width: 0; }
+  /* 強調の見本：右ペイン帯と同じ地色（--hd3*） */
+  .dialog .cfg-em {
+    font-weight: 700; padding: 0 3px; border-radius: 2px;
   }
-  .dialog textarea:focus { outline: none; border-color: #4db6ac; }
+  .dialog .cfg-em.b { background: var(--hd3b-bg); color: var(--hd3b); }
+  .dialog .cfg-em.r { background: var(--hd3r-bg); color: var(--hd3r); }
+  .dialog .fld { margin: 8px 0 4px; }
+  /* 記号は Lv1／Lv2 まとめて1チェック＋1行入力 */
+  .dialog .fld.sym-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  }
+  .dialog .fld.sym-row > .lv-on {
+    display: inline-flex; align-items: center; gap: 7px; margin: 0;
+    font-size: 12px; font-weight: 600; color: #37474f; cursor: pointer;
+    user-select: none; -webkit-user-select: none; white-space: nowrap;
+  }
+  .dialog .fld.sym-row > .lv-on input { margin: 0; flex-shrink: 0; }
+  .dialog .fld .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .dialog .fld.sym-row > input[type="text"] {
+    flex: 1 1 12em; min-width: 10em; font-size: 14px; line-height: 1.5;
+    padding: 5px 8px; border: 1px solid var(--line); border-radius: 3px; font-family: inherit;
+  }
+  .dialog .fld.sym-row > input[type="text"]:focus { outline: none; border-color: #4db6ac; }
+  .dialog .fld.sym-row > .hint { flex: 1 1 100%; margin: 0; }
+  .dialog .fld.is-off > input[type="text"] { opacity: .45; }
   .dialog .hint { font-size: 11px; color: #90a4ae; margin: 3px 0 0; }
-  #cfg-preview { font-size: 11.5px; color: #00695c; background: #e0f2f1; border-radius: 3px; padding: 7px 10px; margin: 14px 0 0; line-height: 1.7; }
+  #cfg-preview, #cfg-nav-hint { font-size: 11.5px; color: #00695c; background: #e0f2f1; border-radius: 3px; padding: 7px 10px; line-height: 1.7; }
+  #cfg-preview { margin: 14px 0 0; }
+  #cfg-nav-hint { margin: 12px 0 14px; }
 
   /* 画面中央。下端だと長い原稿のツール実行中に視線が届きにくい */  
   #toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(38,50,56,.92); color: #fff; font-size: 12px; padding: 8px 16px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; max-width: min(90vw, 480px); text-align: center; }
@@ -529,8 +547,7 @@
   <span class="sep"></span>
 
   <div class="tb-group">
-    <label title="章・幕・話の始まりを色付け表示"><input type="checkbox" id="opt-head" checked> 見出し</label>
-    <button id="btn-head-cfg" title="見出しの検出ルールを設定" style="padding:4px 8px;font-size:12px;">⚙</button>
+    <button type="button" id="btn-head-cfg" title="見出しの検出ルール（記号・章話パターン）。表示は常にON">見出し</button>
   </div>
 
   <span class="sep"></span>
@@ -692,26 +709,29 @@
 <div id="overlay-head">
   <div class="dialog wide">
     <h2>見出し設定</h2>
-    <p>行の先頭にある記号・キーワードで「章・幕（レベル1）や話・回（レベル2）の始まり」を検出し、本文とミニマップに色を付けます。<br>
-       行頭の半角／全角スペース・タブは無視して判定します。</p>
+    <p>行頭の記号・キーワードで章・幕（<b style="color:#c62828">Lv1</b>）／話・回（<b style="color:#2e7d32">Lv2</b>）を検出し色付けします。行頭の半角／全角スペース・タブは無視します。</p>
 
     <h3>組み込みルール</h3>
     <div id="cfg-builtin"></div>
 
-    <h3>記号（空白か改行で区切って入力）</h3>
-    <div class="fld">
-      <span><span class="sw" style="background:#c62828"></span>レベル1 ／ 章・幕</span>
-      <textarea id="cfg-lv1" spellcheck="false"></textarea>
-      <p class="hint">例: <code>#</code> <code>§</code> <code>■</code> ／ その記号で始まる行を章・幕の見出しとして扱います</p>
+    <h3>見出し記号（空白区切り）</h3>
+    <div class="fld sym-row" id="fld-lv1">
+      <label class="lv-on"><input type="checkbox" id="cfg-lv1-on" checked>
+        <span><span class="sw" style="background:#c62828"></span><b style="color:#c62828">Lv1</b> 章・幕</span></label>
+      <input type="text" id="cfg-lv1" spellcheck="false" aria-label="レベル1の記号"
+             placeholder="例: # ＃ §">
     </div>
-    <div class="fld">
-      <span><span class="sw" style="background:#2e7d32"></span>レベル2 ／ 話・回</span>
-      <textarea id="cfg-lv2" spellcheck="false"></textarea>
-      <p class="hint">長い記号が優先されます（<code>##</code> はレベル2、<code>#</code> はレベル1 と使い分けられます）</p>
+    <div class="fld sym-row" id="fld-lv2">
+      <label class="lv-on"><input type="checkbox" id="cfg-lv2-on" checked>
+        <span><span class="sw" style="background:#2e7d32"></span><b style="color:#2e7d32">Lv2</b> 話・回</span></label>
+      <input type="text" id="cfg-lv2" spellcheck="false" aria-label="レベル2の記号"
+             placeholder="例: ▼ ■ ○ ##">
+      <p class="hint">長い記号が優先（<code>##</code>＝Lv2、<code>#</code>＝Lv1）</p>
     </div>
 
-    <h3>レベル3 ／ 本文中の強調（行頭でなくても可）</h3>
-    <p class="hint" style="margin:0 0 8px">Markdown 風の囲み。見出しというより強調表示です。左ペインは文字色＋太字、右ペインは textarea のため薄い帯のみ。ミニマップには出しません（変更の赤と混ざるため）。</p>
+    <p id="cfg-nav-hint">キーボード：Ctrl（Mac は ⌘）+↑↓ で隣の話（Lv1／Lv2）の境界へ移動。Shift 併用でそこまで選択（1話のコピペ向き）。</p>
+
+    <h3>本文中での強調表示（行頭以外でも使える）</h3>
     <div id="cfg-lv3"></div>
 
     <p id="cfg-preview">—</p>
@@ -823,30 +843,28 @@
   // 組み込みルール（チェックボックスで ON/OFF）
   const BUILTIN = {
     chapterNum: { lv: 1, re: /^第[0-9０-９一二三四五六七八九十百千壱弐参]+[章幕部巻]/,
-      label: "「第○章」「第○幕」など", ex: "第一章／第1章／第三幕／第二部" },
+      label: "「第○章／幕」など（第一章・第1章・第三幕・第二部）" },
     chapterWord: { lv: 1, re: /^(?:序章|序|終章|プロローグ|エピローグ|幕間|間章|あとがき|まえがき|前書き|後書き)/,
-      label: "章・幕を表す語で始まる行", ex: "序章／終章／プロローグ／エピローグ／幕間／あとがき" },
+      label: "章・幕の語（序章・終章・プロローグ・エピローグ・幕間・あとがき など）" },
     episodeNum: { lv: 2, re: /^第[0-9０-９一二三四五六七八九十百千壱弐参]+[話回節]/,
-      label: "「第○話」「第○回」など", ex: "第一話／第1話／第一回／第十二回" },
+      label: "「第○話／回」など（第一話・第1話・第一回・第十二回）" },
     episodeWord: { lv: 2, re: /^(?:最終話|閑話)/,
-      label: "話・回を表す語で始まる行", ex: "最終話／閑話" }
+      label: "話・回の語（最終話・閑話）" }
   };
   const BUILTIN_ORDER = ["chapterNum", "chapterWord", "episodeNum", "episodeWord"];
   /* Lv3：行頭見出しではなく、本文中の ** / *** 囲み（inline:true） */
   const BUILTIN_LV3 = {
     starBlue: {
       kind: "blue", open: "***", close: "***",
-      label: "「***文字列***」を青の太字",
-      ex: "***注意*** → 青太字（本文の途中でも可）"
+      sample: "***注意***", note: "（***…***。本文の途中でも可）"
     },
     starRed: {
       kind: "red", open: "**", close: "**",
-      label: "「**文字列**」を赤の太字",
-      ex: "**重要** → 赤太字（本文の途中でも可）"
+      sample: "**重要**", note: "（**…**。本文の途中でも可）"
     }
   };
-  /* 青（***）を先に処理する。** を先にすると ***foo*** が壊れる */
-  const BUILTIN_LV3_ORDER = ["starBlue", "starRed"];
+  /* 赤（**）を先に並べる（UI）。判定は青（***）を先に処理する必要があるので findInlineLv3 側で順序固定 */
+  const BUILTIN_LV3_ORDER = ["starRed", "starBlue"];
 
   const HEAD_DEFAULT = {
     builtin: {
@@ -854,16 +872,21 @@
       starBlue: true, starRed: true
     },
     lv1: "# ＃ §",
-    lv2: "▼ ▽ ■ □ ● 〇 ○ ## ＃＃"
+    lv2: "▼ ▽ ■ □ ● 〇 ○ ## ＃＃",
+    /* 記号はレベル単位で ON/OFF（個別記号チェックはしない） */
+    lv1On: true,
+    lv2On: true
   };
 
   const parseTokens = str => [...new Set(String(str || "").split(/[\s\n]+/).filter(Boolean))];
 
   /** 設定 → 判定器（長い記号を優先するため長さ降順に並べる） */
   function compileHead(cfg) {
+    const lv1 = cfg.lv1On === false ? "" : cfg.lv1;
+    const lv2 = cfg.lv2On === false ? "" : cfg.lv2;
     const toks = [
-      ...parseTokens(cfg.lv1).map(t => ({ tok: t, lv: 1 })),
-      ...parseTokens(cfg.lv2).map(t => ({ tok: t, lv: 2 }))
+      ...parseTokens(lv1).map(t => ({ tok: t, lv: 1 })),
+      ...parseTokens(lv2).map(t => ({ tok: t, lv: 2 }))
     ].sort((a, b) => b.tok.length - a.tok.length);
     return { toks: toks, builtin: cfg.builtin || {} };
   }
@@ -939,7 +962,8 @@
       }
     }
 
-    for (const k of BUILTIN_LV3_ORDER) {
+    /* 検出は必ず青（***）→赤（**）。UI の並び（BUILTIN_LV3_ORDER）とは独立 */
+    for (const k of ["starBlue", "starRed"]) {
       if (!c.builtin[k]) continue;
       const b = BUILTIN_LV3[k];
       scan(b.open, b.close, b.kind);
@@ -1087,14 +1111,18 @@
         if (Math.abs(r - 0.5) < 0.012) r = 0.5;
         state.ratio = r;
       }
-      if (typeof s.showHead === "boolean") { state.showHead = s.showHead; $("opt-head").checked = s.showHead; }
+      /* 見出し表示は常時 ON（旧 showHead:false は無視） */
+      state.showHead = true;
       if (s.eol === "crlf" || s.eol === "lf") state.eol = s.eol;   // 不正値は既定 lf のまま（検証つき）
       if (typeof s.sepPat === "string") state.sepPat = s.sepPat;
       if (s.headCfg && typeof s.headCfg === "object") {
         state.headCfg = {
           builtin: Object.assign({}, HEAD_DEFAULT.builtin, s.headCfg.builtin || {}),
           lv1: typeof s.headCfg.lv1 === "string" ? s.headCfg.lv1 : HEAD_DEFAULT.lv1,
-          lv2: typeof s.headCfg.lv2 === "string" ? s.headCfg.lv2 : HEAD_DEFAULT.lv2
+          lv2: typeof s.headCfg.lv2 === "string" ? s.headCfg.lv2 : HEAD_DEFAULT.lv2,
+          /* 旧設定に lv*On が無ければ ON（文字列を消さず温存） */
+          lv1On: s.headCfg.lv1On !== false,
+          lv2On: s.headCfg.lv2On !== false
         };
       }
     } catch (_) {}
@@ -3799,11 +3827,6 @@
     if (state.widthPref > mx) toast("いまのペイン幅で表示できるのは全角 " + mx + " 文字までです");
     applySettings(); saveSettings();
   });
-  $("opt-head").addEventListener("change", e => {
-    state.showHead = e.target.checked;
-    saveSettings(); renderRef(); refreshOverlay();
-    toast(state.showHead ? "見出し表示：ON" : "見出し表示：OFF");
-  });
   /* ---- 見出し設定ダイアログ ---- */
   (function () {
     const box = $("cfg-builtin");
@@ -3811,10 +3834,10 @@
       const b = BUILTIN[k];
       const l = document.createElement("label");
       l.className = "ck";
+      const col = b.lv === 1 ? "#c62828" : "#2e7d32";
       l.innerHTML = '<input type="checkbox" data-b="' + k + '"><span></span>';
       l.querySelector("span").innerHTML =
-        '<b style="color:' + (b.lv === 1 ? "#283593" : "#00695c") + '">Lv' + b.lv + '</b> ' +
-        b.label + '<br><span class="ex">' + b.ex + '</span>';
+        '<b style="color:' + col + '">Lv' + b.lv + '</b> ' + b.label;
       box.appendChild(l);
     });
     const box3 = $("cfg-lv3");
@@ -3822,49 +3845,51 @@
       const b = BUILTIN_LV3[k];
       const l = document.createElement("label");
       l.className = "ck";
+      const em = b.kind === "blue" ? "b" : "r";
       l.innerHTML = '<input type="checkbox" data-b="' + k + '"><span></span>';
-      const col = b.kind === "blue" ? "#1565c0" : "#c62828";
       l.querySelector("span").innerHTML =
-        '<b style="color:' + col + '">Lv3</b> ' +
-        b.label + '<br><span class="ex">' + b.ex + '</span>';
+        '<span class="cfg-em ' + em + '">' + b.sample + '</span> ' + b.note;
       box3.appendChild(l);
     });
   })();
 
+  function syncLvFld(onId, fldId) {
+    const on = $(onId).checked;
+    $(fldId).classList.toggle("is-off", !on);
+    $(fldId).querySelector('input[type="text"]').disabled = !on;
+  }
   function cfgFromDialog() {
     const builtin = {};
     $("cfg-builtin").querySelectorAll("input[data-b]").forEach(i => { builtin[i.dataset.b] = i.checked; });
     $("cfg-lv3").querySelectorAll("input[data-b]").forEach(i => { builtin[i.dataset.b] = i.checked; });
-    return { builtin: builtin, lv1: $("cfg-lv1").value, lv2: $("cfg-lv2").value };
+    return {
+      builtin: builtin,
+      lv1: $("cfg-lv1").value,
+      lv2: $("cfg-lv2").value,
+      lv1On: $("cfg-lv1-on").checked,
+      lv2On: $("cfg-lv2-on").checked
+    };
   }
   function cfgToDialog(cfg) {
     $("cfg-builtin").querySelectorAll("input[data-b]").forEach(i => { i.checked = !!cfg.builtin[i.dataset.b]; });
     $("cfg-lv3").querySelectorAll("input[data-b]").forEach(i => { i.checked = !!cfg.builtin[i.dataset.b]; });
-    $("cfg-lv1").value = cfg.lv1;
-    $("cfg-lv2").value = cfg.lv2;
+    $("cfg-lv1").value = cfg.lv1 || "";
+    $("cfg-lv2").value = cfg.lv2 || "";
+    $("cfg-lv1-on").checked = cfg.lv1On !== false;
+    $("cfg-lv2-on").checked = cfg.lv2On !== false;
+    syncLvFld("cfg-lv1-on", "fld-lv1");
+    syncLvFld("cfg-lv2-on", "fld-lv2");
     cfgPreview();
   }
   function cfgPreview() {
     const comp = compileHead(cfgFromDialog());
-    const count = txt => {
-      const h = findHeadings(txt, comp);
-      return [
-        h.filter(x => x.lv === 1).length,
-        h.filter(x => x.lv === 2).length,
-        h.filter(x => x.lv === 3 && x.kind === "red").length,
-        h.filter(x => x.lv === 3 && x.kind === "blue").length
-      ];
-    };
-    const t = activeTabObj();
-    const L = count(t ? t.text : ""), R = count(ta().value);
-    const samples = (t ? findHeadings(t.text, comp) : []).slice(0, 3)
-      .map(h => t.text.slice(h.start, h.end).trim().slice(0, 24));
-    $("cfg-preview").innerHTML =
-      "この設定での検出数 — 左「" + (t ? t.name : "—") + "」: <b>Lv1 " + L[0] + " / Lv2 " + L[1] +
-      " / Lv3赤 " + L[2] + " / Lv3青 " + L[3] + "</b>" +
-      "　右「" + state.fileName + "」: <b>Lv1 " + R[0] + " / Lv2 " + R[1] +
-      " / Lv3赤 " + R[2] + " / Lv3青 " + R[3] + "</b>" +
-      (samples.length ? "<br>例: " + samples.map(s => "「" + esc(s) + "」").join("　") : "");
+    const h = findHeadings(ta().value, comp);
+    const n1 = h.filter(x => x.lv === 1).length;
+    const n2 = h.filter(x => x.lv === 2).length;
+    const n3r = h.filter(x => x.lv === 3 && x.kind === "red").length;
+    const n3b = h.filter(x => x.lv === 3 && x.kind === "blue").length;
+    $("cfg-preview").textContent =
+      "現状：Lv1 " + n1 + " / Lv2 " + n2 + " / 強調：赤 " + n3r + " / 青 " + n3b;
   }
   function openHeadCfg() {
     cfgToDialog(state.headCfg);
@@ -3875,6 +3900,8 @@
   $("btn-head-cfg").addEventListener("click", openHeadCfg);
   $("cfg-lv1").addEventListener("input", cfgPreview);
   $("cfg-lv2").addEventListener("input", cfgPreview);
+  $("cfg-lv1-on").addEventListener("change", () => { syncLvFld("cfg-lv1-on", "fld-lv1"); cfgPreview(); });
+  $("cfg-lv2-on").addEventListener("change", () => { syncLvFld("cfg-lv2-on", "fld-lv2"); cfgPreview(); });
   $("cfg-builtin").addEventListener("change", cfgPreview);
   $("cfg-lv3").addEventListener("change", cfgPreview);
   $("cfg-reset").addEventListener("click", () => cfgToDialog(JSON.parse(JSON.stringify(HEAD_DEFAULT))));
@@ -3883,7 +3910,7 @@
     state.headCfg = cfgFromDialog();
     headC = compileHead(state.headCfg);
     invalidateHeads();
-    if (!state.showHead) { state.showHead = true; $("opt-head").checked = true; }
+    state.showHead = true;
     saveSettings();
     renderRef(); refreshOverlay(); drawAll();
     closeHeadCfg();
