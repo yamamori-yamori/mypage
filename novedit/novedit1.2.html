@@ -550,6 +550,7 @@
   <button type="button" id="tool-blank-head" role="menuitem">空行を入れる ─ 見出しの前後</button>
   <button type="button" id="tool-blank-serif-narr" role="menuitem">空行を入れる ─ セリフと地の文の間</button>
   <button type="button" id="tool-blank-serif-all" role="menuitem">空行を入れる ─ セリフの両側すべて</button>
+  <button type="button" id="tool-blank-para-serif-all" role="menuitem">空行を入れる ─ 段落とセリフの両側すべて</button>
   <button type="button" id="tool-blank-sep" role="menuitem">空行を入れる ─ 区切り行の前後</button>
   <div class="tm-field">
     <textarea id="tool-sep-pat" rows="2" placeholder="例：　・　・　・" autocomplete="off" spellcheck="false"
@@ -2168,11 +2169,13 @@
     return { text: joinBody(kept, bd.endsNL), count: ls.length - kept.length };
   }
 
+  /** 段落（地の文）またはセリフ。空行・見出しは対象外（見出しの前後は head 用）。区切り行も headLevel0 ならここに含む */
+  const isParaOrSerif = s => !isBlankLine(s) && headLevel(s) === 0;
   /**
-   * 空行を入れる（4種）。隣接2行の「境界」ごとに入れるかを先に決めてから組み立てる
+   * 空行を入れる（5種）。隣接2行の「境界」ごとに入れるかを先に決めてから組み立てる
    * （行ごとに前後別々に判定すると、連続する対象行の間で二重に入ってしまうため）。
    * どちらかの行がすでに空行（空白/タブだけも含む）なら増やさない＝連続空行を作らない。
-   * kind: "head"／"serif-narr"／"serif-all"／"sep"（区切り行の前後。state.sepPat）
+   * kind: "head"／"serif-narr"／"serif-all"／"para-serif-all"／"sep"（区切り行の前後。state.sepPat）
    * 既知の限界は novedit_未処置課題.md H-1（複数行にまたがるセリフ）。
    */
   function insertBlankLines(kind, src) {
@@ -2188,6 +2191,7 @@
         if (kind === "head") need = headLevel(a) > 0 || headLevel(b) > 0;
         else if (kind === "serif-narr") need = isSerif(a) !== isSerif(b);
         else if (kind === "serif-all") need = isSerif(a) || isSerif(b);
+        else if (kind === "para-serif-all") need = isParaOrSerif(a) || isParaOrSerif(b);
         else if (kind === "sep") need = isSepLine(a) || isSepLine(b);
       }
       if (need) { out.push(""); count++; }
@@ -2311,6 +2315,7 @@
     $("tool-blank-head").addEventListener("click", () => applyTransform("空行を入れる（見出しの前後）", s => insertBlankLines("head", s)));
     $("tool-blank-serif-narr").addEventListener("click", () => applyTransform("空行を入れる（セリフと地の文の間）", s => insertBlankLines("serif-narr", s)));
     $("tool-blank-serif-all").addEventListener("click", () => applyTransform("空行を入れる（セリフの両側すべて）", s => insertBlankLines("serif-all", s)));
+    $("tool-blank-para-serif-all").addEventListener("click", () => applyTransform("空行を入れる（段落とセリフの両側すべて）", s => insertBlankLines("para-serif-all", s)));
     function runSepBlank() {
       const v = $("tool-sep-pat").value;
       state.sepPat = v;
