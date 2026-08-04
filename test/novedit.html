@@ -32,6 +32,15 @@
         start_url: "."
       }));
   document.head.appendChild(link);
+  // Service Worker: https / localhost のみ。network-first・版チェック UI なし
+  if (http && "serviceWorker" in navigator) {
+    var secure = location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    if (secure) {
+      navigator.serviceWorker.register(new URL("sw.js", location.href), {
+        scope: new URL("./", location.href).href
+      }).catch(function () { /* 登録失敗は黙って通常動作 */ });
+    }
+  }
 })();
 </script>
 <style>
@@ -198,18 +207,12 @@
     flex: 1; min-width: 0;
     overflow-x: auto; overflow-y: hidden;
     scrollbar-width: none;
+    /* 端タブ選択時に隣が覗ける余白（scrollActiveTabIntoView の pad と揃える） */
+    padding: 0 36px;
+    scroll-padding-inline: 36px;
+    box-sizing: border-box;
   }
   #tabbar::-webkit-scrollbar { height: 0; }
-  .tab-nav {
-    display: none; flex-shrink: 0; width: 20px; padding: 0;
-    align-items: center; justify-content: center;
-    background: #dde5e8; border: none; border-right: 1px solid var(--line);
-    color: #546e7a; font-size: 14px; line-height: 1; cursor: pointer;
-  }
-  #tab-right { border-right: none; border-left: 1px solid var(--line); }
-  .tab-nav.show { display: flex; }
-  .tab-nav:hover:not(:disabled) { background: #c9d4d9; }
-  .tab-nav:disabled { color: #b0bec5; cursor: default; }
   .tab {
     display: flex; align-items: center; gap: 5px;
     padding: 0 7px 0 12px; font-size: 12px; color: #546e7a;
@@ -540,7 +543,7 @@
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.1　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.2　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
@@ -634,9 +637,7 @@
   <!-- 左ペイン（参照・読み取り専用） -->
   <div class="pane" id="pane-ref">
     <div id="tabbar-wrap">
-      <button id="tab-left" class="tab-nav" title="タブを左へスクロール">‹</button>
       <div id="tabbar"></div>
-      <button id="tab-right" class="tab-nav" title="タブを右へスクロール">›</button>
       <button id="tab-add" title="タブを追加">＋</button>
       <button id="tab-undo" title="閉じたタブを復元" aria-label="閉じたタブを復元">↩</button>
     </div>
@@ -751,7 +752,7 @@
       <p class="hint">長い記号が優先（<code>##</code>＝Lv2、<code>#</code>＝Lv1）</p>
     </div>
 
-    <p id="cfg-nav-hint">キーボード：Ctrl（Mac は ⌘）+↑↓ で隣の話（Lv1／Lv2）の境界へ移動。Shift 併用でそこまで選択（1話のコピペ向き）。</p>
+    <p id="cfg-nav-hint">キーボード：Ctrl（Mac は ⌘）+↑↓ で上下の見出しへ移動。Shift 併用でそこまで選択（1話コピペが簡単に）。</p>
 
     <h3>本文中での強調表示（行頭以外でも使える）</h3>
     <div id="cfg-lv3"></div>
@@ -1827,19 +1828,27 @@
     armTimer = setTimeout(disarm, 2500);
   }
 
-  function updateTabNav() {
-    const bar = $("tabbar");
-    const ov = bar.scrollWidth - bar.clientWidth > 2;
-    $("tab-left").classList.toggle("show", ov);
-    $("tab-right").classList.toggle("show", ov);
-    if (ov) {
-      $("tab-left").disabled = bar.scrollLeft <= 1;
-      $("tab-right").disabled = bar.scrollLeft >= bar.scrollWidth - bar.clientWidth - 1;
-    }
-  }
   function scrollActiveTabIntoView() {
-    const el = $("tabbar").querySelector(".tab.active");
-    if (el) el.scrollIntoView({ inline: "nearest", block: "nearest" });
+    /* 端のタブを選んでも隣が少し見えるよう pad を空ける。
+       getBoundingClientRect で bar 内座標を使う。半分隠れ→入ってくる動きは smooth。 */
+    const bar = $("tabbar");
+    const el = bar.querySelector(".tab.active");
+    if (!el) return;
+    const pad = 36;
+    const br = bar.getBoundingClientRect();
+    const er = el.getBoundingClientRect();
+    let delta = 0;
+    if (er.left < br.left + pad) delta = er.left - (br.left + pad);
+    else if (er.right > br.right - pad) delta = er.right - (br.right - pad);
+    if (Math.abs(delta) > 0.5) {
+      const maxSl = Math.max(0, bar.scrollWidth - bar.clientWidth);
+      const next = Math.max(0, Math.min(maxSl, bar.scrollLeft + delta));
+      if (typeof bar.scrollTo === "function") {
+        bar.scrollTo({ left: next, behavior: "smooth" });
+      } else {
+        bar.scrollLeft = next;
+      }
+    }
   }
 
   function renderTabs() {
@@ -1853,9 +1862,14 @@
       el.title = t.kind
         ? (t.kind === SYS.ORIGIN ? "右ペインを開いた時点の内容（閉じられません）" : diffTitle(t))
         : (t.note || t.name);          // 「前の編集」だけ由来を出す（rev56）
-      el.innerHTML = t.kind
-        ? '<span class="pin">◉</span><span class="name"></span>'
-        : '<span class="name"></span><span class="x" title="閉じる（2回クリック）">×</span>';
+      /* × はアクティブな資料タブだけ（誤タップで別タブを閉じない） */
+      if (t.kind) {
+        el.innerHTML = '<span class="pin">◉</span><span class="name"></span>';
+      } else if (t.id === state.activeTab) {
+        el.innerHTML = '<span class="name"></span><span class="x" title="閉じる（2回クリック）">×</span>';
+      } else {
+        el.innerHTML = '<span class="name"></span>';
+      }
       el.querySelector(".name").textContent = t.name;
       /* ★pointerdown で受ける。mousedown は iOS が 1 回目のタップで送ってこないことがある
          （5.3.2B）。preventDefault は【しない】——Safari で click を食う。 */
@@ -1871,7 +1885,6 @@
       bar.appendChild(el);
     });
     updateUndoChip();
-    updateTabNav();
     requestAnimationFrame(scrollActiveTabIntoView);
   }
 
@@ -3670,11 +3683,6 @@
   $("tab-add").addEventListener("click", () => $("file-ref").click());
   $("tab-undo").addEventListener("click", undoClose);
 
-  // タブが溢れたときの左右スクロール
-  const tabScroll = d => $("tabbar").scrollBy({ left: d, behavior: "smooth" });
-  $("tab-left").addEventListener("click", () => tabScroll(-160));
-  $("tab-right").addEventListener("click", () => tabScroll(160));
-  $("tabbar").addEventListener("scroll", updateTabNav);
   // 縦ホイールを横スクロールに変換する（横ホイールが無いマウス向け）
   $("tabbar").addEventListener("wheel", e => {
     const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
@@ -4092,7 +4100,7 @@
   /* ペイン幅・表示幅を当て直して描き直す（resize / スプリッタで共通）。
      ★applyRatio() の後に reflowWidth()（grid 書き換え直後は clientWidth が古い。5.1B）。 */
   const relayoutPanes = () => {
-    applyRatio(); reflowWidth(); refreshOverlay(); drawMinimap("left"); updateTabNav();
+    applyRatio(); reflowWidth(); refreshOverlay(); drawMinimap("left");
   };
   function fitToolbar() {
     const tb = $("toolbar");
