@@ -32,5 +32,14 @@
       "purpose": "maskable"
     }
   ],
-  "categories": ["productivity", "utilities"]
+  "categories": ["productivity", "utilities"],
+  "file_handlers": [
+    {
+      "action": "./novedit.html",
+      "accept": {
+        "text/plain": [".txt", ".text", ".md"]
+      },
+      "launch_type": "single-client"
+    }
+  ]
 }

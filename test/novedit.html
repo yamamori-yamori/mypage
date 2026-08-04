@@ -4136,28 +4136,111 @@
   });
   setTimeout(() => { reflowWidth(); refreshOverlay(); }, 60);   // フォント確定後に幅の上限を測り直す
 
-  try {
-    const raw = localStorage.getItem(LS_DRAFT);
-    if (raw) {
-      const d = JSON.parse(raw);
-      if (d && d.text) {
-        $("restore-info").textContent = "前回の自動保存（" + new Date(d.at).toLocaleString("ja-JP") + " / " +
-          d.text.length.toLocaleString() + "文字）が残っています。復元しますか？";
-        $("overlay").classList.add("show");
-        $("btn-restore").focus();          // 大きい側＝既定の選択肢としてフォーカスも置く
-        $("btn-restore").onclick = () => {
-          setWholeDoc(d.text); state.fileName = d.name || "無題.txt"; state.dirty = false;
-          ta().setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;   // 先頭から読む
-          // 基準も一緒に戻す。origin が無い古い下書きは、復元した内容を基準にする（5.13.1B）
-          const o = d.origin && typeof d.origin.text === "string" ? d.origin : null;
-          setOrigin(o ? o.text : d.text, (o && o.name) || state.fileName);
-          $("overlay").classList.remove("show");
-          updateHeader(); runEdSearch(); refreshOverlay(); drawAll();
-        };
-        $("btn-discard").onclick = () => { localStorage.removeItem(LS_DRAFT); $("overlay").classList.remove("show"); };
-      }
+  /* ---- OS / PWA からのファイル起動（File Handling + launchQueue）----
+     manifest.file_handlers で .txt 等を受け取る。第1件＝右ペイン原稿（handle 付き→上書き可）、
+     第2件以降＝左ペイン参照。PC/iOS で分岐しない。 */
+  async function readLaunchHandle(h) {
+    const f = await h.getFile();
+    const text = String(await f.text()).replace(/\r\n?/g, "\n");
+    return { name: f.name || "無題.txt", text: text, handle: h };
+  }
+  function applyLaunchItems(items) {
+    if (!items || !items.length) return false;
+    const edit = items[0];
+    const t = ta();
+    markUndo({ text: t.value, name: state.fileName, handle: state.fileHandle,
+               origin: state.origin, dirty: state.dirty, prevTabId: null,
+               label: "ファイルの読み込み" });
+    setWholeDoc(edit.text);
+    state.fileName = edit.name;
+    state.dirty = false;
+    state.fileHandle = edit.handle || null;
+    t.setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;
+    setOrigin(edit.text, edit.name);
+    let firstRefId = null;
+    for (let i = 1; i < items.length; i++) {
+      const r = items[i];
+      const tab = addTab(r.name, r.text, false);
+      if (!firstRefId) firstRefId = tab.id;
     }
-  } catch (_) {}
+    if (firstRefId) setActiveTab(firstRefId);
+    updateHeader(); runEdSearch(); refreshOverlay(); drawAll();
+    const bits = ["「" + edit.name + "」を開きました"];
+    if (items.length > 1) bits.push("参照 " + (items.length - 1) + " 件");
+    if (edit.handle) bits.push("Ctrl+S で上書き可");
+    toast(bits.join(" ／ "));
+    return true;
+  }
+  async function consumeLaunchFiles(fileHandles) {
+    if (!fileHandles || !fileHandles.length) return false;
+    const items = [];
+    for (let i = 0; i < fileHandles.length; i++) {
+      try { items.push(await readLaunchHandle(fileHandles[i])); }
+      catch (_) { /* 読めないハンドルは飛ばす */ }
+    }
+    if (!items.length) return false;
+    try { $("overlay").classList.remove("show"); } catch (_) {}
+    const go = () => applyLaunchItems(items);
+    if (state.dirty) {
+      confirmOverwrite(
+        "OS から " + items.length + " 件のファイルが渡されました。右ペインの原稿を差し替えます。",
+        go,
+        { title: "ファイルを開く", ok: "差し替えて開く" }
+      );
+      return true;
+    }
+    return go();
+  }
+
+  /* launchQueue は「ファイル付き起動」のときだけ consumer が走る。
+     通常起動では短い待ちのあと下書き復元へ進む。 */
+  const waitLaunch = new Promise(resolve => {
+    let done = false;
+    const finish = v => { if (!done) { done = true; resolve(!!v); } };
+    try {
+      if (!("launchQueue" in window) || typeof window.launchQueue.setConsumer !== "function") {
+        finish(false);
+        return;
+      }
+      window.launchQueue.setConsumer(async params => {
+        try {
+          const files = params && params.files ? params.files : [];
+          const ok = await consumeLaunchFiles(files);
+          finish(ok);
+        } catch (_) { finish(false); }
+      });
+      setTimeout(() => finish(false), 600);
+    } catch (_) { finish(false); }
+  });
+
+  (async () => {
+    let launched = false;
+    try { launched = await waitLaunch; } catch (_) { launched = false; }
+    // ファイル起動で原稿を渡されたときは下書き復元を出さない
+    if (launched) return;
+    try {
+      const raw = localStorage.getItem(LS_DRAFT);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d && d.text) {
+          $("restore-info").textContent = "前回の自動保存（" + new Date(d.at).toLocaleString("ja-JP") + " / " +
+            d.text.length.toLocaleString() + "文字）が残っています。復元しますか？";
+          $("overlay").classList.add("show");
+          $("btn-restore").focus();          // 大きい側＝既定の選択肢としてフォーカスも置く
+          $("btn-restore").onclick = () => {
+            setWholeDoc(d.text); state.fileName = d.name || "無題.txt"; state.dirty = false;
+            ta().setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;   // 先頭から読む
+            // 基準も一緒に戻す。origin が無い古い下書きは、復元した内容を基準にする（5.13.1B）
+            const o = d.origin && typeof d.origin.text === "string" ? d.origin : null;
+            setOrigin(o ? o.text : d.text, (o && o.name) || state.fileName);
+            $("overlay").classList.remove("show");
+            updateHeader(); runEdSearch(); refreshOverlay(); drawAll();
+          };
+          $("btn-discard").onclick = () => { localStorage.removeItem(LS_DRAFT); $("overlay").classList.remove("show"); };
+        }
+      }
+    } catch (_) {}
+  })();
 })();
 </script>
 </body>
