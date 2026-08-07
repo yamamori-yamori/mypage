@@ -307,6 +307,10 @@
     /* ミニマップが位置と全体量を示すのでスクロールバーは出さない。
        本文の幅をその分だけ広く使える（ホイール・ドラッグ操作は従来どおり） */
     scrollbar-width: none;
+    /* ★幅・字級で折り返しが変わったとき、ブラウザの overflow anchoring が
+       scrollTop を大きく動かす（先頭にいたのに途中へ飛ぶ）。左MM枠の検査も
+       「先頭のまま」前提が崩れる。執筆中の位置飛びでもあるので無効化する。 */
+    overflow-anchor: none;
   }
   .pane-body::-webkit-scrollbar { width: 0; height: 0; }
   .pane-inner {
@@ -1060,6 +1064,37 @@
     const mr = $("mirror").getBoundingClientRect(), cs = getComputedStyle($("mirror"));
     return { left: mr.left + parseFloat(cs.paddingLeft), top: mr.top + parseFloat(cs.paddingTop), height: parseFloat(cs.lineHeight) || 18 };
   }
+  /** 右ペインの表示領域の最上端にある文字オフセットを返す（リベース時の同期用）。
+     ミラー幅が古いと offsetFromPoint がズレるので style も同期する。 */
+  function caretAtBodyTop() {
+    syncMirrorStyle();
+    syncMirrorText();
+    const b = body().getBoundingClientRect();
+    return offsetFromPoint(b.left + 4, b.top + 4);
+  }
+  /** 「初期」タブのテキスト中、文字オフセット off の #ref-body 内 y（コンテンツ座標）。
+     見出し/検索のラップは nodeAtOffset（TreeWalker）に任せる。
+     文末オフセットは rectForOffset と同じく「直前の1文字」に clamp して Range を取る
+     （折りたたみ Range だと getClientRects が空になり、null → scrollTop 0 に落ちる）。
+     テキストが空／測れないときは null。 */
+  function leftTopForOffset(off) {
+    const rb = $("ref-body");
+    const root = $("ref-inner").querySelector(".rtext") || $("ref-inner");
+    const txt = root.textContent || "";
+    if (!txt.length) return null;
+    const safe = Math.max(0, Math.min(off, txt.length - 1));
+    const p = nodeAtOffset(root, safe);
+    if (!p || !p.node || p.node.nodeType !== 3) return null;
+    const len = p.node.nodeValue.length;
+    const i = Math.max(0, Math.min(p.off, Math.max(0, len - 1)));
+    const r = document.createRange();
+    r.setStart(p.node, i);
+    r.setEnd(p.node, Math.min(i + 1, len));
+    const rc = r.getClientRects();
+    if (!rc.length) return null;
+    const top = rc[0].top - rb.getBoundingClientRect().top + rb.scrollTop;
+    return Math.max(0, Math.round(top));
+  }
   function offsetFromPoint(x, y) {
     const node = mirrorNode(), len = node.length - 1;
     if (len <= 0) return 0;
@@ -1197,6 +1232,8 @@
 
   /** 右ペイン補正の申し送り（applyPendingRightFix で消費）。★TDZ 事故を避けるため前で宣言。 */
   let pendingRightFix = null;
+  /* 見えている行範囲の memo。applySettings からも消すのでミニマップ節より前に置く。 */
+  const visRangeMemo = { left: null, right: null };
 
   function applySettings() {
     const fs = +$("opt-font").value || 15;
@@ -1224,6 +1261,10 @@
     $("ref-inner").style.maxWidth = px + "px";
     ta().style.fontSize = fs + "px";
     ta().style.maxWidth = px + "px";
+    /* スタイル適用直後に1回レイアウトを確定させる（この後の scrollHeight 実測と
+       左MM描画が古い高さのまま走るのを防ぐ）。 */
+    void $("ref-inner").offsetHeight;
+    void rb.scrollHeight;
     /* ---- 新しい scrollHeight を測って比例補正する（5.1B）----
        左は同期で測れる。右は autoGrow() が height を確定させるまで測れないので
        refreshOverlay() の rAF から applyPendingRightFix() で当てる。非アクティブは推定。
@@ -1232,6 +1273,9 @@
     const ok = r => isFinite(r) && r > 0 && Math.abs(r - 1) > 0.001;
     const rl = beforeL > 0 ? rb.scrollHeight / beforeL : 1;
     if (topL > 0 && ok(rl)) rb.scrollTop = Math.round(topL * rl);
+    /* 先頭にいたときは比例補正も anchoring もかけず 0 を維持する。
+       （topL==0 のとき上の if は動かないが、ブラウザが独自にずらすことがある） */
+    if (topL < 1) rb.scrollTop = 0;
     pendingRightFix = (topR > 0 && beforeR > 0) ? { top: topR, before: beforeR } : null;
 
     if (fsChanged) {
@@ -1253,8 +1297,20 @@
     /* 左ミニマップだけは明示的に描き直す。
        ★scrollTop に同じ値（先頭なら必ずそう）を代入するとブラウザは scroll を出さないので、
          scroll 任せだと折り返しが変わっても青枠が古いまま残る。
+       ★幅・字級で折り返しだけ変わるとき、scrollHeight の更新が 1 フレーム遅れる環境がある。
+         見えている行の memo が古い key のままだと枠高さが変わらない。
+         → memo を捨てて二重 rAF のあと描く（drawLeftMM / rebase と同じ型）。
        "left" だけ呼ぶ（右は refreshOverlay の rAF が描く）。詳細は構築仕様書 5.1B 罠⑤。 */
-    requestAnimationFrame(() => drawMinimap("left"));
+    visRangeMemo.left = null;
+    const paintLeftMM = () => {
+      visRangeMemo.left = null;
+      if (topL < 1) rb.scrollTop = 0;
+      drawMinimap("left");
+    };
+    /* 同期1回（レイアウト確定済み）＋二重 rAF（後続のクランプ後）。
+       先頭固定の再確認も paint 直前に行う。 */
+    paintLeftMM();
+    requestAnimationFrame(() => requestAnimationFrame(paintLeftMM));
   }
 
   /** ペイン幅が変わったときの再適用。applyRatio の後に呼ぶ（clientWidth が確定してから） */
@@ -3402,17 +3458,18 @@
     return charOffsetInRoot(root, rg.startContainer, rg.startOffset);
   }
 
-  /* スクロールのたびに呼ばれるので、同じ状態なら計算し直さない */
-  const visRangeMemo = { left: null, right: null };
-
   /** いま画面に見えている論理行の範囲 { top, bot } */
   function visibleLineRange(isL, lineOf, n) {
     const pane0 = isL ? $("ref-body") : body();
     // テキストが差し替わってもレイアウト寸法が偶然同じ、という取り違えを避けるため
     // 文字数もキーに入れる（5.4D）
     const srcLen = isL ? ((activeTabObj() && activeTabObj().text) || "").length : ta().value.length;
+    /* maxWidth / fontSize も key に入れる。折り返しが変わっても scrollHeight が
+       偶然一致する／未更新の瞬間があると、古い visible 範囲を再利用してしまう。 */
+    const lay = isL ? $("ref-inner") : ta();
     const key = [Math.round(pane0.scrollTop), pane0.clientHeight, pane0.scrollHeight, n, srcLen,
-                 isL ? ((activeTabObj() && activeTabObj().id) || "-") : "e"].join("|");
+                 isL ? ((activeTabObj() && activeTabObj().id) || "-") : "e",
+                 lay.style.maxWidth || "", lay.style.fontSize || ""].join("|");
     const memo = visRangeMemo[isL ? "left" : "right"];
     if (memo && memo.key === key) return memo.val;
     const val = computeVisibleLineRange(isL, lineOf, n);
@@ -3832,10 +3889,36 @@
   $("ref-act").addEventListener("click", () => {
     const act = $("ref-act").dataset.act;
     if (act === "rebase") {
+      /* リベース時は「初期」タブが見えている（ボタンの表示条件=activeTab.kind===SYS.ORIGIN）。
+         右ペインの表示先頭の文字オフセットをミラーで取り、初期タブの同じオフセットの y に
+         scrollTop を合わせる（文字オフセット基準。行番号比や scrollTop 直コピーではない）。
+         左右の折り返し高さが違っても「同じ文字位置」が先頭に来るので、
+         スプリッタで 50:50 からずれたときも表示が一致する。
+         （scrollTop を直接コピーする方式だと左の方が短いときに空の余白が見える） */
+      const rightOff = caretAtBodyTop();
       setOrigin(ta().value, state.fileName);
-      /* ★setOrigin は「初期」「変更」タブが出ているときだけ runRefSearch() を通り、その中で
-         updateCount("ref") と renderRef() を済ませている。無条件に呼ぶと 2 回組み直すことになる。 */
-      if (!isSysActive(SYS.ORIGIN) && !isSysActive(SYS.DIFF)) { renderRef(); updateCount("ref"); }
+      const o = state.tabs.find(x => x.kind === SYS.ORIGIN);
+      if (o) o.scroll = 0;                  // 仮値（再描画後に文字オフセット基準で上書き）
+      /* setOrigin は「初期」「変更」タブが出ているときだけ runRefSearch() を通り、その中で
+         renderRef() と updateCount("ref") を済ませている。renderRef は #ref-inner の中身を
+         全部作り直すので、scrollTop は DOM 確定後に当てる必要がある（二重 rAF）。 */
+      if (!isSysActive(SYS.ORIGIN) && !isSysActive(SYS.DIFF)) {
+        renderRef();
+      }
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const top = leftTopForOffset(rightOff);
+        const rb = $("ref-body");
+        if (top !== null) {
+          const max = Math.max(0, rb.scrollHeight - rb.clientHeight);
+          rb.scrollTop = Math.max(0, Math.min(max, top));
+          if (o) o.scroll = rb.scrollTop;
+        } else {
+          rb.scrollTop = 0;
+          if (o) o.scroll = 0;
+        }
+        drawMinimap("left");
+      }));
+      if (!isSysActive(SYS.ORIGIN) && !isSysActive(SYS.DIFF)) updateCount("ref");
       toast("「初期」を右ペインの現在の内容に再設定しました");
     } else if (act === "tohere") {
       rightToHere();
