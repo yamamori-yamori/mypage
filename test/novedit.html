@@ -558,7 +558,7 @@
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.2.6　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.2.7　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
@@ -4932,6 +4932,26 @@
     return true;
   }
 
+  /** 本文を全選択する（5.19G）。
+   *  ★前方ウィンドウ化の副作用への手当て。textarea には窓しか載っていないので、
+   *    ブラウザ標準の Ctrl+A は【窓のぶんだけ】選んで終わる（＝中途半端に選択される）。
+   *    先に窓を全文へ戻してから選ぶ。
+   *  ★setSelectionRange は選択末尾を画面内へ寄せるので、scrollTop を控えて戻す
+   *    （標準の Ctrl+A は表示位置を動かさない。そこに揃える）。 */
+  function selectAllDoc() {
+    const t = ta();
+    if (docHead.length) {
+      pushWinUndo();              // 窓を張り直す＝value 代入なので控えを取る
+      rebaseWindow(0);
+    }
+    const keep = t.scrollTop;
+    try { t.setSelectionRange(0, t.value.length, "forward"); }
+    catch (_) { t.setSelectionRange(0, t.value.length); }
+    t.scrollTop = keep;
+    syncEditLayersScroll();
+    updateCaret(false);
+  }
+
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") { disarm(); closeHeadCfg(); return; }
     const mod = e.ctrlKey || e.metaKey;
@@ -4946,6 +4966,15 @@
     /* Ctrl+Z は原則ブラウザ任せ（制約 #4）。ただし［新規］／［読み込み］だけは
        履歴に載せていないので、自前で戻せるときに限って横取りする（5.15.3 / rev57）。 */
     if (k === "z" && !e.shiftKey) { if (undoStep()) e.preventDefault(); return; }
+    /* Ctrl+A：本文にフォーカスがあるときだけ横取りする（5.19G）。
+       窓化で textarea には一部しか載っていないため、素通しすると窓のぶんしか選べない。
+       窓が全文なら標準に任せる（余計なことをしない）。 */
+    if (k === "a" && !e.shiftKey && !e.altKey && document.activeElement === ta()) {
+      if (!docHead.length) return;          // 窓＝全文。標準の全選択でよい
+      e.preventDefault();
+      selectAllDoc();
+      return;
+    }
     if (k === "s") {
       e.preventDefault();
       /* iOS: Ctrl+S＝共有直行。Shift はメニューを開いて名前欄へ（prompt 禁止）。 */
