@@ -307,8 +307,18 @@
     /* ミニマップが位置と全体量を示すのでスクロールバーは出さない。
        本文の幅をその分だけ広く使える（ホイール・ドラッグ操作は従来どおり） */
     scrollbar-width: none;
+    /* ★幅・字級で折り返しが変わったとき、ブラウザの overflow anchoring が
+       scrollTop を大きく動かす（先頭にいたのに途中へ飛ぶ）。左MM枠の検査も
+       「先頭のまま」前提が崩れる。執筆中の位置飛びでもあるので無効化する。 */
+    overflow-anchor: none;
   }
   .pane-body::-webkit-scrollbar { width: 0; height: 0; }
+  /* ★右ペインは textarea 自身がスクロールする（#edit-body は枠だけ）。
+     全文高さの textarea だと IME が小窓になり、分割確定のたびにレイアウトで固まる。
+     枠サイズのまま内部スクロールにするとインライン変換でき、固まらない。 */
+  #edit-body {
+    overflow: hidden;
+  }
   .pane-inner {
     margin: 0 auto;
     /* 左右は同幅にする。片側だけ厚いと max-width + margin:auto の中心がズレて
@@ -411,10 +421,15 @@
     position: relative; z-index: 1;
     display: block; margin: 0 auto;
     padding: 16px 3px 60vh;
-    width: 100%; border: none; resize: none; outline: none; background: transparent;
+    width: 100%; height: 100%; box-sizing: border-box;
+    border: none; resize: none; outline: none; background: transparent;
     font-family: inherit; font-size: 15px; line-height: 1.9; color: #212121;
-    white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word; overflow: hidden;
+    white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word;
+    /* 枠内スクロール（overflow:hidden + autoGrow 全文高さは IME が死ぬので使わない） */
+    overflow-x: hidden; overflow-y: auto;
+    scrollbar-width: none;
   }
+  #edit-area::-webkit-scrollbar { width: 0; height: 0; }
   #edit-body.drop-active { background: #f9fbf7; }
   #pane-edit.drop-active { box-shadow: inset 0 0 0 2px #66bb6a; }
 
@@ -543,7 +558,7 @@
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.2　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.2.6　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
@@ -859,6 +874,306 @@
 
   const ta = () => $("edit-area");
   const body = () => $("edit-body");
+  /* 右ペインのスクロール位置・量（IME対策で ta 自身がスクローラ） */
+  const rScroll = () => ta();
+
+  /* =======================================================
+     前方ウィンドウ（5.19）― 日本語入力（IME）の遅さの唯一の対策
+     =======================================================
+     ■ 症状
+       10万字の【文末】でかな漢字変換すると 1 打鍵あたり 3 秒前後かかる。
+       文書の先頭で打つと 24ms。削除・英数字は速い。
+     ■ 原因（実測で確定・アプリ側の JS は無関係）
+       Blink は変換中、候補ウィンドウを置くために textarea の【先頭から】
+       キャレットまで文字を数え直す。この費用がキャレット前の文字数に対して
+       二乗的に伸びる。JS を一切積まない素の textarea でも同じだけ遅い。
+         キャレット前     0字→ 23ms ／ 8千字→ 23ms ／ 2.4万字→109ms ／ 10万字→3026ms
+       CSS（折り返し・contain・content-visibility・padding・will-change 等）は
+       どれも効かない。textarea をやめる以外に、この費用を消す方法は無い。
+     ■ 対策
+       全文は JS 文字列（docHead ＋ textarea の中身）で持ち、
+       textarea には【キャレット前 KEEP_TGT 字ぶん＋それ以降の全部】だけを載せる。
+       文書の「後ろ」にある文字はほぼ無料（20万字でもキャレットが2万字目なら 17ms）
+       なので、削るのは前だけでよい。
+         → 10万字文末 3166ms → 24ms／20万字文末 13121ms → 22ms（空のエディタと同じ）
+     ■ 不変条件（ここが崩れたら本文が壊れる。必ず守ること）
+         docText() === docHead + ta().value
+       ★ミラー（#mirror）は【全文のまま】据え置く。ミラーが 20 万字あっても
+         IME は 23ms のままで、費用はゼロと実測済み。おかげで見出し帯・ヒット層・
+         キャレット・ミニマップの座標計算は全文座標のまま一切変えずに済む。
+         textarea だけが窓なので、そのズレは headTop（窓先頭の全文座標 y）で吸収する。
+     ■ 却下案
+       ・contenteditable ＋ 行 div 化：10万字 42ms と速いが、iPad／Safari を含む
+         全環境で Undo・選択・IME の挙動を作り直すことになる。textarea を残す。
+       ・CSS だけの対策：上のとおり全滅。
+       ・変換開始時に窓を張り直す：value 代入は変換を壊すので不可能。         */
+  const WIN_KEEP_MAX = 12000;   // キャレット前がこれを超えたら張り直す
+  const WIN_KEEP_TGT = 6000;    // 張り直したあとキャレット前に残す量
+  const WIN_GROW     = 20000;   // 上端に着いたとき頭へ継ぎ足す量
+  let docHead = "";             // textarea に載せていない先頭部分
+  let docCache = null;          // docHead + ta().value の控え（毎回つなぎ直さない）
+  let headTop = 0;              // 窓先頭 = 全文座標での y（レイヤ補正に使う）
+  let winQuietUntil = 0;        // 張り直し直後の scroll で頭を継ぎ足さないための沈黙期限
+
+  const docBase = () => docHead.length;
+  /** 全文。★ta().value を「全文」として読んでいた場所は全部これに置き換える */
+  function docText() {
+    if (docCache === null) docCache = docHead + ta().value;
+    return docCache;
+  }
+  /** 全文の長さ。つなぎ直さずに済ませたいときはこちら */
+  const docLen = () => docHead.length + ta().value.length;
+  function docInvalidate() { docCache = null; }
+  /** 全文座標のキャレット位置 */
+  const docSelStart = () => docHead.length + ta().selectionStart;
+  const docSelEnd   = () => docHead.length + ta().selectionEnd;
+  /** 窓⇔全文の座標変換 */
+  const toWin = off => off - docHead.length;
+  const inWin = off => off >= docHead.length;
+
+  /** 全文を丸ごと差し替える（読み込み・Undo・整形など）。窓は先頭に戻す */
+  function setDocText(v) {
+    docHead = "";
+    docCache = v;
+    headTop = 0;
+    ta().value = v;
+    applyMirrorTop();
+    winHush();
+  }
+  function winHush(ms) { winQuietUntil = nowMs() + (ms == null ? 500 : ms); }
+  const nowMs = () => (window.performance && performance.now) ? performance.now() : Date.now();
+
+  /** 全文座標で選択を設定する。窓の外なら先に窓を張り直す */
+  function setDocSel(s, e, dir) {
+    if (e == null) e = s;
+    if (s < docHead.length) rebaseWindow(s - WIN_KEEP_TGT);
+    const b = docHead.length;
+    const t = ta();
+    const a = Math.max(0, s - b), z = Math.max(0, e - b);
+    if (dir) { try { t.setSelectionRange(a, z, dir); return; } catch (_) {} }
+    t.setSelectionRange(a, z);
+  }
+
+  /** 窓の先頭は必ず行頭にする（行の途中で切ると折り返しが変わって見える） */
+  function snapLineStart(text, off) {
+    if (off <= 0) return 0;
+    const i = text.lastIndexOf("\n", off - 1);
+    return i < 0 ? 0 : i + 1;
+  }
+
+  /** 窓を張り直す。キャレットの画面上の位置は動かさない。
+   *  ★ここで ta().value に代入するのでブラウザ標準の Undo 履歴は切れる。
+   *    切れるぶんは自前 Undo（pushWinUndo）が受け持つ。 */
+  function rebaseWindow(want) {
+    const full = docText();
+    want = Math.max(0, Math.min(want, full.length));
+    /* ★不変条件：いま画面に映っているものを窓の外へ落とさない（5.19C）。
+       これが無いと、ミニマップで別の場所を眺めているときに窓を詰めた瞬間、
+       表示中の行が窓の外になり scrollTop が 0 へクランプされて
+       「掴んでスクロールしたのに手を離すと戻る」ように見える。
+       窓の先頭は必ず【画面上端の行】より前に置く。 */
+    /* ★錨（いかり）＝いま画面のいちばん上に見えている文字。
+       張り直しの前後で、この文字を同じ高さに置き直せば表示は絶対に動かない。 */
+    const anchor = full.length ? viewAnchor() : null;
+    const anchorOff = anchor ? anchor.off : null;
+    if (want > 0 && anchorOff != null && want > anchorOff) want = anchorOff;
+    want = snapLineStart(full, want);
+    if (want === docHead.length) return false;
+    const t = ta();
+    const s = docSelStart(), e = docSelEnd();
+    const dir = t.selectionDirection || "none";
+    /* 張り直しの前後でキャレットの「全文座標での y」は変わらない。
+       変わるのは窓の原点（headTop）だけなので、scrollTop はその差だけ動かす。 */
+    const oldHeadTop = headTop;
+    /* ★必ず value 代入の【前】に読む。代入すると scrollTop は 0 に戻るので、
+       あとで読むと「元の位置」ではなく 0 を復元してしまい表示が飛ぶ。 */
+    const oldScrollTop = t.scrollTop;
+    docHead = full.slice(0, want);
+    docCache = full;
+    t.value = full.slice(want);
+    headTop = want > 0 ? measureHeadTop() : 0;
+    applyMirrorTop();
+    const b = docHead.length;
+    try { t.setSelectionRange(Math.max(0, s - b), Math.max(0, e - b), dir === "none" ? undefined : dir); }
+    catch (_) { t.setSelectionRange(Math.max(0, s - b), Math.max(0, e - b)); }
+    /* ★位置の確定は setSelectionRange の【あと】。
+       setSelectionRange はキャレットを画面内へ勝手に寄せるので、
+       先に scrollTop を決めても上書きされてしまう。
+       復元は headTop の引き算ではなく【錨を実測して置き直す】。
+       引き算は headTop の測り誤差や折り返しの変化がそのままズレになるが、
+       実測なら「さっき上端にあった文字を、もう一度上端に置く」だけなので必ず合う。 */
+    const maxTop = Math.max(0, t.scrollHeight - t.clientHeight);
+    let placed = false;
+    if (anchorOff != null) {
+      try {
+        syncMirrorStyle(); syncMirrorText();
+        /* ★必ず transform を今の scrollTop に合わせてから測る。
+           toContent() は「ミラーの translate(-scrollTop)」と「+scrollTop」が
+           打ち消し合う前提の式なので、transform が古いとその差（張り直し前の
+           scrollTop との差＝数万px）がまるごと誤差になり、0 にクランプされて
+           表示が窓の先頭へ飛ぶ。 */
+        syncEditLayersScroll();
+        const y = toContent(rectForOffset(anchorOff)).top;
+        if (isFinite(y)) {
+          /* ★行の先頭を上端に貼り付けない。控えた delta をそのまま再現する */
+          t.scrollTop = Math.max(0, Math.min(maxTop, Math.round(y - anchor.delta)));
+          placed = true;
+        }
+      } catch (_) {}
+    }
+    if (!placed) t.scrollTop = Math.max(0, Math.min(maxTop, oldHeadTop + oldScrollTop - headTop));
+    /* ★関所を張り直し後の本文へ移す（5.15.3 と同じ理屈）。
+       value 代入をしてもブラウザの Undo 履歴は消えるとは限らず、素通しさせると
+       「窓を張り直す前の、頭が欠けた本文」が湧く。ここで必ず武装し直す。 */
+    markedText = t.value;
+    editedSinceMark = false;
+    resetCaretPosCache();
+    winHush();
+    syncEditLayersScroll();
+    /* ★帯（見出し・検索ヒット）の top は窓座標で焼き付けてあるので、
+       headTop が変わったこの瞬間に必ず描き直す。執筆中は skipHeavy で
+       buildHeadLayer を飛ばす設計のため、強制しないと永久にズレたままになる。 */
+    overlayForceHeavy = true;
+    refreshOverlay();
+    return true;
+  }
+  /** 錨（いかり）＝いま画面のいちばん上に見えている文字と、その【行内での位置】。
+   *  ★off だけでは足りない。行の途中でスクロールが止まっているとき、
+   *    復元時に「その行の先頭」を画面上端へ置くと、切れていたぶん（最大1行）
+   *    本文が下へずれる。ずれ量 delta（行の上端が視点から何px下か）も一緒に控え、
+   *    復元時に同じ delta を再現する。これで誤差は原理的に 0 になる。
+   *  測れなければ null。 */
+  function viewAnchor() {
+    try {
+      syncMirrorStyle();
+      syncMirrorText();
+      syncEditLayersScroll();      /* ★測る前に必ず transform を今の scrollTop に合わせる */
+      const b = body().getBoundingClientRect();
+      const o = offsetFromPoint(b.left + 4, b.top + 4);
+      if (typeof o !== "number" || o < 0) return null;
+      const y = toContent(rectForOffset(o)).top;
+      if (!isFinite(y)) return null;
+      return { off: o, delta: y - ta().scrollTop };
+    } catch (_) { return null; }
+  }
+  /** 窓先頭の「全文座標 y」＝ 窓に載せていない頭の部分の高さ（5.19E）。
+   *  ★位置（getClientRects）ではなく【高さの差】で求める。
+   *    getClientRects が返すのは文字の外形であって行ボックスの上端ではない。
+   *    line-height 1.9 では上下に約 5.75px の余白（half-leading）が付くため、
+   *    文字の top をそのまま使うと headTop がその分だけ過大になり、
+   *    ミラー基準の帯だけが約 6px 上へずれる＝「色は動かないのに本文がずれる」。
+   *    ミラー（全文）と textarea（窓）は padding が同じなので、
+   *      headTop = ミラーの全高 − textarea の全高
+   *    が頭の高さそのものになる。定義上ズレようがない。
+   *  ★必ず ta().value に新しい窓を入れた【あと】に呼ぶこと。 */
+  let headTopStale = false;
+  /** 字級・幅・ペイン分割が変わると【頭の高さ】も変わる。測り直す（5.19F）。
+   *  これを忘れるとミラーの原点だけ古いままになり、字級変更のたびに
+   *  読んでいた場所が数千字ぶん飛ぶ。 */
+  function refreshHeadTop() {
+    headTopStale = false;
+    if (!docHead.length) { if (headTop !== 0) { headTop = 0; applyMirrorTop(); } return; }
+    const h = measureHeadTop();
+    if (h !== headTop) { headTop = h; applyMirrorTop(); }
+  }
+  function measureHeadTop() {
+    try {
+      syncMirrorStyle();
+      syncMirrorText();
+      const h = $("mirror").scrollHeight - ta().scrollHeight;
+      return h > 0 ? h : 0;
+    } catch (_) { return 0; }
+  }
+
+  /** 窓を張り直す【直前】の全文を控える（5.19B）。
+   *  ★張り直しは ta().value への代入なので、ブラウザ標準の Ctrl+Z 履歴がそこで切れる。
+   *    切れる手前までは自前で戻せるように、既存の undoMarks（本文まるごとの控え）へ積む。
+   *    窓の中の細かい Undo は従来どおりブラウザが持つので、
+   *    「直近 6千字ぶんは 1 文字単位で戻せる／それより前は張り直し単位で戻る」になる。 */
+  function pushWinUndo() {
+    const text = docText();
+    const last = undoMarks[undoMarks.length - 1];
+    if (last && last.winSnap && last.text === text) return;   // 同じ本文を二重に積まない
+    markUndo({
+      text: text,
+      name: state.fileName, handle: state.fileHandle,
+      origin: { text: state.origin.text, name: state.origin.name },
+      dirty: state.dirty,
+      keepView: true, caret: docSelStart(), scroll: rScrollTopDoc(),
+      winSnap: true, label: "入力"
+    });
+  }
+
+  /** 打ち終わり・移動後の落ち着いたタイミングでだけ窓を詰める。
+   *  ★変換中（composing）には絶対に触らない。value 代入は変換を壊す。 */
+  let winFixTimer = null;
+  /** キャレットがいま画面に映っているか。
+   *  ★映っていないとき（ミニマップで別の場所を眺めている等）に窓を詰めると、
+   *    見ている場所が窓の外へ落ちて【表示がキャレットの位置へ飛び戻る】。
+   *    IME が重くなるのは「見ている所で打つ」ときだけなので、
+   *    キャレットが見えていないなら詰める必要がそもそも無い。 */
+  function caretOnScreen() {
+    try {
+      syncMirrorStyle(); syncMirrorText();
+      const y = toContent(rectForOffset(docSelStart())).top;
+      const t = ta();
+      return y >= t.scrollTop - 40 && y <= t.scrollTop + t.clientHeight + 40;
+    } catch (_) { return true; }
+  }
+  function scheduleWindowFix() {
+    clearTimeout(winFixTimer);
+    winFixTimer = setTimeout(() => {
+      winFixTimer = null;
+      if (composing) return;
+      if (document.activeElement !== ta()) return;
+      const before = docSelStart() - docHead.length;
+      if (before <= WIN_KEEP_MAX) return;
+      if (!caretOnScreen()) return;      /* ★別の場所を見ている間は動かさない */
+      pushWinUndo();
+      rebaseWindow(docSelStart() - WIN_KEEP_TGT);
+    }, 400);
+  }
+
+  /** 上端に着いたら頭を継ぎ足す（窓に載っていない所へはスクロールできないため）。
+   *  ★張り直し直後は scrollTop をこちらで動かすので、その反動では継ぎ足さない
+   *    （沈黙を入れないと、6千字に絞った直後に 2万字を戻して効果が消える）。 */
+  let winGrowing = false, winGrowChase = null;
+  function growWindowHeadIfNeeded() {
+    if (winGrowing || composing) return;
+    if (docHead.length === 0) return;
+    if (nowMs() < winQuietUntil) return;
+    const t = ta();
+    if (t.scrollTop > 60) return;
+    winGrowing = true;
+    try {
+      pushWinUndo();                                  // 代入で切れるぶんを自前へ退避
+      rebaseWindow(docHead.length - WIN_GROW);
+      winHush(150);                                   // 反動を消せる最小限に短くする
+    } finally { winGrowing = false; }
+    /* ★上端に居座られたときの追いかけ。scrollTop を 0 のまま放置すると
+       ブラウザは scroll を再発行しないので、これが無いと 1 回で継ぎ足しが止まる。 */
+    clearTimeout(winGrowChase);
+    winGrowChase = setTimeout(() => {
+      winGrowChase = null;
+      if (docHead.length && !composing && ta().scrollTop < 60) growWindowHeadIfNeeded();
+    }, 200);
+  }
+
+  /** 見出し帯・ヒット・ミラーを textarea の scroll に追従させる。
+   *  ★座標系は【窓座標】で統一する。全文を持つミラーの方を headTop ぶん上へずらして
+   *    窓と原点を揃えてあるので（applyMirrorTop）、ここは従来どおりでよい。
+   *    こうするとレイヤ・toContent・scrollToOffset・ミニマップを一切変えずに済む。 */
+  function syncEditLayersScroll() {
+    const sc = rScroll();
+    const t = "translate(" + (-sc.scrollLeft) + "px," + (-sc.scrollTop) + "px)";
+    const ids = ["mirror", "hd-layer", "hit-layer", "ghost-caret", "drop-caret"];
+    for (let i = 0; i < ids.length; i++) {
+      const el = $(ids[i]);
+      if (el) el.style.transform = t;
+    }
+  }
+  /** 右ペインの「全文座標での」スクロール位置。ミニマップ等はこちらを使う */
+  const rScrollTopDoc = () => rScroll().scrollTop + headTop;
 
   /* =======================================================
      見出し検出（章・幕＝Lv1／話・回＝Lv2 の始まり）― ユーザー設定式
@@ -1023,7 +1338,7 @@
     return t.heads;
   }
   function edHeads() {
-    const v = ta().value;
+    const v = docText();
     if (state.edHeadSrc !== v) { state.edHeadSrc = v; state.edHeads = findHeadings(v); }
     return state.edHeads;
   }
@@ -1032,17 +1347,28 @@
   /* =======================================================
      ミラー（textarea と同一レイアウトの隠し要素）
      ======================================================= */
+  /* 文字サイズ・幅・ペイン分割が変わったときだけ true。
+     入力のたびに getComputedStyle 15 項目を読むのは無駄なので、dirty のときだけ同期する。 */
+  let mirrorStyleDirty = true;
+  function invalidateMirrorStyle() { mirrorStyleDirty = true; }
   function syncMirrorStyle() {
+    if (!mirrorStyleDirty) return;
     const t = ta(), m = $("mirror"), cs = getComputedStyle(t);
     ["fontFamily","fontSize","fontWeight","fontStyle","lineHeight","letterSpacing",
      "textIndent","textAlign","paddingTop","paddingRight","paddingBottom","paddingLeft",
      "whiteSpace","wordBreak","overflowWrap","tabSize"].forEach(k => { m.style[k] = cs[k]; });
     m.style.width = t.offsetWidth + "px";
     m.style.left = t.offsetLeft + "px";
-    m.style.top = t.offsetTop + "px";
+    m.style.top = (t.offsetTop - headTop) + "px";   /* ★窓と原点を揃える（5.19） */
+    mirrorStyleDirty = false;
+  }
+  /** 窓を張り直したときだけ、ミラーの縦位置を追従させる（style 全体は再同期しない） */
+  function applyMirrorTop() {
+    const m = $("mirror");
+    if (m) m.style.top = (ta().offsetTop - headTop) + "px";
   }
   function syncMirrorText() {
-    const m = $("mirror"), v = ta().value + ZWSP;
+    const m = $("mirror"), v = docText() + ZWSP;   /* ★ミラーは常に全文（5.19） */
     if (m.textContent !== v) m.textContent = v;
   }
   function mirrorNode() {
@@ -1059,6 +1385,43 @@
     if (rects.length) { const q = rects[0]; return { left: q.left, top: q.top, height: q.height || 18 }; }
     const mr = $("mirror").getBoundingClientRect(), cs = getComputedStyle($("mirror"));
     return { left: mr.left + parseFloat(cs.paddingLeft), top: mr.top + parseFloat(cs.paddingTop), height: parseFloat(cs.lineHeight) || 18 };
+  }
+  /** 右ペインの表示領域の最上端にある文字オフセットを返す（リベース時の同期用）。
+     ミラー幅が古いと offsetFromPoint がズレるので style も同期する。 */
+  function caretAtBodyTop() {
+    syncMirrorStyle();
+    syncMirrorText();
+    /* ★測る前に transform を今の scrollTop へ合わせる（5.1B）。
+       offsetFromPoint は画面座標でミラーを二分探索するので、
+       transform が古いとまったく別の文字を返す。字級・幅を変えたときの
+       「読んでいた場所へ戻す」がここを使っているため、ずれると
+       数千〜数万字ぶん飛ぶ（自己診断 rev41 B-2 の -29.3%）。 */
+    syncEditLayersScroll();
+    const b = body().getBoundingClientRect();
+    return offsetFromPoint(b.left + 4, b.top + 4);
+  }
+  /** 「初期」タブのテキスト中、文字オフセット off の #ref-body 内 y（コンテンツ座標）。
+     見出し/検索のラップは nodeAtOffset（TreeWalker）に任せる。
+     文末オフセットは rectForOffset と同じく「直前の1文字」に clamp して Range を取る
+     （折りたたみ Range だと getClientRects が空になり、null → scrollTop 0 に落ちる）。
+     テキストが空／測れないときは null。 */
+  function leftTopForOffset(off) {
+    const rb = $("ref-body");
+    const root = $("ref-inner").querySelector(".rtext") || $("ref-inner");
+    const txt = root.textContent || "";
+    if (!txt.length) return null;
+    const safe = Math.max(0, Math.min(off, txt.length - 1));
+    const p = nodeAtOffset(root, safe);
+    if (!p || !p.node || p.node.nodeType !== 3) return null;
+    const len = p.node.nodeValue.length;
+    const i = Math.max(0, Math.min(p.off, Math.max(0, len - 1)));
+    const r = document.createRange();
+    r.setStart(p.node, i);
+    r.setEnd(p.node, Math.min(i + 1, len));
+    const rc = r.getClientRects();
+    if (!rc.length) return null;
+    const top = rc[0].top - rb.getBoundingClientRect().top + rb.scrollTop;
+    return Math.max(0, Math.round(top));
   }
   function offsetFromPoint(x, y) {
     const node = mirrorNode(), len = node.length - 1;
@@ -1079,7 +1442,8 @@
   }
   function toContent(rc) {
     const b = body().getBoundingClientRect();
-    return { left: rc.left - b.left + body().scrollLeft, top: rc.top - b.top + body().scrollTop };
+    const sc = rScroll();
+    return { left: rc.left - b.left + sc.scrollLeft, top: rc.top - b.top + sc.scrollTop };
   }
   /** ミラー上の [s,e) の矩形群をコンテンツ座標で返す */
   function rectsForRange(s, e) {
@@ -1088,7 +1452,8 @@
     r.setStart(node, Math.max(0, Math.min(s, node.length)));
     r.setEnd(node, Math.max(0, Math.min(e, node.length)));
     const b = body().getBoundingClientRect();
-    const sl = body().scrollLeft, st = body().scrollTop;
+    const sc = rScroll();
+    const sl = sc.scrollLeft, st = sc.scrollTop;
     const out = [];
     for (const q of r.getClientRects()) {
       if (q.width <= 0 || q.height <= 0) continue;
@@ -1100,14 +1465,69 @@
   /* =======================================================
      キャレット
      ======================================================= */
-  function updateCaret() {
+  /* 行・桁表示用。slice(0,caret)+split("\n") は文末編集で毎回 10万字を割るので禁止。
+     オフセットから前回位置へ歩いて更新する（遠いジャンプだけ全走査）。 */
+  let caretPosOff = 0, caretPosLine = 1, caretPosCol = 1;
+  function resetCaretPosCache() {
+    caretPosOff = 0; caretPosLine = 1; caretPosCol = 1;
+  }
+  function paintCaretPos(off, v) {
+    const text = v != null ? v : docText();
+    const n = text.length;
+    off = Math.max(0, Math.min(off | 0, n));
+    if (off === caretPosOff) {
+      $("edit-caretpos").textContent = caretPosLine + "行 " + caretPosCol + "桁";
+      return;
+    }
+    let ok = caretPosOff >= 0 && caretPosLine >= 1 && caretPosCol >= 1;
+    /* 近い移動は差分だけ。遠い・不明は off まで一回走査（split しない）。 */
+    if (ok && off > caretPosOff && off - caretPosOff < 4096) {
+      for (let i = caretPosOff; i < off; i++) {
+        if (text.charCodeAt(i) === 10) { caretPosLine++; caretPosCol = 1; }
+        else caretPosCol++;
+      }
+    } else if (ok && off < caretPosOff && caretPosOff - off < 4096) {
+      for (let i = caretPosOff - 1; i >= off; i--) {
+        if (text.charCodeAt(i) === 10) {
+          caretPosLine--;
+          let j = i - 1;
+          while (j >= 0 && text.charCodeAt(j) !== 10) j--;
+          caretPosCol = i - j;
+        } else {
+          caretPosCol--;
+        }
+      }
+      if (caretPosLine < 1 || caretPosCol < 1) ok = false;
+    } else {
+      ok = false;
+    }
+    if (!ok) {
+      let line = 1, col = 1;
+      for (let i = 0; i < off; i++) {
+        if (text.charCodeAt(i) === 10) { line++; col = 1; }
+        else col++;
+      }
+      caretPosLine = line; caretPosCol = col;
+    }
+    caretPosOff = off;
+    $("edit-caretpos").textContent = caretPosLine + "行 " + caretPosCol + "桁";
+  }
+  /** @param {boolean} [forceGeom] ミラー座標が必要なとき true。
+   *  フォーカス中かつ「変更」非表示なら ghost 座標は省略（長文の Range 計測を避ける）。 */
+  function updateCaret(forceGeom) {
     const t = ta();
-    state.caret = t.selectionStart;
-    const rc = rectForOffset(state.caret), p = toContent(rc), g = $("ghost-caret");
-    g.style.left = p.left + "px"; g.style.top = p.top + "px"; g.style.height = rc.height + "px";
-    g.classList.toggle("show", document.activeElement !== t);
-    const before = t.value.slice(0, state.caret);
-    $("edit-caretpos").textContent = before.split("\n").length + "行 " + (state.caret - (before.lastIndexOf("\n") + 1) + 1) + "桁";
+    state.caret = docSelStart();
+    const focused = document.activeElement === t;
+    const needGeom = !!forceGeom || !focused || isSysActive(SYS.DIFF);
+    const g = $("ghost-caret");
+    if (needGeom) {
+      const rc = rectForOffset(state.caret), p = toContent(rc);
+      g.style.left = p.left + "px"; g.style.top = p.top + "px"; g.style.height = rc.height + "px";
+      g.classList.toggle("show", !focused);
+    } else {
+      g.classList.remove("show");
+    }
+    paintCaretPos(state.caret, docText());
     syncDiffToCaret();      // 「変更」タブを同じ行へ追従させる（リアルタイム）
   }
   function showDropCaret(off) {
@@ -1197,15 +1617,30 @@
 
   /** 右ペイン補正の申し送り（applyPendingRightFix で消費）。★TDZ 事故を避けるため前で宣言。 */
   let pendingRightFix = null;
+  /* 見えている行範囲の memo。applySettings からも消すのでミニマップ節より前に置く。 */
+  const visRangeMemo = { left: null, right: null };
 
   function applySettings() {
+    invalidateMirrorStyle();
+    headTopStale = true;          /* ★字級・幅が変わる → 頭の高さも変わる（5.19F） */
     const fs = +$("opt-font").value || 15;
-    const rb = $("ref-body"), eb = body();             // ★右は #edit-body。ta() ではない
+    const rb = $("ref-body"), eb = body();             // 枠
+    const rs = rScroll();                             // ★右のスクローラは ta
     rememberScroll();                                  // アクティブタブの scroll を最新にする
     const scrollable = el => el.scrollHeight > el.clientHeight + 1;
     const measurable = scrollable(rb);                 // 左が実際にスクロールできるか
     const beforeL = rb.scrollHeight, topL = rb.scrollTop;
-    const beforeR = eb.scrollHeight, topR = eb.scrollTop;
+    const beforeR = rs.scrollHeight, topR = rs.scrollTop;
+    /* 右は「見えていた上端の文字」を覚えて、autoGrow 後にそこに戻す（幅変更で
+       折り返しが変わると scrollHeight 比は本文位置と一致しない。比例だけだと大きく飛ぶ）。
+       スタイル変更前のミラーで測ること。 */
+    let topOffR = null;
+    if (topR > 0) {
+      try {
+        invalidateMirrorStyle();
+        topOffR = caretAtBodyTop();
+      } catch (_) { topOffR = null; }
+    }
     const fsChanged = lastFs > 0 && fs !== lastFs;
     const fsRatio = lastFs > 0 ? fs / lastFs : 1;
     // 先にレイアウトを確定させてから上限を測る（clientWidth が古い値を返すのを防ぐ）
@@ -1224,6 +1659,10 @@
     $("ref-inner").style.maxWidth = px + "px";
     ta().style.fontSize = fs + "px";
     ta().style.maxWidth = px + "px";
+    /* スタイル適用直後に1回レイアウトを確定させる（この後の scrollHeight 実測と
+       左MM描画が古い高さのまま走るのを防ぐ）。 */
+    void $("ref-inner").offsetHeight;
+    void rb.scrollHeight;
     /* ---- 新しい scrollHeight を測って比例補正する（5.1B）----
        左は同期で測れる。右は autoGrow() が height を確定させるまで測れないので
        refreshOverlay() の rAF から applyPendingRightFix() で当てる。非アクティブは推定。
@@ -1232,7 +1671,13 @@
     const ok = r => isFinite(r) && r > 0 && Math.abs(r - 1) > 0.001;
     const rl = beforeL > 0 ? rb.scrollHeight / beforeL : 1;
     if (topL > 0 && ok(rl)) rb.scrollTop = Math.round(topL * rl);
-    pendingRightFix = (topR > 0 && beforeR > 0) ? { top: topR, before: beforeR } : null;
+    /* 先頭にいたときは比例補正も anchoring もかけず 0 を維持する。
+       （topL==0 のとき上の if は動かないが、ブラウザが独自にずらすことがある） */
+    if (topL < 1) rb.scrollTop = 0;
+    pendingRightFix = (topR > 0 && beforeR > 0)
+      ? { top: topR, before: beforeR, topOff: topOffR }
+      : null;
+    visRangeMemo.right = null;
 
     if (fsChanged) {
       // 左が実測できたならその比を、できなければ文字サイズの比を代用する
@@ -1253,8 +1698,20 @@
     /* 左ミニマップだけは明示的に描き直す。
        ★scrollTop に同じ値（先頭なら必ずそう）を代入するとブラウザは scroll を出さないので、
          scroll 任せだと折り返しが変わっても青枠が古いまま残る。
+       ★幅・字級で折り返しだけ変わるとき、scrollHeight の更新が 1 フレーム遅れる環境がある。
+         見えている行の memo が古い key のままだと枠高さが変わらない。
+         → memo を捨てて二重 rAF のあと描く（drawLeftMM / rebase と同じ型）。
        "left" だけ呼ぶ（右は refreshOverlay の rAF が描く）。詳細は構築仕様書 5.1B 罠⑤。 */
-    requestAnimationFrame(() => drawMinimap("left"));
+    visRangeMemo.left = null;
+    const paintLeftMM = () => {
+      visRangeMemo.left = null;
+      if (topL < 1) rb.scrollTop = 0;
+      drawMinimap("left");
+    };
+    /* 同期1回（レイアウト確定済み）＋二重 rAF（後続のクランプ後）。
+       先頭固定の再確認も paint 直前に行う。 */
+    paintLeftMM();
+    requestAnimationFrame(() => requestAnimationFrame(paintLeftMM));
   }
 
   /** ペイン幅が変わったときの再適用。applyRatio の後に呼ぶ（clientWidth が確定してから） */
@@ -1264,6 +1721,7 @@
     applySettings();
   }
   function applyRatio() {
+    invalidateMirrorStyle();
     const main = $("main");
     const total = main.clientWidth;
     if (total < 1) return;
@@ -1285,58 +1743,192 @@
   /* =======================================================
      右ペイン オーバーレイ更新
      ======================================================= */
+  /* IME 中は true。kickOverlay / autoSave より前に置く（TDZ 回避） */
+  let composing = false;
+  /* 入力中は毎キーで「見出し帯・検索帯・右MM全面・（非表示の）差分LCS」まで
+     走らせない。軽い更新（高さ・行桁・必要ならミラー）だけ rAF し、
+     打ち止まり後に重い層をまとめる。長文でキー後の一拍遅延の主因だった。 */
   let rafPending = false;
-  function refreshOverlay() {
+  let overlayWantFull = false;
+  let overlayWantGrow = false;
+  let overlayForceHeavy = false;   /* ★窓を張り直した直後だけ「重い側」を通す（5.19） */
+  let headIdleTimer = null;
+  /** 打ち終わってから一度だけ見出し帯を描き直す（5.19D）。
+   *  執筆中の skipHeavy は打鍵ごとの重さを避けるためのものなので、
+   *  「手が止まったら描く」なら趣旨を壊さずに **強調** の色がすぐ出る。 */
+  function scheduleHeadRepaint() {
+    clearTimeout(headIdleTimer);
+    headIdleTimer = setTimeout(() => {
+      headIdleTimer = null;
+      if (composing) return;
+      overlayForceHeavy = true;
+      overlayWantFull = true;
+      kickOverlay();
+    }, 650);
+  }
+  let overlayFullTimer = null;
+  let leftMmFollowTimer = null;
+  /** 長文ほど見出し／MM の full を遅らせる（確定直後の数秒停止を避ける） */
+  function overlayFullDelayMs() {
+    const n = docLen();
+    if (n > 80000) return 900;
+    if (n > 30000) return 450;
+    return 180;
+  }
+
+  /** opts.typing … 入力経路。軽い更新＋満了後に full。
+   *  opts.grow === false … 高さ不変の入力（通常の文字挿入・IME 確定）で autoGrow を省略。
+   *  opts.fullDelay … full までの ms（省略時は文書長から決める）
+   *  opts.light === false … 即 rAF の軽い更新も省略（IME 確定用）
+   *  opts なし／その他 … 従来どおり即 full（設定・読込・リサイズ）。 */
+  function refreshOverlay(opts) {
+    const typing = !!(opts && opts.typing);
+    const growOpt = opts && Object.prototype.hasOwnProperty.call(opts, "grow") ? !!opts.grow : true;
+    const doLight = !(opts && opts.light === false);
+    if (typing) {
+      if (growOpt) overlayWantGrow = true;
+      clearTimeout(overlayFullTimer);
+      const delay = (opts && opts.fullDelay != null) ? opts.fullDelay : overlayFullDelayMs();
+      overlayFullTimer = setTimeout(() => {
+        overlayFullTimer = null;
+        overlayWantFull = true;
+        /* ★full で autoGrow を強制しない。改行などで grow 要求があったときだけ。
+           IME 確定のたびに 10万字 scrollHeight を測ると数秒止まる。 */
+        kickOverlay();
+      }, delay);
+      if (doLight) kickOverlay();
+    } else {
+      clearTimeout(overlayFullTimer);
+      overlayFullTimer = null;
+      overlayWantFull = true;
+      overlayWantGrow = true;
+      kickOverlay();
+    }
+  }
+  function kickOverlay() {
     if (rafPending) return;
+    /* IME 中は value を読む処理を一切入れない（描画が「ああ」で止まり後から一気に出る原因） */
+    if (composing) return;
     rafPending = true;
     requestAnimationFrame(() => {
       rafPending = false;
-      autoGrow();
+      if (composing) {
+        overlayWantFull = false;
+        overlayWantGrow = false;
+        return;
+      }
+      /* 字級・幅の申し送りがあるフレームは必ず autoGrow してから復元する */
+      if (pendingRightFix) overlayWantGrow = true;
+      const doFull = overlayWantFull;
+      const doGrow = overlayWantGrow;
+      overlayWantFull = false;
+      overlayWantGrow = false;
+      if (doGrow) autoGrow();
+      /* ★位置を復元する【前】に頭の高さを測り直す。順序を逆にすると
+         古い原点のまま当ててしまい、字級変更で表示が飛ぶ（5.19F）。 */
+      if (headTopStale) { syncMirrorStyle(); syncMirrorText(); refreshHeadTop(); }
       applyPendingRightFix();        // autoGrow で高さが確定した【直後に】測って当てる
-      syncMirrorStyle(); syncMirrorText();
-      buildHeadLayer(); buildHitLayer(); updateCaret(); drawMinimap("right");
-      updateEditEmpty();
+      /* 長文を書き続けているあいだは full でも見出し帯・右MM・ミラー全文を毎回やらない。
+         （IME 確定の遅延 full が 10万字 findHeadings+canvas で数秒止まるのを防ぐ）
+         字級・幅（pendingRightFix）やフォーカス外・変更タブは従来どおり重い側。 */
+      /* ★ skipHeavy 判定で ta().value.length を読まない（巨大 textarea の value 取得自体が重い）。
+         執筆フォーカス中の full は常に軽量側へ。 */
+      const skipHeavy = doFull && !pendingRightFix && !overlayForceHeavy
+        && document.activeElement === ta()
+        && !isSysActive(SYS.DIFF);
+      const needMirror = (!skipHeavy && doFull)
+        || !document.activeElement
+        || document.activeElement !== ta()
+        || isSysActive(SYS.DIFF);
+      if (needMirror) {
+        syncMirrorStyle();
+        syncMirrorText();
+        syncEditLayersScroll();
+      }
+      if (doFull) {
+        if (skipHeavy) {
+          if ($("ed-q").value) {
+            syncMirrorStyle();
+            syncMirrorText();
+            buildHitLayer();
+          }
+          updateCaret(false);
+        } else {
+          buildHeadLayer();
+          buildHitLayer();
+          updateCaret(true);
+          drawMinimap("right");
+          overlayForceHeavy = false;
+        }
+      } else {
+        updateCaret(false);
+      }
+      if (!composing) updateEditEmpty();
+      if (overlayWantFull || overlayWantGrow || pendingRightFix) kickOverlay();
     });
   }
   /** 右ペインの空状態ヒント（仕様 5.6C）
    *  空＋非フォーカス → 100%／空＋フォーカス → 35%／1文字でも入ったら消す */
-  let composing = false;
+  /* composing は overlay 節先頭で宣言済み */
   /* ［新規］の直後はプログラムからフォーカスしているだけで、人が書き始めたわけではない。
      ここで 35% に落とすと「押したらガイドが薄れた＝壊れた？」に見える。
      実際にクリックするかキーを打つまでは 100% のままにする。 */
   let dimHold = false;
   function updateEditEmpty() {
+    if (composing) return;
     const hint = $("edit-empty"), t = ta();
-    const empty = t.value.length === 0 && !composing;
+    const empty = docLen() === 0 && !composing;
     hint.classList.toggle("hide", !empty);
     hint.classList.toggle("dim", empty && !dimHold && document.activeElement === t);
   }
 
   function autoGrow() {
-    const t = ta(), eb = body();
-    /* height:"auto" を経由するあいだ中身が一瞬縮み、ブラウザが #edit-body の
-       scrollTop をクランプして「読んでいた位置」を失う。前後で必ず戻す。
-       これを入れないと、サイズが変わっていない（＝比例補正が働かない）ときに
-       右ペインが黙って先頭へ飛び、「変更」タブの追従もそれに引きずられる。 */
-    const keep = eb.scrollTop;
-    t.style.height = "auto";
-    t.style.height = Math.max(t.scrollHeight, eb.clientHeight) + "px";
-    if (keep > 0 && Math.abs(eb.scrollTop - keep) > 1) eb.scrollTop = keep;
+    /* 枠内スクロール方式では textarea を全文高さに伸ばさない（IME 小窓・固まりの原因）。
+       高さは CSS の height:100%。古い inline height が残っていたら捨てる。 */
+    const t = ta();
+    if (t.style.height && t.style.height !== "100%") t.style.height = "";
   }
 
-  /** 文字サイズ・表示幅を変えたときの【右ペイン】のスクロール比例補正（5.1B / 12章 #10）。
+  /** 文字サイズ・表示幅を変えたときの【右ペイン】スクロール復元（5.1B / 12章 #10）。
    *  autoGrow() が height を確定させた後でしか正しく測れないので、applySettings() から
-   *  値を預かって refreshOverlay() の rAF がここを呼ぶ。 */
+   *  値を預かって refreshOverlay() の rAF がここを呼ぶ。
+   *  ★優先: 変更前に取った上端文字オフセットへ戻す（折り返し変化に強い）。
+   *  取れなかったときだけ旧来の scrollHeight 比。 */
   function applyPendingRightFix() {
     const p = pendingRightFix; pendingRightFix = null;
     if (!p) return;
-    const eb = body();
+    const eb = rScroll();
+    const placeOff = off => {
+      invalidateMirrorStyle();
+      syncMirrorStyle();
+      syncMirrorText();
+      syncEditLayersScroll();
+      const top = toContent(rectForOffset(off)).top;
+      const sc = rScroll();
+      const max = Math.max(0, sc.scrollHeight - sc.clientHeight);
+      const want = Math.max(0, Math.min(max, Math.round(top) - 4));
+      sc.scrollTop = want;
+      syncEditLayersScroll();
+      return want;
+    };
+    if (typeof p.topOff === "number" && p.topOff >= 0 && docLen() > 0) {
+      const want = placeOff(p.topOff);
+      /* 代入が古いレイアウトの最大値でクランプされることがある → 次フレームで再測して当てる */
+      if (Math.abs(eb.scrollTop - want) > 2) {
+        requestAnimationFrame(() => { placeOff(p.topOff); });
+      } else {
+        /* 折り返し確定が 1 フレーム遅れる環境向けに、比が合っていても一度だけ再確認 */
+        requestAnimationFrame(() => {
+          const w2 = placeOff(p.topOff);
+          if (Math.abs(eb.scrollTop - w2) > 2) requestAnimationFrame(() => placeOff(p.topOff));
+        });
+      }
+      return;
+    }
     const rr = eb.scrollHeight / p.before;
     if (!isFinite(rr) || rr <= 0 || Math.abs(rr - 1) <= 0.001) return;
     const want = Math.round(p.top * rr);
     eb.scrollTop = want;
-    /* 代入が【古いレイアウトの最大値】でクランプされることがある（rev42 実測 22766 → 17033.33）。
-       ずれていたら次のフレームでもう一度当てる。 */
     if (Math.abs(eb.scrollTop - want) > 2) requestAnimationFrame(() => { eb.scrollTop = want; });
   }
   function buildHeadLayer() {
@@ -1565,7 +2157,7 @@
   function computeDiff() {
     const t = state.tabs.find(x => x.kind === SYS.DIFF);
     if (!t) return;
-    const rows = buildDiffRows(state.origin.text, ta().value);
+    const rows = buildDiffRows(state.origin.text, docText());
     const del = rows.filter(r => r.k === "del" || r.k === "chg").length;
     const add = rows.filter(r => r.k === "add" || r.k === "chg").length;
     const marks = buildDiffMarks(rows);
@@ -1624,7 +2216,7 @@
     const t = activeTabObj();
     if (!t || !t.lineMap || !diffLineEls.length) return;
 
-    const v = ta().value;
+    const v = docText();
     const before = v.slice(0, state.caret);
     const caretLine = before.split("\n").length - 1;
     const dl = t.lineMap[Math.min(caretLine, t.lineMap.length - 1)];
@@ -1639,15 +2231,17 @@
     const eb = body();
     const ebR = eb.getBoundingClientRect();
     const H = $("ref-body").clientHeight;
+    const viewH = rScroll().clientHeight;
     let y0 = rectForOffset(state.caret).top - ebR.top;
     let y;
-    if (y0 >= 0 && y0 <= eb.clientHeight) {
+    if (y0 >= 0 && y0 <= viewH) {
       y = y0;                                     // キャレットが見えている → その高さに合わせる
     } else {
       // 見えていない → 右ペインの上端にある行を基準にし、左もその行を上端に置く
-      syncMirrorStyle(); syncMirrorText();          // 座標→文字位置の変換にミラーが必要
+      syncMirrorStyle(); syncMirrorText();
+      syncEditLayersScroll();
       const topOff = offsetFromPoint(ebR.left + 24, ebR.top + 2);
-      const topLine = ta().value.slice(0, topOff).split("\n").length - 1;
+      const topLine = docText().slice(0, topOff).split("\n").length - 1;
       const dl2 = t.lineMap[Math.min(topLine, t.lineMap.length - 1)];
       const el2 = diffLineEls[dl2];
       if (el2) { el = el2; }
@@ -1666,14 +2260,24 @@
       curLineEl = el;
     }
     lastSyncCaret = state.caret;
-    drawMinimap("left");
+    /* 左 MM は追従のたびに全面再描画しない（打鍵中の主コスト）。
+       force（タブ切替・diff 再計算後）は即描画。通常は短くまとめる。 */
+    if (force) {
+      if (leftMmFollowTimer) { clearTimeout(leftMmFollowTimer); leftMmFollowTimer = null; }
+      drawMinimap("left");
+    } else if (!leftMmFollowTimer) {
+      leftMmFollowTimer = setTimeout(() => {
+        leftMmFollowTimer = null;
+        drawMinimap("left");
+      }, 120);
+    }
   }
 
   /** 左（差分ビュー）でいま見ている行に、右ペインの表示とカーソルを合わせる */
   function rightToHere() {
     const t = activeTabObj();
     if (!t || t.kind !== SYS.DIFF || !t.revMap || !diffLineEls.length) return;
-    const rb = $("ref-body"), eb = body();
+    const rb = $("ref-body"), eb = rScroll();
     /* ★Safari: focus / setSelectionRange / レイアウトのあとに左の scrollTop が
        勝手に 0 へ戻ることがある（Chrome では起きない）。操作前の位置を覚えて最後に戻す。 */
     const leftKeep = rb.scrollTop;
@@ -1686,7 +2290,7 @@
       if (diffLineEls[mid].offsetTop <= top) lo = mid; else hi = mid - 1;
     }
     const el = diffLineEls[lo];
-    const v = ta().value;
+    const v = docText();
     const ni = Math.min(t.revMap[lo] != null ? t.revMap[lo] : 0, v.split("\n").length - 1);
 
     // その行の先頭オフセット
@@ -1701,11 +2305,13 @@
     const yL = el.offsetTop - leftKeep;
     const tx = ta();
     tx.focus();
-    tx.setSelectionRange(off, off);
+    setDocSel(off, off);            /* ★窓の外なら張り直してから合わせる（5.19） */
     syncMirrorStyle(); syncMirrorText();
-    const cur = rectForOffset(off).top - eb.getBoundingClientRect().top;
+    syncEditLayersScroll();
+    const cur = rectForOffset(off).top - body().getBoundingClientRect().top;
     const max = Math.max(0, eb.scrollHeight - eb.clientHeight);
     eb.scrollTop = Math.max(0, Math.min(max, eb.scrollTop + (cur - yL)));
+    syncEditLayersScroll();
     // 左は動かさない。ここで追従を働かせると、右のスクロールが端で
     // 頭打ちになった分だけ左が引きずられて「押したら左が飛ぶ」ことになる
     followNoScroll = true;
@@ -1720,21 +2326,21 @@
   let diffTimer = null;
   function scheduleDiff() {
     state.diffStale = true;
-    // 非アクティブでも再計算する。タブ tooltip の ＋N行 −N行（diffTitle）と
-    // 左ミニマップ用の t.marks が、表示していなくても最新である必要があるため。
-    // ただし入力が止まってから（「変更」タブ表示中は短め）
+    // ★非表示の「変更」タブまで入力のたびに LCS しない。
+    //   以前は 1.2s 後に裏計算しており、長文で打ち止まり直後の一拍遅延になっていた。
+    //   tooltip の ＋N/−N と marks は、タブを開いたとき（setActiveTab / renderRef）に作る。
     clearTimeout(diffTimer);
-    const wait = isSysActive(SYS.DIFF) ? 600 : 1200;
+    diffTimer = null;
+    if (!isSysActive(SYS.DIFF)) return;
+    // 表示中だけ、入力が止まってから短めに再計算
     diffTimer = setTimeout(() => {
+      diffTimer = null;
       computeDiff();
-      if (isSysActive(SYS.DIFF)) {
-        runRefSearch();          // 表示テキストが変わったので検索もやり直す（5.4D）
-        // 再描画で位置がずれるので、右を触っている最中だけ位置を取り直す
-        if (document.activeElement === ta()) syncDiffToCaret(true);
-      }
-      /* ★ここでも右ミニマップは描き直さない。入力のたびに onEdit()→refreshOverlay() の rAF が
-         既に描いており、この時点で右 MM の入力は何も変わっていない。 */
-    }, wait);
+      runRefSearch();          // 表示テキストが変わったので検索もやり直す（5.4D）
+      // 再描画で位置がずれるので、右を触っている最中だけ位置を取り直す
+      if (document.activeElement === ta()) syncDiffToCaret(true);
+      /* ★ここでも右ミニマップは描き直さない。入力の full オーバーレイが描く。 */
+    }, 600);
   }
 
   /* =======================================================
@@ -1900,7 +2506,7 @@
     const t = activeTabObj();
     if (!t) return true;                                     // タブが選ばれていない
     if (t.kind === SYS.ORIGIN) return state.origin.text === "";  // 右ペインを開く前
-    if (t.kind === SYS.DIFF)   return state.origin.text === "" && ta().value === "";
+    if (t.kind === SYS.DIFF)   return state.origin.text === "" && docLen() === 0;
     return t.text === "";                                    // 空の資料タブ
   }
 
@@ -2097,9 +2703,9 @@
     /* 保険：ヒットが古いテキストに対するものなら作り直す（5.4D）。
        矩形はミラー上の文字位置から求めるので、テキストが変わった状態で
        古いオフセットを使うとハイライトがずれる。 */
-    if (state.edHitsSrc !== null && state.edHitsSrc !== ta().value) {
-      state.edHits = findAll(ta().value, $("ed-q").value);
-      state.edHitsSrc = ta().value;
+    if (state.edHitsSrc !== null && state.edHitsSrc !== docText()) {
+      state.edHits = findAll(docText(), $("ed-q").value);
+      state.edHitsSrc = docText();
       if (state.edIdx >= state.edHits.length) state.edIdx = state.edHits.length ? 0 : -1;
       if (state.edHits.length && state.edIdx < 0) state.edIdx = 0;
       updateCount("ed");
@@ -2125,8 +2731,8 @@
   const markCurrentHit = () => hitEls.forEach((els, i) => els.forEach(d => d.classList.toggle("cur", i === state.edIdx)));
 
   function runEdSearch(keepIdx) {
-    state.edHitsSrc = ta().value;      // どのテキストに対するヒットか（5.4D）
-    state.edHits = findAll(ta().value, $("ed-q").value);
+    state.edHitsSrc = docText();       // どのテキストに対するヒットか（5.4D）
+    state.edHits = findAll(docText(), $("ed-q").value);
     if (!keepIdx || state.edIdx >= state.edHits.length) state.edIdx = state.edHits.length ? 0 : -1;
     updateCount("ed");
     syncMirrorText(); buildHitLayer(); drawMinimap("right");
@@ -2135,14 +2741,17 @@
     if (!state.edHits.length) return;
     state.edIdx = (state.edIdx + d + state.edHits.length) % state.edHits.length;
     const h = state.edHits[state.edIdx];
-    ta().setSelectionRange(h.start, h.end);
+    setDocSel(h.start, h.end);      /* ★窓の外のヒットへも飛べるように（5.19） */
     scrollToOffset(h.start);
     markCurrentHit(); updateCount("ed"); updateCaret(); drawMinimap("right");
   }
   function scrollToOffset(off) {
+    /* ★窓に載っていない位置へはスクロールできない。先に窓を張り直す（5.19） */
+    if (off < docBase()) { pushWinUndo(); rebaseWindow(off - WIN_KEEP_TGT); }
+    syncMirrorStyle(); syncMirrorText();
     const p = toContent(rectForOffset(off));
-    const max = Math.max(0, body().scrollHeight - body().clientHeight);
-    body().scrollTop = Math.max(0, Math.min(max, p.top - body().clientHeight / 2));
+    const max = Math.max(0, rScroll().scrollHeight - rScroll().clientHeight);
+    rScroll().scrollTop = Math.max(0, Math.min(max, p.top - rScroll().clientHeight / 2));
   }
 
   /* =======================================================
@@ -2157,27 +2766,27 @@
     if (!state.edHits.length) { toast("検索結果がありません"); return; }
     if (state.edIdx < 0) state.edIdx = 0;
     const h = state.edHits[state.edIdx], rep = $("ed-r").value, t = ta();
-    t.focus(); t.setSelectionRange(h.start, h.end);
+    t.focus(); setDocSel(h.start, h.end);
     insertText(rep);
     const after = h.start + rep.length;
     onEdit(true); runEdSearch();
     const idx = state.edHits.findIndex(x => x.start >= after);
     state.edIdx = state.edHits.length ? (idx < 0 ? 0 : idx) : -1;
     markCurrentHit(); updateCount("ed");
-    if (state.edIdx >= 0) { const n = state.edHits[state.edIdx]; t.setSelectionRange(n.start, n.end); scrollToOffset(n.start); }
+    if (state.edIdx >= 0) { const n = state.edHits[state.edIdx]; setDocSel(n.start, n.end); scrollToOffset(n.start); }
     updateCaret(); $("ed-r").focus();
     toast("1件置換しました");
   }
   function replaceAll() {
     const q = $("ed-q").value;
     if (!q) { toast("検索文字列を入力してください"); return; }
-    const hits = findAll(ta().value, q);
+    const hits = findAll(docText(), q);
     if (!hits.length) { toast("検索結果がありません"); return; }
-    const rep = $("ed-r").value, src = ta().value;
+    const rep = $("ed-r").value, src = docText();
     let out = "", pos = 0;
     for (const h of hits) { out += src.slice(pos, h.start) + rep; pos = h.end; }
     out += src.slice(pos);
-    const t = ta(), keep = body().scrollTop, caret = t.selectionStart;
+    const t = ta(), keep = rScrollTopDoc(), caret = docSelStart();
     /* ★全文の差し替えなので value 代入＋自前 Undo（5.15.3 と同じ経路）。
        execCommand("insertText") に全文を渡すと 12万字で約10秒フリーズする（未処置 L-1 で解消）。
        Ctrl+Z 1 回で全件戻るのは undoStep() が控えを 1 つ持つことで保つ。
@@ -2187,8 +2796,8 @@
                label: "すべて置換", keepView: true, scroll: keep, caret: caret });
     setWholeDoc(out);
     const at = Math.min(caret, out.length);
-    t.setSelectionRange(at, at);
-    body().scrollTop = keep;
+    setDocSel(at, at);
+    rScroll().scrollTop = keep;     /* setWholeDoc で headTop=0 に戻っている */
     onEdit(true); runEdSearch(); $("ed-r").focus();
     toast(hits.length + "件を置換しました（Ctrl+Z で元に戻せます）");
   }
@@ -2301,22 +2910,22 @@
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         try {
-          const t = ta(), src = t.value;
+          const t = ta(), src = docText();   /* ★整形は【全文】に掛ける。窓だけ渡すと頭が落ちる（5.19） */
           const r = fn(src);
           if (r.text === src) {
             toast(label + "：変えるところがありませんでした");
             return;
           }
-          const keep = body().scrollTop;
-          const caret0 = t.selectionStart;                       // 控えに入れる【整形前】の位置
+          const keep = rScrollTopDoc();
+          const caret0 = docSelStart();                          // 控えに入れる【整形前】の位置
           const caret = Math.min(caret0, r.text.length);
           markUndo({ text: src, name: state.fileName, handle: state.fileHandle,
                      origin: state.origin, dirty: state.dirty, prevTabId: null,
                      label: label, keepView: true, scroll: keep, caret: caret0 });
           setWholeDoc(r.text);
           t.focus();
-          t.setSelectionRange(caret, caret);
-          body().scrollTop = keep;
+          setDocSel(caret, caret);
+          rScroll().scrollTop = keep;   /* setWholeDoc で headTop=0 */
           onEdit(true); runEdSearch();
           toast(label + "：" + r.count + "か所（Ctrl+Z で元に戻せます）");
         } finally {
@@ -2590,9 +3199,9 @@
     // 独立した行として挿入する。挿入後キャレットは次行の先頭に残る
     let ins = text;
     const lineWise = ins.endsWith("\n");
-    if (lineWise && off > 0 && t.value[off - 1] !== "\n") ins = "\n" + ins;
+    if (lineWise && off > 0 && docText()[off - 1] !== "\n") ins = "\n" + ins;
 
-    t.focus(); t.setSelectionRange(off, off);
+    t.focus(); setDocSel(off, off);
     insertText(ins);
     onEdit();
     toast(lineWise
@@ -2629,14 +3238,117 @@
      ======================================================= */
   let saveTimer = null;
   let autosavePaused = false;   // 他タブが LS_DRAFT を更新 → このタブは自動保存しない
-  function onEdit(skipSearch) {
+  let imeQuietUntil = 0;        // compositionend 直後、追撃 input を無視する期限
+  let imeFlushTimer = null;
+  let imeWatchdog = null;
+  let headerStatsTimer = null;
+  const isImeInputType = it => !!it && (
+    it === "insertCompositionText" || it === "deleteCompositionText"
+    || it === "insertFromComposition" || it === "deleteByComposition"
+  );
+  function armImeWatchdog() {
+    /* compositionend が来ない環境用。変換セッションが切れたあとにだけ後始末 */
+    clearTimeout(imeWatchdog);
+    imeWatchdog = setTimeout(() => {
+      imeWatchdog = null;
+      if (!composing) return;
+      composing = false;
+      scheduleImeFlush();
+    }, 2500);
+  }
+  function onEdit(skipSearch, ev) {
+    /* IME 変換中は input が候補のたびに何十回も飛ぶ。
+       10万字文末だと行桁・overlay・diff 予約だけで変換が固まるので、確定まで触らない。 */
+    if (composing || (ev && (ev.isComposing || isImeInputType(ev.inputType)))) return;
+    /* compositionend 直後の追撃 input は flush 済み／予定 */
+    if (imeQuietUntil && performance.now() < imeQuietUntil) return;
     state.dirty = true;
-    updateHeader();
-    if (!skipSearch) runEdSearch(true);
-    refreshOverlay();
+    updateHeader({ statsDelay: true });
+    /* 検索語が空なら findAll／ヒット層／右MM を入力経路で触らない。
+       語があるときも即走らせず短く遅延（打ち終わりにまとめる）。 */
+    if (!skipSearch) {
+      const q = $("ed-q").value;
+      if (!q) {
+        if (state.edHits.length || state.edHitsSrc != null) {
+          state.edHits = [];
+          state.edHitsSrc = null;
+          state.edIdx = -1;
+          updateCount("ed");
+        }
+      } else {
+        scheduleEdSearch(true);
+      }
+    }
+    /* ★通常の1文字挿入は高さが変わらないのに autoGrow（height:auto→scrollHeight）
+       が 10万字全文のレイアウト計測を毎回走らせていた。文末ほど重い。
+       改行・貼付・削除・Undo など高さに効きうるものだけ grow。 */
+    refreshOverlay({ typing: true, grow: inputMayChangeHeight(ev) });
     scheduleDiff();
     clearTimeout(saveTimer);
     if (!autosavePaused) saveTimer = setTimeout(autoSave, AUTOSAVE_MS);
+  }
+  /** IME 確定の後始末。
+   *  ★かな入力では「1文字ごとに compositionend」が来る環境がある。
+   *    そのたびに ta().value を読むと 10万字で数秒×文字数になり、
+   *    「1文字ずつ確定してめちゃくちゃ遅い」ように見える。
+   *  → ここでは dirty 印だけ。value を読む処理は打ち終わり後に 1 回だけ。 */
+  function scheduleImeFlush() {
+    imeQuietUntil = performance.now() + 900;
+    state.dirty = true;
+    try { $("edit-dirty").textContent = " ●"; } catch (_) {}
+    clearTimeout(imeFlushTimer);
+    imeFlushTimer = setTimeout(flushAfterIme, 800);
+  }
+  function flushAfterIme() {
+    imeFlushTimer = null;
+    if (composing) {
+      /* まだ次の変換が始まった → 終わりまで待つ */
+      scheduleImeFlush();
+      return;
+    }
+    /* 自動保存だけ予約（本体の value 読みは autoSave 内・停止後） */
+    clearTimeout(saveTimer);
+    if (!autosavePaused) saveTimer = setTimeout(autoSave, AUTOSAVE_MS);
+    state.diffStale = true;
+    /* 統計・行桁・overlay はさらに遅らせて 1 回。value 読みを連打しない */
+    clearTimeout(headerStatsTimer);
+    headerStatsTimer = setTimeout(() => {
+      headerStatsTimer = null;
+      if (composing) return;
+      updateHeader();
+    }, 2000);
+    clearTimeout(overlayFullTimer);
+    overlayFullTimer = setTimeout(() => {
+      overlayFullTimer = null;
+      if (composing) return;
+      try {
+        state.caret = docSelStart();
+        paintCaretPos(state.caret, docText());
+      } catch (_) {}
+      overlayWantFull = true;
+      kickOverlay();
+    }, 2000);
+  }
+  function inputMayChangeHeight(ev) {
+    if (!ev) return true;
+    const it = ev.inputType || "";
+    if (it === "insertText" || it === "insertCompositionText") {
+      const d = ev.data;
+      return !!(d && d.indexOf("\n") >= 0);
+    }
+    if (it === "insertLineBreak" || it === "insertParagraph") return true;
+    if (it === "insertFromPaste" || it === "insertFromDrop" || it === "insertReplacementText") return true;
+    if (it.indexOf("delete") === 0) return true;
+    if (it === "historyUndo" || it === "historyRedo") return true;
+    return true;
+  }
+  let edSearchTimer = null;
+  function scheduleEdSearch(keepIdx) {
+    clearTimeout(edSearchTimer);
+    edSearchTimer = setTimeout(() => {
+      edSearchTimer = null;
+      runEdSearch(keepIdx);
+    }, 150);
   }
   /* 自動保存の状態はトーストではなく、ツールバーの空き領域に出したままにする（5.8）。
      本文の上に何も重ならないので、書いている最中でも視界を邪魔しない。
@@ -2684,8 +3396,8 @@
 
   /** 下書きを LocalStorage に保存する。成功したら true を返す（5.8） */
   function autoSave(quiet) {
-    if (autosavePaused) return false;
-    const payload = { name: state.fileName, text: ta().value, at: Date.now(), tabId: draftTabId,
+    if (autosavePaused || composing) return false;
+    const payload = { name: state.fileName, text: docText(), at: Date.now(), tabId: draftTabId,
                       origin: { text: state.origin.text, name: state.origin.name } };
     try {
       localStorage.setItem(LS_DRAFT, JSON.stringify(payload));
@@ -2712,18 +3424,37 @@
       if (d && d.tabId && d.tabId !== draftTabId) pauseAutosaveOtherTab();
     } catch (_) {}
   });
-  function updateHeader() {
+  function updateHeader(opts) {
     $("edit-fname").textContent = state.fileName;
     $("edit-dirty").textContent = state.dirty ? " ●" : "";
-    const v = ta().value;
-    $("edit-stat").textContent = v.length.toLocaleString() + " 文字 / " + (v ? v.split("\n").length : 0).toLocaleString() + " 行";
+    const paintStats = () => {
+      const v = docText();
+      const len = v.length;
+      let lines = 1;
+      /* split("\n") は行数ぶんの配列を作るので長文で重い。改行カウントだけにする */
+      for (let i = 0; i < len; i++) if (v.charCodeAt(i) === 10) lines++;
+      $("edit-stat").textContent = len.toLocaleString() + " 文字 / " + lines.toLocaleString() + " 行";
+    };
+    /* 入力中は文字数・行数の split を毎キーやらない（長文で O(n)）。
+       dirty 印は即時、統計だけ短くまとめる。 */
+    if (opts && opts.statsDelay) {
+      if (!headerStatsTimer) {
+        headerStatsTimer = setTimeout(() => {
+          headerStatsTimer = null;
+          paintStats();
+        }, 200);
+      }
+      return;
+    }
+    if (headerStatsTimer) { clearTimeout(headerStatsTimer); headerStatsTimer = null; }
+    paintStats();
   }
   function openEditFile(file, handle) {
     readFile(file, (name, text) => {
       const t = ta();
       /* Ctrl+Z で読み込みを取り消せるように、読む前の状態を控える（5.15.3）。
          本文の差し替えは value 代入。execCommand は 12万字で 10 秒かかる（構築仕様書 5.15.3）。 */
-      markUndo({ text: t.value, name: state.fileName, handle: state.fileHandle,
+      markUndo({ text: docText(), name: state.fileName, handle: state.fileHandle,
                  origin: state.origin, dirty: state.dirty, prevTabId: null,
                  label: "ファイルの読み込み" });
       setWholeDoc(text);
@@ -2731,7 +3462,7 @@
       state.fileHandle = handle || null;     // 保存時の初期フォルダに使う（5.9）
       /* textarea は value を代入すると仕様上キャレットが文末へ行く。
          開いた直後は先頭から読むので、キャレットと表示を先頭に戻す。 */
-      t.setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;
+      t.setSelectionRange(0, 0); rScroll().scrollTop = 0; state.caret = 0;
       setOrigin(text, name);                 // 開いた時点を「初期」にする
       updateHeader(); runEdSearch(); refreshOverlay();
       toast("「" + name + "」を開きました（この内容を「初期」にしました）");
@@ -2783,9 +3514,10 @@
 
   /** 本文をまるごと差し替える。value 代入なので input は飛ばない（呼び元が更新する） */
   function setWholeDoc(text) {
-    ta().value = text;
+    setDocText(text);              // ★窓も先頭へ戻す（docHead を空にする）
     markedText = text;
     editedSinceMark = false;
+    resetCaretPosCache();
   }
   function markUndo(rec) {
     undoMarks.push(rec);
@@ -2827,9 +3559,9 @@
          ここで先頭へ飛ばすと、置換を取り消した瞬間に読んでいた場所を失う。 */
     if (p.keepView) {
       const at = Math.min(p.caret || 0, p.text.length);
-      t.setSelectionRange(at, at); body().scrollTop = p.scroll || 0; state.caret = at;
+      setDocSel(at, at); rScroll().scrollTop = p.scroll || 0; state.caret = at;
     } else {
-      t.setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;
+      t.setSelectionRange(0, 0); rScroll().scrollTop = 0; state.caret = 0;
     }
     setOrigin(p.origin.text, p.origin.name);
     renderRef(); restoreScroll();
@@ -2858,7 +3590,7 @@
   function newDoc() {
     const t = ta(), eb = body();
     // 捨てる前の【右ペインの原稿】を資料タブに退避する
-    const prevTab = stashPrevEdit(t.value, state.fileName);
+    const prevTab = stashPrevEdit(docText(), state.fileName);
     /* ★左ペインを守る（5.15.2）。ORIGIN を空にするとシステムタブの中身も空になり、
        資料タブを持っているのに「資料を読み込んでください」と出てしまう。資料タブへ逃がす。
        資料が1枚も無いときは本当に空なのでヒントが出るのが正しい。 */
@@ -2869,8 +3601,8 @@
       if (go) setActiveTab(go.id);
     }
     // すでに空なら戻すものが無いので控えも取らない
-    const marked = t.value !== "";
-    if (marked) markUndo({ text: t.value, name: state.fileName, handle: state.fileHandle,
+    const marked = docLen() !== 0;
+    if (marked) markUndo({ text: docText(), name: state.fileName, handle: state.fileHandle,
                            origin: state.origin, dirty: state.dirty,
                            prevTabId: prevTab ? prevTab.id : null, label: "［新規］" });
     dimHold = true;                        // 直後のフォーカスでガイドを薄くしない
@@ -2915,20 +3647,20 @@
           try {
             const t = ta();
             let ins = text;
-            const off = t.selectionStart;               // 選択があっても消さず、キャレット位置に入れる
+            const off = docSelStart();                  // 選択があっても消さず、キャレット位置に入れる
             // ファイルは常に「かたまり」なので、行の途中に落とさない
-            if (off > 0 && t.value[off - 1] !== "\n") ins = "\n" + ins;
+            if (off > 0 && docText()[off - 1] !== "\n") ins = "\n" + ins;
             if (!ins.endsWith("\n")) ins += "\n";
             /* ★execCommand は挿す量に比例して遅い（10万字＋10万字で返らない）。
                全文の差し替えと同じ扱いにする（5.9B / 5.4B）。 */
-            const src = t.value;
+            const src = docText();
             markUndo({ text: src, name: state.fileName, handle: state.fileHandle,
                        origin: state.origin, dirty: state.dirty, prevTabId: null,
                        label: "ファイルの挿入", keepView: true,
-                       scroll: body().scrollTop, caret: off });
+                       scroll: rScrollTopDoc(), caret: off });
             setWholeDoc(src.slice(0, off) + ins + src.slice(off));
             const at = off + ins.length;                // 挿したかたまりの直後（execCommand と同じ位置）
-            t.focus(); t.setSelectionRange(at, at);
+            t.focus(); setDocSel(at, at);
             onEdit();                                  // dirty・検索・オーバーレイ・変更タブをまとめて更新
             /* ★execCommand はキャレットを自動で画面内に寄せていた。value 代入では寄らない。
                rectForOffset はミラー経由なので、先に本文を同期する（rAF を待たない）。 */
@@ -2975,7 +3707,7 @@
   async function saveOverwrite() {
     if (preferShareFirst()) { saveShareDirect(); return; }
     if (!allowOverwriteUI() || !state.fileHandle) { saveAsTxt(); return; }
-    const text = withEol(ta().value);
+    const text = withEol(docText());
     try {
       if (!await ensureWritable(state.fileHandle)) {
         toast("上書きの許可が得られませんでした。［名前を付けて保存］を使ってください");
@@ -2996,13 +3728,13 @@
 
   /** iOS: いまの fileName のまま共有シート（prompt なし・rev91）。 */
   async function saveShareDirect() {
-    const text = withEol(ta().value);
+    const text = withEol(docText());
     const name = state.fileName || "無題.txt";
     await exportTxt(text, name, false);
   }
 
   async function saveAsTxt() {
-    const text = withEol(ta().value);
+    const text = withEol(docText());
     let name = state.fileName || "無題.txt";
     /* Chrome: OS の保存ダイアログで場所と名前を選ぶ */
     if (canFSA() && allowOverwriteUI()) {
@@ -3191,7 +3923,7 @@
     const isL = side === "left";
     const canvas = isL ? $("mm-left") : $("mm-right");
     const wrap = canvas.parentElement;
-    const pane = isL ? $("ref-body") : body();
+    const pane = isL ? $("ref-body") : rScroll();
     const dpr = window.devicePixelRatio || 1;
     // canvas 内の余白。上下 1px は 1 行目の見出しが枠に埋もれないため。
     // 左右は【本文に接する側を厚く】して、色棒・青枠・キャレットが隣ペインに
@@ -3225,7 +3957,7 @@
     ctx.translate(padL, MM_OUT_Y);
 
     const refEmpty = isL && refIsEmpty();
-    const text = isL ? (refEmpty || !t ? "" : t.text) : ta().value;
+    const text = isL ? (refEmpty || !t ? "" : t.text) : docText();
     const total = text.length;
 
     const isDiffTab = isL && !!t && t.kind === SYS.DIFF;
@@ -3402,17 +4134,18 @@
     return charOffsetInRoot(root, rg.startContainer, rg.startOffset);
   }
 
-  /* スクロールのたびに呼ばれるので、同じ状態なら計算し直さない */
-  const visRangeMemo = { left: null, right: null };
-
   /** いま画面に見えている論理行の範囲 { top, bot } */
   function visibleLineRange(isL, lineOf, n) {
-    const pane0 = isL ? $("ref-body") : body();
+    const pane0 = isL ? $("ref-body") : rScroll();
     // テキストが差し替わってもレイアウト寸法が偶然同じ、という取り違えを避けるため
     // 文字数もキーに入れる（5.4D）
-    const srcLen = isL ? ((activeTabObj() && activeTabObj().text) || "").length : ta().value.length;
-    const key = [Math.round(pane0.scrollTop), pane0.clientHeight, pane0.scrollHeight, n, srcLen,
-                 isL ? ((activeTabObj() && activeTabObj().id) || "-") : "e"].join("|");
+    const srcLen = isL ? ((activeTabObj() && activeTabObj().text) || "").length : docLen();
+    /* maxWidth / fontSize も key に入れる。折り返しが変わっても scrollHeight が
+       偶然一致する／未更新の瞬間があると、古い visible 範囲を再利用してしまう。 */
+    const lay = isL ? $("ref-inner") : ta();
+    const key = [Math.round(pane0.scrollTop), Math.round(headTop), pane0.clientHeight, pane0.scrollHeight, n, srcLen,
+                 isL ? ((activeTabObj() && activeTabObj().id) || "-") : "e",
+                 lay.style.maxWidth || "", lay.style.fontSize || ""].join("|");
     const memo = visRangeMemo[isL ? "left" : "right"];
     if (memo && memo.key === key) return memo.val;
     const val = computeVisibleLineRange(isL, lineOf, n);
@@ -3457,6 +4190,7 @@
     // （getComputedStyle をスクロールごとに走らせると重い）
     const eb = body(), r = eb.getBoundingClientRect();
     syncMirrorText();
+    syncEditLayersScroll();
     const x = hitX(r);
     return { top: lineOf(offsetFromPoint(x, r.top + 2)), bot: lineOf(offsetFromPoint(x, r.bottom - 2)) };
   }
@@ -3514,11 +4248,15 @@
       if (!rc || (!rc.height && !rc.top)) return null;
       return rc.top - rb.getBoundingClientRect().top + rb.scrollTop;
     }
-    const eb = body(), off = lineStartOffset(ta().value, line);
+    const eb = body();
+    let off = lineStartOffset(docText(), line);
+    /* ★窓に載っていない行へは textarea をスクロールできない。先に窓を張り直す（5.19） */
+    if (off < docBase()) { pushWinUndo(); rebaseWindow(off - WIN_KEEP_TGT); }
     syncMirrorStyle(); syncMirrorText();
+    syncEditLayersScroll();
     const rc = rectForOffset(off);
     if (!rc) return null;
-    return rc.top - eb.getBoundingClientRect().top + eb.scrollTop;
+    return rc.top - eb.getBoundingClientRect().top + rScroll().scrollTop;
   }
 
   function setupMinimapDrag(canvasId, getPane, side) {
@@ -3533,7 +4271,7 @@
       const pane = getPane();
       // クリックした位置の「行」をビューポート中央へ（青枠の中心 ≈ クリック点）。
       // 以前は行を画面上端に置いていたため、枠の上辺がクリック点に来て見えていた（rev53）。
-      const src = isL ? ((activeTabObj() && activeTabObj().text) || "") : ta().value;
+      const src = isL ? ((activeTabObj() && activeTabObj().text) || "") : docText();
       const nn = Math.max(1, src.split("\n").length);
       const line = Math.max(0, Math.min(nn - 1, Math.floor(p * nn)));
       const docY = lineDocY(isL, line);
@@ -3637,9 +4375,40 @@
   $("edit-empty").querySelector(".hint-box").addEventListener("click", () =>
     confirmOverwrite("「" + (state.fileName || "無題.txt") + "」を閉じて、選んだファイルを読み込みます。" +
       "「初期」の基準と Ctrl+Z の履歴は失われます。", pickAndOpen));
-  // IME 変換中はヒントを隠す（変換候補の背後に残るのを防ぐ）
-  ta().addEventListener("compositionstart", () => { composing = true; updateEditEmpty(); });
-  ta().addEventListener("compositionend",   () => { composing = false; updateEditEmpty(); });
+  // IME: 変換中は JS が value/layout に触らない。
+  // 遅延中の overlay/autoSave/stats が value を読むとメインスレッドが固まり、
+  // 「ああ」で描画が止まって後から「あああああ」と一気に出る。
+  function cancelDeferredEditWork() {
+    clearTimeout(imeFlushTimer); imeFlushTimer = null;
+    clearTimeout(overlayFullTimer); overlayFullTimer = null;
+    clearTimeout(headerStatsTimer); headerStatsTimer = null;
+    clearTimeout(saveTimer); saveTimer = null;
+    clearTimeout(edSearchTimer); edSearchTimer = null;
+    clearTimeout(diffTimer); diffTimer = null;
+    clearTimeout(leftMmFollowTimer); leftMmFollowTimer = null;
+    clearTimeout(winFixTimer); winFixTimer = null;   /* ★変換中に窓を張り直さない（5.19） */
+    clearTimeout(headIdleTimer); headIdleTimer = null;
+    overlayWantFull = false;
+    overlayWantGrow = false;
+  }
+  /* ★どの経路の編集でも、まず全文の控えを捨てる（5.19）。
+     これを外すと docText() が古い本文を返し、保存・差分・検索がすべて狂う。
+     capture:true ＋ 最初に登録するので、他のどの input ハンドラよりも先に走る。 */
+  ta().addEventListener("input", docInvalidate, true);
+  ta().addEventListener("compositionstart", () => {
+    composing = true;
+    cancelDeferredEditWork();
+    armImeWatchdog();
+  });
+  ta().addEventListener("compositionend", () => {
+    composing = false;
+    clearTimeout(imeWatchdog);
+    imeWatchdog = null;
+    docInvalidate();
+    scheduleImeFlush();
+    scheduleWindowFix();          /* ★変換が終わってから窓を詰める（5.19） */
+    scheduleHeadRepaint();        /* ★変換確定後に **強調** の色を出す（5.19D） */
+  });
   ["focus", "blur"].forEach(ev => ta().addEventListener(ev, updateEditEmpty));
   /* ［新規］直後の「薄くしない」を解除する。人が触った合図＝クリック・キー・フォーカスを外す。
      解除条件を updateEditEmpty の中に書かないのは、あそこは rAF から何度も呼ばれるため。 */
@@ -3736,13 +4505,34 @@
   });
 
   const t0 = ta();
-  t0.addEventListener("input", () => onEdit());
+  t0.addEventListener("input", e => {
+    /* isComposing が欠ける環境でも inputType で IME を拾う */
+    if (composing || e.isComposing || isImeInputType(e.inputType)) {
+      if (!composing) {
+        composing = true;
+        cancelDeferredEditWork();
+      }
+      armImeWatchdog();
+      if (!state.dirty) {
+        state.dirty = true;
+        $("edit-dirty").textContent = " ●";
+      }
+      return;
+    }
+    onEdit(false, e);
+    scheduleWindowFix();          /* ★打ち終わりに窓を詰める（5.19） */
+    scheduleHeadRepaint();        /* ★打ち終わりに **強調** の色を出す（5.19D） */
+  });
   /* 関所（markedText）の武装／解除（5.15.3）。
      ・人が編集したら解除する（その編集を戻すのはブラウザの仕事）
      ・ブラウザの undo で【差し替え直後の本文まで戻ってきたら】再武装する
        ★再武装しないと、次の Ctrl+Z が value 代入で切れた古い履歴に届き、
          消したはずの原稿が湧く。 */
   t0.addEventListener("input", e => {
+    if (composing || e.isComposing || isImeInputType(e.inputType)) {
+      editedSinceMark = true;
+      return;
+    }
     const it = e.inputType || "";
     if (it === "historyUndo" || it === "historyRedo") {
       /* ★キーボード以外の経路（右クリック → 元に戻す、ブラウザの編集メニュー）は
@@ -3760,13 +4550,57 @@
       editedSinceMark = true;
     }
   });
-  ["keyup", "click", "select", "focus", "blur"].forEach(ev => t0.addEventListener(ev, () => { updateCaret(); drawMinimap("right"); }));
+  ["keyup", "click", "select", "focus", "blur"].forEach(ev => t0.addEventListener(ev, e => {
+    /* 文字キーの keyup は input→onEdit が担う。ここで updateCaret＋右MM すると二重になる。 */
+    if (ev === "keyup") {
+      /* ★e.key が無い keyup（自己診断などの合成 Event）で落ちない。
+         空文字なら「文字キーではない」＝下の scheduleCaretNav へ進むのが正しい。 */
+      const k = typeof e.key === "string" ? e.key : "";
+      if (k === "Process" || e.isComposing) return;
+      if (k.length === 1 || k === "Enter" || k === "Backspace" || k === "Delete") return;
+    }
+    scheduleCaretNav(ev === "blur" || ev === "focus");
+    if (ev !== "blur") scheduleWindowFix();   /* ★移動先が深ければ窓を詰める（5.19） */
+  }));
+  let caretNavRaf = false;
+  let caretNavNeedFull = false;
+  function scheduleCaretNav(needFull) {
+    if (needFull) caretNavNeedFull = true;
+    if (caretNavRaf) return;
+    caretNavRaf = true;
+    requestAnimationFrame(() => {
+      caretNavRaf = false;
+      const full = caretNavNeedFull;
+      caretNavNeedFull = false;
+      if (full) {
+        refreshOverlay();
+      } else {
+        /* 矢印移動など：ミラー＋キャレット＋右MM（見出し帯はテキスト不変なので触らない） */
+        syncMirrorStyle();
+        syncMirrorText();
+        updateCaret(true);
+        drawMinimap("right");
+      }
+    });
+  }
   /* selectionchange は「選択がなくなった時」だけ updateSelCount を呼ぶ。
      ドラッグ中のチラつきを防ぐため、選択がある時は通さない。 */
   let prevSelEnd = null;   // 直前の selectionEnd（前回の選択状態を覚える）
+  let selCaretRaf = false;
   document.addEventListener("selectionchange", () => {
     if (document.activeElement !== t0) return;
-    updateCaret();
+    /* IME 変換中はキャレットが候補に合わせて頻繁に動く。触らない。 */
+    if (composing) return;
+    /* 選択ドラッグ中の updateCaret 連打を rAF 1 回にまとめる。
+       ★forceGeom(true) にしない——打鍵でも selectionchange が飛び、
+       毎キーでミラー Range 計測＋（旧）行桁 split が文末で重かった。 */
+    if (!selCaretRaf) {
+      selCaretRaf = true;
+      requestAnimationFrame(() => {
+        selCaretRaf = false;
+        if (document.activeElement === t0 && !composing) updateCaret(false);
+      });
+    }
     const t = ta();
     const s = t.selectionStart, e = t.selectionEnd;
     // 前回に選択があり、今回はなくなった → トースト消去
@@ -3799,7 +4633,7 @@
       const n = t.value.substring(s, e).replace(/\n/g, "").length;
       el.textContent = "選択部分：" + n.toLocaleString("ja-JP") + "文字";
       syncMirrorText();
-      const r = rectForOffset(e);                       // 選択末尾（カーソル）のビューポート座標
+      const r = rectForOffset(docSelEnd());             // ★ミラーは全文なので全文座標で測る（5.19）
       el.classList.add("show"); el.dataset.sel = "1";
       el.classList.remove("near");
       el.style.right = "auto"; el.style.transform = "none";
@@ -3832,10 +4666,36 @@
   $("ref-act").addEventListener("click", () => {
     const act = $("ref-act").dataset.act;
     if (act === "rebase") {
-      setOrigin(ta().value, state.fileName);
-      /* ★setOrigin は「初期」「変更」タブが出ているときだけ runRefSearch() を通り、その中で
-         updateCount("ref") と renderRef() を済ませている。無条件に呼ぶと 2 回組み直すことになる。 */
-      if (!isSysActive(SYS.ORIGIN) && !isSysActive(SYS.DIFF)) { renderRef(); updateCount("ref"); }
+      /* リベース時は「初期」タブが見えている（ボタンの表示条件=activeTab.kind===SYS.ORIGIN）。
+         右ペインの表示先頭の文字オフセットをミラーで取り、初期タブの同じオフセットの y に
+         scrollTop を合わせる（文字オフセット基準。行番号比や scrollTop 直コピーではない）。
+         左右の折り返し高さが違っても「同じ文字位置」が先頭に来るので、
+         スプリッタで 50:50 からずれたときも表示が一致する。
+         （scrollTop を直接コピーする方式だと左の方が短いときに空の余白が見える） */
+      const rightOff = caretAtBodyTop();
+      setOrigin(docText(), state.fileName);
+      const o = state.tabs.find(x => x.kind === SYS.ORIGIN);
+      if (o) o.scroll = 0;                  // 仮値（再描画後に文字オフセット基準で上書き）
+      /* setOrigin は「初期」「変更」タブが出ているときだけ runRefSearch() を通り、その中で
+         renderRef() と updateCount("ref") を済ませている。renderRef は #ref-inner の中身を
+         全部作り直すので、scrollTop は DOM 確定後に当てる必要がある（二重 rAF）。 */
+      if (!isSysActive(SYS.ORIGIN) && !isSysActive(SYS.DIFF)) {
+        renderRef();
+      }
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const top = leftTopForOffset(rightOff);
+        const rb = $("ref-body");
+        if (top !== null) {
+          const max = Math.max(0, rb.scrollHeight - rb.clientHeight);
+          rb.scrollTop = Math.max(0, Math.min(max, top));
+          if (o) o.scroll = rb.scrollTop;
+        } else {
+          rb.scrollTop = 0;
+          if (o) o.scroll = 0;
+        }
+        drawMinimap("left");
+      }));
+      if (!isSysActive(SYS.ORIGIN) && !isSysActive(SYS.DIFF)) updateCount("ref");
       toast("「初期」を右ペインの現在の内容に再設定しました");
     } else if (act === "tohere") {
       rightToHere();
@@ -3844,27 +4704,58 @@
 
   $("ref-body").addEventListener("scroll", () => { rememberScroll(); drawMinimap("left"); });
   // 右ペインのスクロールでは追従しない（カーソルが動いたときだけ）
-  body().addEventListener("scroll", () => drawMinimap("right"));
+  rScroll().addEventListener("scroll", () => {
+    growWindowHeadIfNeeded();       /* ★窓の上端に着いたら頭を継ぎ足す（5.19） */
+    syncEditLayersScroll(); drawMinimap("right");
+  });
 
-  $("opt-font").addEventListener("input", () => {
-    const v = +$("opt-font").value;
+  /* ---- ［文字］［幅］のスピナー（5.20）----
+     ★重い applySettings() を input の中で同期実行しない。
+       10万字だとここで数百ms主スレッドが止まり、そのあいだに Safari の
+       スピナーの「押しっぱなし連射」タイマーが発火して、ワンクリックでも
+       数字が 2 以上進んでしまう（Mac Safari で顕著）。
+       値の更新は即時、重い再レイアウトだけ短くまとめる。
+     ★value への書き戻しは【本当に変わるときだけ】。
+       同じ文字列でも代入すると、Safari はスピナーの内部状態を作り直して
+       保留中の増分を二重に当てることがある。 */
+  let optApplyTimer = null;
+  function scheduleApplySettings(now) {
+    clearTimeout(optApplyTimer);
+    optApplyTimer = null;
+    if (now) { applySettings(); saveSettings(); return; }
+    optApplyTimer = setTimeout(() => {
+      optApplyTimer = null;
+      applySettings(); saveSettings();
+    }, 150);
+  }
+  const setNumValue = (el, v) => { const t = String(v); if (el.value !== t) el.value = t; };
+
+  function onFontChanged(now) {
+    const el = $("opt-font");
+    const v = +el.value;
     if (!v) return;                                   // 入力途中の空欄は無視
-    $("opt-font").value = Math.max(10, Math.min(28, Math.round(v)));
-    applySettings(); saveSettings();                  // 文字を大きくすると上限が下がる
-  });
-  $("opt-font").addEventListener("change", () => {
-    const v = +$("opt-font").value || 15;
-    $("opt-font").value = Math.max(10, Math.min(28, Math.round(v)));
-    applySettings(); saveSettings();
-  });
-  $("opt-width").addEventListener("input", () => {
-    const v = +$("opt-width").value;
+    setNumValue(el, Math.max(10, Math.min(28, Math.round(v))));
+    scheduleApplySettings(now);                       // 文字を大きくすると上限が下がる
+  }
+  function onWidthChanged(now) {
+    const el = $("opt-width");
+    const v = +el.value;
     if (!v) return;                                   // 入力途中の空欄は無視
     state.widthPref = clampWidth(v);
+    setNumValue(el, state.widthPref);
     const mx = maxWidthChars();
     if (state.widthPref > mx) toast("いまのペイン幅で表示できるのは全角 " + mx + " 文字までです");
-    applySettings(); saveSettings();
+    scheduleApplySettings(now);
+  }
+  $("opt-font").addEventListener("input", () => onFontChanged(false));
+  /* change＝確定（フォーカスを外した・スピナーを離した）。ここは即時に当てる */
+  $("opt-font").addEventListener("change", () => {
+    const el = $("opt-font");
+    if (!+el.value) setNumValue(el, 15);
+    onFontChanged(true);
   });
+  $("opt-width").addEventListener("input", () => onWidthChanged(false));
+  $("opt-width").addEventListener("change", () => onWidthChanged(true));
   /* ---- 見出し設定ダイアログ ---- */
   (function () {
     const box = $("cfg-builtin");
@@ -3921,7 +4812,7 @@
   }
   function cfgPreview() {
     const comp = compileHead(cfgFromDialog());
-    const h = findHeadings(ta().value, comp);
+    const h = findHeadings(docText(), comp);
     const n1 = h.filter(x => x.lv === 1).length;
     const n2 = h.filter(x => x.lv === 2).length;
     const n3r = h.filter(x => x.lv === 3 && x.kind === "red").length;
@@ -3989,7 +4880,7 @@
     const heads = edHeads().filter(h => h.lv === 1 || h.lv === 2);
     if (!heads.length) return false;
 
-    const s0 = t.selectionStart, s1 = t.selectionEnd, len = t.value.length;
+    const s0 = docSelStart(), s1 = docSelEnd(), len = docLen();   /* ★見出しは全文座標（5.19） */
     const selDir = t.selectionDirection || "none";
     /* anchor=固定端 / focus=動く端。textarea の selectionDirection に合わせる。
        旧実装は Shift+↑ が常に selectionStart 側を動かしていたため、
@@ -4030,10 +4921,10 @@
     }
 
     if (shift) {
-      if (target >= anchor) t.setSelectionRange(anchor, target, "forward");
-      else t.setSelectionRange(target, anchor, "backward");
+      if (target >= anchor) setDocSel(anchor, target, "forward");
+      else setDocSel(target, anchor, "backward");
     } else {
-      t.setSelectionRange(target, target);
+      setDocSel(target, target);
     }
 
     scrollToOffset(target);
@@ -4116,7 +5007,7 @@
   }
 
   setupMinimapDrag("mm-left", () => $("ref-body"), "left");
-  setupMinimapDrag("mm-right", body, "right");
+  setupMinimapDrag("mm-right", rScroll, "right");
 
 
   /* =======================================================
@@ -4156,14 +5047,14 @@
     if (!items || !items.length) return false;
     const edit = items[0];
     const t = ta();
-    markUndo({ text: t.value, name: state.fileName, handle: state.fileHandle,
+    markUndo({ text: docText(), name: state.fileName, handle: state.fileHandle,
                origin: state.origin, dirty: state.dirty, prevTabId: null,
                label: "ファイルの読み込み" });
     setWholeDoc(edit.text);
     state.fileName = edit.name;
     state.dirty = false;
     state.fileHandle = edit.handle || null;
-    t.setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;
+    t.setSelectionRange(0, 0); rScroll().scrollTop = 0; state.caret = 0;
     setOrigin(edit.text, edit.name);
     let firstRefId = null;
     for (let i = 1; i < items.length; i++) {
@@ -4237,7 +5128,7 @@
           $("btn-restore").focus();          // 大きい側＝既定の選択肢としてフォーカスも置く
           $("btn-restore").onclick = () => {
             setWholeDoc(d.text); state.fileName = d.name || "無題.txt"; state.dirty = false;
-            ta().setSelectionRange(0, 0); body().scrollTop = 0; state.caret = 0;   // 先頭から読む
+            ta().setSelectionRange(0, 0); rScroll().scrollTop = 0; state.caret = 0;   // 先頭から読む
             // 基準も一緒に戻す。origin が無い古い下書きは、復元した内容を基準にする（5.13.1B）
             const o = d.origin && typeof d.origin.text === "string" ? d.origin : null;
             setOrigin(o ? o.text : d.text, (o && o.name) || state.fileName);
