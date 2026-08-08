@@ -298,6 +298,10 @@
     background: #e8f0e9; border-color: #a5c9a8; color: #2e5c33; font-weight: 600;
   }
   #ref-act:hover { background: #d7e8d9; }
+  /* ★資料タブの「入れ替え」だけは朱色。ほかの2つ（緑）と役割が違うことを色で示す（5.22C）。
+     #ref-act:hover と同じ詳細度なので、必ずこの後ろに置くこと。 */
+  #ref-act.swap { background: #fdeae1; border-color: #e0855c; color: #b03a16; }
+  #ref-act.swap:hover { background: #fbdaca; }
   #ref-act[hidden] { display: none; }
   .searchbar .lbl { font-size: 11px; color: #7cb342; flex-shrink: 0; }
 
@@ -558,7 +562,7 @@
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.2.9　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.3.3　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
@@ -829,6 +833,12 @@
     edHitsSrc: null,             // edHits を計算した元テキスト（取り違え検知用）→ 5.4D
     edHeads: [], edHeadSrc: null,
     dirty: false, fileName: "無題.txt", ratio: 0.5, caret: 0,
+    /* ★fileSaved：いまの本文を【ブラウザの外へ書き出した】かどうか（5.22D）。
+       dirty だけでは足りない。下書き復元の直後は dirty=false なのに
+       ファイルはどこにも無い（＝ブラウザを閉じたら消える）。
+       ファイル書き込み／ダウンロード／共有／クリップボード退避のいずれかを
+       通ったら true、下書き復元・［新規］・起動直後は false。 */
+    fileSaved: false,
     widthPref: 40,               // 表示幅の「希望値」。実効値は effWidthChars() で上限を掛ける
     fileHandle: null,            // 開いたファイルのハンドル（保存ダイアログの初期フォルダに使う）
     showHead: true,
@@ -1098,7 +1108,7 @@
       text: text,
       name: state.fileName, handle: state.fileHandle,
       origin: { text: state.origin.text, name: state.origin.name },
-      dirty: state.dirty,
+      dirty: state.dirty, fileSaved: state.fileSaved,
       keepView: true, caret: docSelStart(), scroll: rScrollTopDoc(),
       winSnap: true, label: "入力"
     });
@@ -2347,7 +2357,10 @@
      左ペイン：タブ
      ======================================================= */
   function addTab(name, text, activate, scroll, kind) {
-    const t = { id: "t" + (++tabSeq), name: name, text: text, scroll: scroll || 0, heads: null, kind: kind || null, html: null };
+    /* ★fileSaved：このタブの本文がディスクにあるか（5.22D）。
+       ファイルから開いた資料は true。［新規］の退避など本文だけのタブは false。
+       右ペインへ入れ替えたあと「保存しなくてよいか」の判断に使う。 */
+    const t = { id: "t" + (++tabSeq), name: name, text: text, scroll: scroll || 0, heads: null, kind: kind || null, html: null, fileSaved: false };
     state.tabs.push(t);
     renderTabs();
     if (activate !== false) setActiveTab(t.id);
@@ -2364,7 +2377,7 @@
     if (state.tabs[i].kind) { toast("このタブは閉じられません"); return; }   // システムタブ
     rememberScroll();
     const [t] = state.tabs.splice(i, 1);
-    state.closed.push({ name: t.name, text: t.text, scroll: t.scroll, at: i });
+    state.closed.push({ name: t.name, text: t.text, scroll: t.scroll, at: i, fileSaved: !!t.fileSaved });
     // 上限 10 件（B-1 / 12章 #11）。本文ごと抱えるので無制限だとメモリが伸び続ける
     while (state.closed.length > CLOSED_MAX) state.closed.shift();
     if (state.activeTab === id) {
@@ -2380,7 +2393,7 @@
   function undoClose() {
     const c = state.closed.pop();
     if (!c) return;
-    const t = { id: "t" + (++tabSeq), name: c.name, text: c.text, scroll: c.scroll, heads: null, kind: null, html: null };
+    const t = { id: "t" + (++tabSeq), name: c.name, text: c.text, scroll: c.scroll, heads: null, kind: null, html: null, fileSaved: !!c.fileSaved };
     state.tabs.splice(Math.max(sysCount(), Math.min(c.at, state.tabs.length)), 0, t);
     updateUndoChip();
     setActiveTab(t.id);
@@ -2658,6 +2671,8 @@
   /** 左検索バー右端のコンテキストボタン（システムタブ用） */
   function updateRefAct() {
     const b = $("ref-act"), t = activeTabObj();
+    /* ★色は毎回いったん戻す。資料タブのときだけ朱色にする（5.22C） */
+    b.classList.remove("swap");
     if (t && t.kind === SYS.ORIGIN) {
       b.hidden = false;
       b.textContent = "←現状を初期に設定";
@@ -2665,9 +2680,18 @@
       b.dataset.act = "rebase";
     } else if (t && t.kind === SYS.DIFF) {
       b.hidden = false;
-      b.textContent = "カーソル位置を合わせる→";
+      b.textContent = "→カーソル位置";
       b.title = "左でいま見ている行に、右ペインの表示とカーソルを合わせます";
       b.dataset.act = "tohere";
+    } else if (t && !t.kind) {
+      /* ★資料タブでは未使用だった枠を使う（5.22）。
+         ここに出すことで「見ていたタブを直す」導線が本文のすぐ上に来る。 */
+      b.hidden = false;
+      b.textContent = "⇆編集テキスト入れ替え";
+      b.title = "この資料と右ペインの原稿を入れ替えます。いまの原稿は先にファイルへ保存し、"
+                + "このタブへ移します（もう一度押すと戻ります）";
+      b.dataset.act = "toedit";
+      b.classList.add("swap");
     } else {
       b.hidden = true;
       b.dataset.act = "";
@@ -2792,7 +2816,7 @@
        Ctrl+Z 1 回で全件戻るのは undoStep() が控えを 1 つ持つことで保つ。
        keepView を付けているので、取り消したときにスクロールとキャレットが飛ばない。 */
     markUndo({ text: src, name: state.fileName, handle: state.fileHandle,
-               origin: state.origin, dirty: state.dirty, prevTabId: null,
+               origin: state.origin, dirty: state.dirty, fileSaved: state.fileSaved, prevTabId: null,
                label: "すべて置換", keepView: true, scroll: keep, caret: caret });
     setWholeDoc(out);
     const at = Math.min(caret, out.length);
@@ -2920,7 +2944,7 @@
           const caret0 = docSelStart();                          // 控えに入れる【整形前】の位置
           const caret = Math.min(caret0, r.text.length);
           markUndo({ text: src, name: state.fileName, handle: state.fileHandle,
-                     origin: state.origin, dirty: state.dirty, prevTabId: null,
+                     origin: state.origin, dirty: state.dirty, fileSaved: state.fileSaved, prevTabId: null,
                      label: label, keepView: true, scroll: keep, caret: caret0 });
           setWholeDoc(r.text);
           t.focus();
@@ -3223,7 +3247,24 @@
     $("pane-ref").classList.remove("drop-active");
     if (!e.dataTransfer.files || !e.dataTransfer.files.length) return;
     e.preventDefault();
-    [...e.dataTransfer.files].forEach(f => readFile(f, (n, t) => addTab(n, t)));
+    /* ★ハンドルも一緒に取る（5.22）。資料タブを右ペインへ持ってきたあと
+       Ctrl+S で【元のファイルに上書き】できるようにするため。
+       <input type="file"> ではハンドルが取れないので、ドロップだけの特権。
+       items は非同期で読むと空になるので、先に配列へ写しておく。 */
+    const items = e.dataTransfer.items ? [...e.dataTransfer.items] : [];
+    const files = [...e.dataTransfer.files];
+    files.forEach((f, i) => {
+      const it = items[i];
+      const hp = (it && it.getAsFileSystemHandle) ? it.getAsFileSystemHandle() : Promise.resolve(null);
+      Promise.resolve(hp).catch(() => null).then(h => {
+        readFile(f, (n, t) => {
+          const tab = addTab(n, t);
+          tab.fileSaved = true;                 // ファイルから読んだ資料（5.22D）
+          if (h && h.kind === "file") tab.handle = h;
+          renderTabs();
+        });
+      });
+    });
   });
 
   function readFile(file, cb) {
@@ -3426,7 +3467,13 @@
   });
   function updateHeader(opts) {
     $("edit-fname").textContent = state.fileName;
-    $("edit-dirty").textContent = state.dirty ? " ●" : "";
+    /* ★下書きを復元しただけの原稿は dirty=false だが、ファイルはどこにも無い。
+       ● を出さないと「無題.txt に保存済み」に見える（5.22D）。 */
+    const risky = unsavedRisk();
+    $("edit-dirty").textContent = risky ? " ●" : "";
+    $("edit-dirty").title = !risky ? ""
+      : (state.dirty ? "保存していない変更があります"
+                     : "この本文はまだファイルに保存されていません（ブラウザの中だけ）");
     const paintStats = () => {
       const v = docText();
       const len = v.length;
@@ -3455,10 +3502,11 @@
       /* Ctrl+Z で読み込みを取り消せるように、読む前の状態を控える（5.15.3）。
          本文の差し替えは value 代入。execCommand は 12万字で 10 秒かかる（構築仕様書 5.15.3）。 */
       markUndo({ text: docText(), name: state.fileName, handle: state.fileHandle,
-                 origin: state.origin, dirty: state.dirty, prevTabId: null,
+                 origin: state.origin, dirty: state.dirty, fileSaved: state.fileSaved, prevTabId: null,
                  label: "ファイルの読み込み" });
       setWholeDoc(text);
       state.fileName = name; state.dirty = false;
+      state.fileSaved = true;                // ファイルから読んだ＝その内容はディスクにある（5.22D）
       state.fileHandle = handle || null;     // 保存時の初期フォルダに使う（5.9）
       /* textarea は value を代入すると仕様上キャレットが文末へ行く。
          開いた直後は先頭から読むので、キャレットと表示を先頭に戻す。 */
@@ -3469,6 +3517,100 @@
     });
   }
 
+  /** 原稿をファイルへ保存し、保存できたかを返す（5.22）。
+   *  ★成否は state.dirty を見る。既存の保存関数はどれも成功時に dirty=false にする
+   *    （上書き・名前を付けて保存・ダウンロード・共有すべて）ので、
+   *    保存関数の側を書き換えずに判定できる。
+   *  ★iOS の共有経路は saveOverwrite が fire-and-forget で呼ぶため、
+   *    ここでは経路を自分で選んで await する（await しないと必ず「未保存」と誤判定する）。 */
+  /** いまの本文が「ブラウザを閉じても残る」状態かどうか（5.22D）。
+   *  ★dirty だけを見てはいけない。下書き復元の直後は dirty=false なのに
+   *    本文は localStorage の中にしか無い。名前も「無題.txt」のままなので
+   *    「保存済み」に見えるが、左ペインへ移した瞬間に失う。 */
+  function needsFileSave() {
+    return docLen() > 0 && (state.dirty || !state.fileSaved);
+  }
+  /** 破棄すると失うものがあるか（［新規］／読み込みの確認ダイアログ用）。
+   *  ★needsFileSave() とは分ける。「書いてから全消去した」状態は本文が空でも
+   *    dirty なので確認を出さないといけない（rev41 A-3。Ctrl+Z で戻せる）。
+   *    いっぽう saveManuscriptToFile は「空なら書き出すものが無い」で早く返したい。 */
+  function unsavedRisk() {
+    return state.dirty || (docLen() > 0 && !state.fileSaved);
+  }
+  async function saveManuscriptToFile() {
+    if (!needsFileSave()) return true;            // 空、またはすでにファイルにある
+    /* まだ一度もファイルへ書いていない本文だと、ここで急に保存ダイアログが出る。
+       理由を先に出しておく（ダイアログで JS が止まる前に描かせる）。 */
+    if (!state.dirty && !state.fileSaved) {
+      toast("この原稿はまだファイルに保存されていません。入れ替える前に保存します", 6000);
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    }
+    try {
+      if (preferShareFirst()) await saveShareDirect();
+      else if (allowOverwriteUI() && state.fileHandle) await saveOverwrite();
+      else await saveAsTxt();
+    } catch (_) { /* 個々の失敗は各関数がトーストで知らせる */ }
+    return !needsFileSave();
+  }
+
+  /** 資料タブを右ペインへ持ってきて、いまの原稿を資料タブへ退避する（5.22）。
+   *  ★入れ替える前に原稿を必ずファイルへ保存する。保存できなければ入れ替えない
+   *    ——左ペインはブラウザ保存を持たないので、ここで宙ぶらりんにすると失う。 */
+  async function editRefTab(id) {
+    const t = state.tabs.find(x => x.id === id);
+    if (!t || t.kind) return;                     // システムタブ（初期／変更）は対象外
+    if (!await saveManuscriptToFile()) {
+      toast("原稿を保存できなかったので入れ替えていません。保存してからもう一度お試しください", 7000);
+      return;
+    }
+    const srcName = t.name, srcText = t.text, srcHandle = t.handle || null, srcScroll = t.scroll || 0;
+    const srcSaved = !!t.fileSaved;
+    /* ★名前とハンドルは【保存が済んだあと】に読むこと。
+       ［名前を付けて保存］を通ったときは、ここで新しい名前とハンドルになっている。 */
+    const myName = state.fileName || "無題.txt", myText = docText(), myHandle = state.fileHandle || null;
+    /* ★「入れ替え」なので、そのタブの中身を【その場で】いまの原稿に差し替える（5.22B）。
+       ★却下：stashPrevEdit（［新規］の退避）を流用する。
+         あれは常に「前の編集」という名前になり、しかも 1 枚を上書きする仕組みなので、
+         元のファイル名もハンドルも失われる。二回入れ替えても元に戻らない
+         （作者報告：「前の編集」に入ってその後の挙動がおかしくなる）。
+       ★却下：元タブを閉じて新しいタブを足す。
+         タブの位置と枚数が変わるうえ、Ctrl+Z で元タブが戻らない。
+       その場で交換すれば、名前・本文・ハンドル・位置・枚数がすべて対称に入れ替わるので、
+       【二回押せば完全に元の状態へ戻る】。 */
+    markUndo({ text: myText, name: myName, handle: myHandle,
+               origin: { text: state.origin.text, name: state.origin.name },
+               dirty: state.dirty, fileSaved: state.fileSaved, prevTabId: null,
+               swapTabId: t.id, swapTabName: srcName, swapTabText: srcText,
+               swapTabHandle: srcHandle, swapTabScroll: srcScroll, swapTabSaved: srcSaved,
+               label: "資料と原稿の入れ替え" });
+    /* 左（そのタブ）← いまの原稿 */
+    t.name = myName;
+    t.text = myText;
+    t.handle = myHandle;
+    /* ★t.html は kind 付きタブ（変更）しか読まない。ここで触ると
+       rev79 で消した死にコードを復活させることになる（自己診断が見ている）。 */
+    t.heads = null; t.scroll = 0;
+    t.prevEdit = false;
+    /* ★左へ渡す本文は、直前の saveManuscriptToFile() でファイルに書いてある。
+       左ペインはブラウザ保存を持たないので、この印が対称に移らないと、
+       次の入れ替えで「保存済み」と誤判定して失う。 */
+    t.fileSaved = true;
+    t.note = "右ペインから入れ替えた本文";
+    /* 右 ← 資料 */
+    setWholeDoc(srcText);
+    state.fileName = srcName;
+    state.fileHandle = srcHandle;                 // ドロップで開いた資料なら Ctrl+S で上書きできる
+    state.dirty = false;
+    state.fileSaved = srcSaved;                   // 資料がファイル由来なら保存済み扱い（5.22D）
+    setDocSel(0, 0); rScroll().scrollTop = 0; state.caret = 0;
+    setOrigin(srcText, srcName);                  // 持ってきた時点を「初期」にする
+    setActiveTab(t.id);                           // 見ていたタブのまま（中身が入れ替わっている）
+    renderTabs(); renderRef(); restoreScroll();
+    updateHeader(); runEdSearch(); refreshOverlay(); drawAll();
+    /* ★トーストは短く。Ctrl+S の案内は冗長なので出さない（1.3.2） */
+    toast("「" + srcName + "」と「" + myName + "」を入れ替えました ／ もう一度押すと戻ります", 6000);
+  }
+
   /* ---- 上書き確認（仕様 5.1C） ----
      編集中（dirty）に原稿を差し替える操作は、必ず一度止める。
      ok を押したときだけ fn() を実行する。 */
@@ -3476,7 +3618,9 @@
      ここでキャッシュしないと、2回目以降は前回差し替えた文面が残る。 */
   let openDlgDefault = null;
   function confirmOverwrite(info, fn, opt) {
-    if (!state.dirty) { fn(); return; }
+    /* ★unsavedRisk() で見る（5.22D）。dirty だけだと、下書きを復元しただけの原稿
+       （dirty=false・ファイルはどこにも無い）を黙って捨てる。 */
+    if (!unsavedRisk()) { fn(); return; }
     showOpenDialog(info, fn, opt);
   }
   /** ［ファイルを開く］系の確認ダイアログを出す。
@@ -3558,8 +3702,24 @@
         renderTabs();
       }
     }
+    /* ★入れ替え（5.22B）の巻き戻し。タブ側の中身も一緒に戻さないと、
+       右ペインだけ戻ってタブには古い原稿が残る＝食い違う。 */
+    if (p.swapTabId) {
+      const tb = state.tabs.find(x => x.id === p.swapTabId);
+      if (tb) {
+        tb.name = p.swapTabName; tb.text = p.swapTabText;
+        tb.handle = p.swapTabHandle || null;
+        tb.scroll = p.swapTabScroll || 0;
+        tb.fileSaved = !!p.swapTabSaved;          // 保存済みの印も一緒に戻す（5.22D）
+        tb.heads = null; tb.note = "";
+      }
+      renderTabs();
+    }
     setWholeDoc(p.text);
     state.fileName = p.name; state.fileHandle = p.handle; state.dirty = p.dirty;
+    /* ★古い控え（fileSaved を持たない）は「保存済みか分からない」＝安全側の false。
+       ここを p.dirty === false から推測すると、下書き復元の穴が Ctrl+Z で復活する。 */
+    state.fileSaved = !!p.fileSaved;
     /* 既定は先頭へ戻す（［新規］／読み込みは別の原稿になるので、途中位置を保つ意味がない）。
        ★keepView は「同じ原稿の中身だけが変わった」控え（すべて置換）用。
          ここで先頭へ飛ばすと、置換を取り消した瞬間に読んでいた場所を失う。 */
@@ -3587,6 +3747,9 @@
     let t = state.tabs.find(x => !x.kind && (x.prevEdit || x.name === PREV_EDIT_TAB));
     if (t) { t.text = text; t.heads = null; t.scroll = 0; }   // t.html は kind 付きタブしか読まない
     else { t = addTab(PREV_EDIT_TAB, text, false, 0, null); }
+    /* ★退避した本文がディスクにあるかは［新規］の確認ダイアログ側の判断（5.22D）。
+       使い回したタブの古い印を必ず上書きすること。 */
+    t.fileSaved = !!state.fileSaved;
     t.prevEdit = true;
     t.note = "「" + (name || "無題.txt") + "」の本文（［新規］を押す直前の右ペイン）";
     renderTabs();
@@ -3609,13 +3772,14 @@
     // すでに空なら戻すものが無いので控えも取らない
     const marked = docLen() !== 0;
     if (marked) markUndo({ text: docText(), name: state.fileName, handle: state.fileHandle,
-                           origin: state.origin, dirty: state.dirty,
+                           origin: state.origin, dirty: state.dirty, fileSaved: state.fileSaved,
                            prevTabId: prevTab ? prevTab.id : null, label: "［新規］" });
     dimHold = true;                        // 直後のフォーカスでガイドを薄くしない
     setWholeDoc("");
     state.fileName = "無題.txt";
     state.fileHandle = null;               // 保存先も引き継がない（＝上書き保存はダイアログに戻る）
     state.dirty = false;
+    state.fileSaved = true;                // 空の新規はファイルへ書き出すものが無い（5.22D）
     t.focus();
     t.setSelectionRange(0, 0); eb.scrollTop = 0; state.caret = 0;
     setOrigin("", state.fileName);         // 「初期」も空に戻す（差分が前の原稿を指さないように）
@@ -3661,7 +3825,7 @@
                全文の差し替えと同じ扱いにする（5.9B / 5.4B）。 */
             const src = docText();
             markUndo({ text: src, name: state.fileName, handle: state.fileHandle,
-                       origin: state.origin, dirty: state.dirty, prevTabId: null,
+                       origin: state.origin, dirty: state.dirty, fileSaved: state.fileSaved, prevTabId: null,
                        label: "ファイルの挿入", keepView: true,
                        scroll: rScrollTopDoc(), caret: off });
             setWholeDoc(src.slice(0, off) + ins + src.slice(off));
@@ -3723,7 +3887,7 @@
       await w.write(new Blob([text], { type: "text/plain;charset=utf-8" }));
       await w.close();
       state.fileName = state.fileHandle.name;
-      state.dirty = false; updateHeader();
+      state.dirty = false; state.fileSaved = true; updateHeader();
       toast("「" + state.fileHandle.name + "」に上書き保存しました");
     } catch (err) {
       if (err && err.name === "AbortError") return;
@@ -3754,7 +3918,7 @@
         await w.close();
         state.fileHandle = h;
         state.fileName = h.name;
-        state.dirty = false; updateHeader();
+        state.dirty = false; state.fileSaved = true; updateHeader();
         toast("「" + h.name + "」に保存しました（次からは Ctrl+S で上書き保存できます）");
         return;
       } catch (err) {
@@ -3846,7 +4010,7 @@
     } catch (_) { return "unavailable"; }
     try {
       await navigator.share({ files: [file], title: name });
-      state.dirty = false; updateHeader();
+      state.dirty = false; state.fileSaved = true; updateHeader();
       toast("「" + name + "」を共有シートに渡しました。「ファイルに保存」で場所を選べます");
       return "shared";
     } catch (err) {
@@ -3862,7 +4026,7 @@
         return false;
       }
       await navigator.clipboard.writeText(text);
-      state.dirty = false; updateHeader();
+      state.dirty = false; state.fileSaved = true; updateHeader();
       const head = fellBack ? "保存ダイアログを開けませんでした。" : "";
       toast(head + "「" + name + "」をコピーしました。テキストエディット等に貼り付けて保存するか、Chrome で開いて［ファイル保存］してください");
       return true;
@@ -3903,7 +4067,7 @@
         try { URL.revokeObjectURL(a.href); } catch (_) {}
         try { a.remove(); } catch (_) {}
       }, 2000);
-      state.dirty = false; updateHeader();
+      state.dirty = false; state.fileSaved = true; updateHeader();
       let msg = (fellBack ? "保存ダイアログを開けませんでした。" : "") +
             "「" + name + "」をダウンロードに保存しました";
       if (safariEmptyDlPromptLikely()) {
@@ -4440,11 +4604,14 @@
     toast("左ペインは参照専用です。編集は右ペインで行ってください");
   });
 
-  /* ［新規］。未保存の変更があるときだけ止める（保存済み・空のときに止めても失うものが無い）。
-     読み込み用の既定文面（「選んだファイル」）を使い回さない。 */
+  /* ［新規］。未保存のときだけ止める（保存済み・空のときに止めても失うものが無い）。
+     読み込み用の既定文面（「選んだファイル」）を使い回さない。
+     ★「変更がある」と「そもそもファイルに書いていない」は別の状況なので文面を分ける（5.22D）。 */
   $("btn-new").addEventListener("click", () =>
     confirmOverwrite(
-      "「" + (state.fileName || "無題.txt") + "」には保存していない変更があります。新規にすると、この内容は失われます。",
+      "「" + (state.fileName || "無題.txt") + "」は" +
+      (state.dirty ? "保存していない変更があります。" : "まだファイルに保存されていません（ブラウザの中だけにあります）。") +
+      "新規にすると、この内容は失われます。",
       newDoc,
       { title: "保存していない原稿を破棄します",
         sub: "取り消せません。残したい場合は、いったんキャンセルして<b>［ファイル保存］</b>してください。<br>" +
@@ -4468,7 +4635,8 @@
     e.preventDefault();
   }, { passive: false });
   $("file-ref").addEventListener("change", e => {
-    [...e.target.files].forEach(f => readFile(f, (n, t) => addTab(n, t)));
+    /* ★［+］はハンドルを取れないが、中身はファイルから読んでいる＝ディスクにある（5.22D） */
+    [...e.target.files].forEach(f => readFile(f, (n, t) => { addTab(n, t).fileSaved = true; }));
     e.target.value = "";
   });
 
@@ -4705,6 +4873,10 @@
       toast("「初期」を右ペインの現在の内容に再設定しました");
     } else if (act === "tohere") {
       rightToHere();
+    } else if (act === "toedit") {
+      /* 資料タブを右ペインへ（5.22）。保存が絡むので非同期。 */
+      const t = activeTabObj();
+      if (t && !t.kind) editRefTab(t.id);
     }
   });
 
@@ -5113,11 +5285,12 @@
     const edit = items[0];
     const t = ta();
     markUndo({ text: docText(), name: state.fileName, handle: state.fileHandle,
-               origin: state.origin, dirty: state.dirty, prevTabId: null,
+               origin: state.origin, dirty: state.dirty, fileSaved: state.fileSaved, prevTabId: null,
                label: "ファイルの読み込み" });
     setWholeDoc(edit.text);
     state.fileName = edit.name;
     state.dirty = false;
+    state.fileSaved = true;                // OS から渡されたファイルの中身＝ディスクにある（5.22D）
     state.fileHandle = edit.handle || null;
     t.setSelectionRange(0, 0); rScroll().scrollTop = 0; state.caret = 0;
     setOrigin(edit.text, edit.name);
@@ -5125,6 +5298,7 @@
     for (let i = 1; i < items.length; i++) {
       const r = items[i];
       const tab = addTab(r.name, r.text, false);
+      tab.fileSaved = true;                     // OS から渡されたファイル（5.22D）
       if (!firstRefId) firstRefId = tab.id;
     }
     if (firstRefId) setActiveTab(firstRefId);
@@ -5218,6 +5392,11 @@
           $("btn-restore").focus();          // 大きい側＝既定の選択肢としてフォーカスも置く
           $("btn-restore").onclick = () => {
             setWholeDoc(d.text); state.fileName = d.name || "無題.txt"; state.dirty = false;
+            /* ★復元した下書きは【ブラウザの中にしか無い】。名前が「無題.txt」でも
+               「保存済み」ではない。ここを true にすると、入れ替えや［新規］で
+               黙って捨てられる（作者報告・5.22D）。 */
+            state.fileSaved = false;
+            state.fileHandle = null;
             ta().setSelectionRange(0, 0); rScroll().scrollTop = 0; state.caret = 0;   // 先頭から読む
             // 基準も一緒に戻す。origin が無い古い下書きは、復元した内容を基準にする（5.13.1B）
             const o = d.origin && typeof d.origin.text === "string" ? d.origin : null;
