@@ -1845,13 +1845,19 @@
       /* ★位置を復元する【前】に頭の高さを測り直す。順序を逆にすると
          古い原点のまま当ててしまい、字級変更で表示が飛ぶ（5.19F）。 */
       if (headTopStale) { syncMirrorStyle(); syncMirrorText(); refreshHeadTop(); }
+      /* ★applyPendingRightFix() は自分の中で pendingRightFix を null に戻す。
+         直後の skipHeavy 判定がその null を読むと、字級・幅を変えた【まさにこのフレーム】が
+         「申し送りが無い」と誤判定され、buildHeadLayer()/buildHitLayer() が飛んで
+         見出し帯・検索ハイライトが古い寸法のまま固まる（本文とハイライトの位置がズレる）。
+         null にされる前に真偽値だけ控えておく。 */
+      const hadPendingRightFix = !!pendingRightFix;
       applyPendingRightFix();        // autoGrow で高さが確定した【直後に】測って当てる
       /* 長文を書き続けているあいだは full でも見出し帯・右MM・ミラー全文を毎回やらない。
          （IME 確定の遅延 full が 10万字 findHeadings+canvas で数秒止まるのを防ぐ）
          字級・幅（pendingRightFix）やフォーカス外・変更タブは従来どおり重い側。 */
       /* ★ skipHeavy 判定で ta().value.length を読まない（巨大 textarea の value 取得自体が重い）。
          執筆フォーカス中の full は常に軽量側へ。 */
-      const skipHeavy = doFull && !pendingRightFix && !overlayForceHeavy
+      const skipHeavy = doFull && !hadPendingRightFix && !overlayForceHeavy
         && document.activeElement === ta()
         && !isSysActive(SYS.DIFF);
       const needMirror = (!skipHeavy && doFull)
