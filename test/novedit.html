@@ -2620,6 +2620,23 @@
     return out;
   }
 
+  /** ヒット配列から、from 以降で最初のヒットの index を返す。
+   *  見つからなければ先頭へ回す（replaceOne() の「置換位置より後ろの最初のヒット」と同じ考え方）。
+   *  検索語を入力した直後は常に配列の先頭（文書の最初の一致）を当てていたため、
+   *  カーソル・表示位置から遠く離れた場所へ「現在ヒット」が飛んでいた（作者報告）。 */
+  function nearestHitIdx(hits, from) {
+    if (from == null) return 0;
+    const i = hits.findIndex(h => h.start >= from);
+    return i < 0 ? 0 : i;
+  }
+  /** 左ペインのいま画面上端に見えている文字オフセット（初回検索の起点に使う）。
+   *  「変更」タブは行がブロック要素で refOffsetAt が使えないため素通し（先頭から）にする。 */
+  function refViewOffset() {
+    const t = activeTabObj();
+    if (t && t.kind === SYS.DIFF) return null;
+    const rb = $("ref-body"), r = rb.getBoundingClientRect();
+    try { return refOffsetAt(hitX(r), r.top + 2); } catch (_) { return null; }
+  }
   function runRefSearch() {
     const t = activeTabObj();
     // 「変更」タブは t.text（表示テキスト）が検索対象。古いままだと位置がずれる
@@ -2627,8 +2644,8 @@
     const searchable = refSearchable();
     state.refHits = searchable ? findAll(t.text, $("ref-q").value) : [];
     state.refHitsSrc = searchable ? t.text : null;   // どのテキストに対するヒットか（5.4D）
-    if (state.refIdx >= state.refHits.length) state.refIdx = state.refHits.length ? 0 : -1;
-    if (state.refHits.length && state.refIdx < 0) state.refIdx = 0;
+    if (state.refIdx >= state.refHits.length) state.refIdx = state.refHits.length ? nearestHitIdx(state.refHits, refViewOffset()) : -1;
+    if (state.refHits.length && state.refIdx < 0) state.refIdx = nearestHitIdx(state.refHits, refViewOffset());
     updateRefAct();
     updateCount("ref"); renderRef();
   }
@@ -2738,8 +2755,8 @@
     if (state.edHitsSrc !== null && state.edHitsSrc !== docText()) {
       state.edHits = findAll(docText(), $("ed-q").value);
       state.edHitsSrc = docText();
-      if (state.edIdx >= state.edHits.length) state.edIdx = state.edHits.length ? 0 : -1;
-      if (state.edHits.length && state.edIdx < 0) state.edIdx = 0;
+      if (state.edIdx >= state.edHits.length) state.edIdx = state.edHits.length ? nearestHitIdx(state.edHits, docSelStart()) : -1;
+      if (state.edHits.length && state.edIdx < 0) state.edIdx = nearestHitIdx(state.edHits, docSelStart());
       updateCount("ed");
     }
     const layer = $("hit-layer");
@@ -2765,7 +2782,7 @@
   function runEdSearch(keepIdx) {
     state.edHitsSrc = docText();       // どのテキストに対するヒットか（5.4D）
     state.edHits = findAll(docText(), $("ed-q").value);
-    if (!keepIdx || state.edIdx >= state.edHits.length) state.edIdx = state.edHits.length ? 0 : -1;
+    if (!keepIdx || state.edIdx >= state.edHits.length) state.edIdx = state.edHits.length ? nearestHitIdx(state.edHits, docSelStart()) : -1;
     updateCount("ed");
     syncMirrorText(); buildHitLayer(); drawMinimap("right");
   }
