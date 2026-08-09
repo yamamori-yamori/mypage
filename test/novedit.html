@@ -567,7 +567,7 @@
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.3.4　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.3.5　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
@@ -1638,6 +1638,11 @@
   function applySettings() {
     invalidateMirrorStyle();
     headTopStale = true;          /* ★字級・幅が変わる → 頭の高さも変わる（5.19F） */
+    /* ★見出し帯・検索帯の寸法も字級・幅で変わるので、skipHeavy に関係なく必ず作り直す。
+       pendingRightFix（下のスクロール位置補正）はキャレットが画面上端にあるときは null になり、
+       それに頼ると「先頭にいるときだけ字級変更後も帯が古い寸法のまま」になる（5.19L）。
+       rebaseWindow() と同じく、ここで明示的に重い側を強制する。 */
+    overlayForceHeavy = true;
     const fs = +$("opt-font").value || 15;
     const rb = $("ref-body"), eb = body();             // 枠
     const rs = rScroll();                             // ★右のスクローラは ta
@@ -1845,18 +1850,16 @@
       /* ★位置を復元する【前】に頭の高さを測り直す。順序を逆にすると
          古い原点のまま当ててしまい、字級変更で表示が飛ぶ（5.19F）。 */
       if (headTopStale) { syncMirrorStyle(); syncMirrorText(); refreshHeadTop(); }
-      /* ★applyPendingRightFix() は自分の中で pendingRightFix を null に戻す。
-         直後の skipHeavy 判定がその null を読むと、字級・幅を変えた【まさにこのフレーム】が
-         「申し送りが無い」と誤判定され、buildHeadLayer()/buildHitLayer() が飛んで
-         見出し帯・検索ハイライトが古い寸法のまま固まる（本文とハイライトの位置がズレる）。
-         null にされる前に真偽値だけ控えておく。 */
       const hadPendingRightFix = !!pendingRightFix;
       applyPendingRightFix();        // autoGrow で高さが確定した【直後に】測って当てる
       /* 長文を書き続けているあいだは full でも見出し帯・右MM・ミラー全文を毎回やらない。
          （IME 確定の遅延 full が 10万字 findHeadings+canvas で数秒止まるのを防ぐ）
          字級・幅（pendingRightFix）やフォーカス外・変更タブは従来どおり重い側。 */
       /* ★ skipHeavy 判定で ta().value.length を読まない（巨大 textarea の value 取得自体が重い）。
-         執筆フォーカス中の full は常に軽量側へ。 */
+         執筆フォーカス中の full は常に軽量側へ。
+         ★applyPendingRightFix() が pendingRightFix を null に戻すので、直後にそれを読むと
+         字級・幅を変えた瞬間だけ「申し送りが無い」と誤判定する。null 化前に控えた
+         hadPendingRightFix を使うこと（5.19L）。 */
       const skipHeavy = doFull && !hadPendingRightFix && !overlayForceHeavy
         && document.activeElement === ta()
         && !isSysActive(SYS.DIFF);
