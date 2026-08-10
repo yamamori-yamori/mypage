@@ -116,6 +116,13 @@
     padding: 4px 10px; letter-spacing: .02em;
   }
   #toolbar #btn-undo:hover { background: #26a69a; }
+  /* ★#toolbar button より詳細度を上げる（id 1個だけだと灰に負ける。btn-undo と同じ型） */
+  #toolbar #btn-reload-file {
+    background: #c62828; color: #fff; border: 1px solid #b71c1c;
+    font-weight: 700; padding: 4px 10px;
+  }
+  #toolbar #btn-reload-file:hover { background: #b71c1c; border-color: #8e0000; color: #fff; }
+  #toolbar #btn-reload-file:active { background: #8e0000; }
   #toolbar button:disabled { opacity: .7; cursor: progress; }   /* ツール実行中 */
   #toolbar label { font-size: 12px; display: flex; align-items: center; gap: 4px; color: #cfd8dc; cursor: pointer; white-space: nowrap; }
   #toolbar input[type="number"] { padding: 3px 5px; border-radius: 3px; border: 1px solid #546e7a; background: var(--ink2); color: #fff; font-size: 13px; }
@@ -171,6 +178,13 @@
   #autosave-note:empty { border: 0; padding: 0; }
   /* 保存できていないときは目立たせる。ここが唯一の合図になるので弱くしない */
   #autosave-note.failed { color: #ffcc80; border-color: #8a5a20; background: #4e342e; }
+  /* 外部でファイルが更新されたとき（5.9E）。自動保存 note と同じ帯だが、ボタンを隣に置くので pointer-events は許可 */
+  #file-stale-note {
+    font-size: 11px; color: #ffcc80; white-space: nowrap;
+    border: 1px solid #8a5a20; border-radius: 3px; padding: 1px 7px;
+    background: #4e342e; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  }
+  #file-stale-note:not([hidden]) + #btn-reload-file { margin-left: 4px; }
   #toolbar .app-meta a { color: #90a4ae; text-decoration: none; }
   #toolbar .app-meta a:hover { color: #cfd8dc; text-decoration: underline; }
 
@@ -567,10 +581,13 @@
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.3.5　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.3.6　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
+  <!-- 外部更新の警告＋最新を読み直す（5.9E）。上書き可能な fileHandle があるときだけ使う -->
+  <span id="file-stale-note" aria-live="polite" hidden></span>
+  <button type="button" id="btn-reload-file" hidden title="ディスク上の最新内容で右ペインを差し替えます（いまの編集は控えに残し Ctrl+Z で戻せます）">最新を読み直す</button>
 
   <div class="tb-group push">
     <button id="btn-new" title="原稿を空にして新規に書き始めます（左ペインの参照ファイルはそのまま残ります）">新規</button>
@@ -2639,12 +2656,32 @@
     return i < 0 ? 0 : i;
   }
   /** 左ペインのいま画面上端に見えている文字オフセット（初回検索の起点に使う）。
-   *  「変更」タブは行がブロック要素で refOffsetAt が使えないため素通し（先頭から）にする。 */
+   *  「変更」タブは行がブロック要素で refOffsetAt が使えないため素通し（先頭から）にする。
+   *  ★Safari は caretRangeFromPoint が余白／未レイアウトで null を返しやすい。
+      複数点を試し、それでも駄目ならスクロール比で近似する（5.4E・作者 Mac Safari）。 */
   function refViewOffset() {
     const t = activeTabObj();
     if (t && t.kind === SYS.DIFF) return null;
     const rb = $("ref-body"), r = rb.getBoundingClientRect();
-    try { return refOffsetAt(hitX(r), r.top + 2); } catch (_) { return null; }
+    const xs = [hitX(r), r.left + Math.min(24, Math.max(8, r.width * 0.15))];
+    const ys = [r.top + 2, r.top + 8, r.top + 18];
+    for (let yi = 0; yi < ys.length; yi++) {
+      for (let xi = 0; xi < xs.length; xi++) {
+        try {
+          const o = refOffsetAt(xs[xi], ys[yi]);
+          if (o != null && o >= 0) return o;
+        } catch (_) {}
+      }
+    }
+    /* 座標 API が使えないときの保険。厳密さより「先頭固定」を避ける */
+    try {
+      const txt = (t && t.text) || "";
+      const max = rb.scrollHeight - rb.clientHeight;
+      if (!txt.length) return 0;
+      if (max <= 0) return 0;
+      const ratio = Math.min(1, Math.max(0, rb.scrollTop / max));
+      return Math.min(txt.length, Math.floor(txt.length * ratio));
+    } catch (_) { return null; }
   }
   function runRefSearch() {
     const t = activeTabObj();
@@ -2706,7 +2743,8 @@
   function updateRefAct() {
     const b = $("ref-act"), t = activeTabObj();
     /* ★色は毎回いったん戻す。資料タブのときだけ朱色にする（5.22C） */
-    b.classList.remove("swap");
+    b.classList.remove("swap", "same-file");
+    b.disabled = false;
     if (t && t.kind === SYS.ORIGIN) {
       b.hidden = false;
       b.textContent = "←現状を初期に設定";
@@ -2719,7 +2757,9 @@
       b.dataset.act = "tohere";
     } else if (t && !t.kind) {
       /* ★資料タブでは未使用だった枠を使う（5.22）。
-         ここに出すことで「見ていたタブを直す」導線が本文のすぐ上に来る。 */
+         ここに出すことで「見ていたタブを直す」導線が本文のすぐ上に来る。
+         ★同一ファイルでも入れ替え可（5.22E 撤回）。古ければ入れ替え後に
+           外部更新と同じ ⚠ を出す（editRefTab → warnIfEditorBehindDisk）。 */
       b.hidden = false;
       b.textContent = "⇆編集テキスト入れ替え";
       b.title = "この資料と右ペインの原稿を入れ替えます。いまの原稿は先にファイルへ保存し、"
@@ -2730,6 +2770,13 @@
       b.hidden = true;
       b.dataset.act = "";
     }
+  }
+  /** 要素の直下にトースト（バルーン）を出す。toastAt を汚さないよう一時差し替え。 */
+  function toastNear(el, msg, ms) {
+    const prev = toastAt;
+    toastAt = el && el.getBoundingClientRect ? el : null;
+    try { toast(msg, ms); }
+    finally { toastAt = prev; }
   }
   function stepRef(d) {
     if (!state.refHits.length) return;
@@ -3069,12 +3116,12 @@
      ★Chrome: 上書き／名前を付けて保存の 2 択。
      ★iOS（preferShareFirst）: メニュー内 input で名前編集＋［共有シートで保存］。
        window.prompt は使わない（Safari の「ダイアログを表示しない」誤タップ防止・rev91）。
-     ★Mac Safari: メニューなし・saveAsTxt 直行（rev65）。 */
+     ★Mac Safari: メニューなし・saveOverwrite 直行（いまの名前で download。名前変更は Cmd+Shift+S）。 */
   (function () {
     const closeMenu = setupDropMenu("btn-save", "save-menu", "right", () => {
       const ios = preferShareFirst();
       const chrome = allowOverwriteUI();
-      if (!chrome && !ios) { saveAsTxt(); return false; }   // Mac Safari 等
+      if (!chrome && !ios) { saveOverwrite(); return false; }   // Mac Safari 等：毎回 prompt しない
       $("save-chrome-group").hidden = !chrome;
       $("save-ios-group").hidden = !ios;
       /* iOS では見出し「ファイルに保存する」が押せない項目に見えるので隠す */
@@ -3082,9 +3129,13 @@
       if (chrome) {
         $("save-menu-h").hidden = false;
         const h = state.fileHandle;
-        $("save-over-hint").textContent = h
-          ? "「" + h.name + "」に、ダイアログを出さずに書き込みます"
-          : "保存先がまだ決まっていません。1回目は保存ダイアログが出ます";
+        if (fileStale && h) {
+          $("save-over-hint").textContent = "⚠ 外部で更新されています。上書きは止めます。［最新を読み直す］か［名前を付けて保存］を";
+        } else {
+          $("save-over-hint").textContent = h
+            ? "「" + h.name + "」に、ダイアログを出さずに書き込みます"
+            : "保存先がまだ決まっていません。1回目は保存ダイアログが出ます";
+        }
       }
       if (ios) {
         $("save-ios-name").value = state.fileName || "無題.txt";
@@ -3476,6 +3527,9 @@
                       origin: { text: state.origin.text, name: state.origin.name } };
     try {
       localStorage.setItem(LS_DRAFT, JSON.stringify(payload));
+      /* ★fileHandle は JSON に載せられない。IndexedDB に並べて残し、
+         復元後も同じファイルへ上書きできるようにする（5.8D / 5.9E）。 */
+      persistDraftHandle(state.fileHandle);
       if (!quiet) setAutosaveNote(true);
       return true;
     } catch (_) {
@@ -3483,6 +3537,7 @@
       try {
         delete payload.origin;
         localStorage.setItem(LS_DRAFT, JSON.stringify(payload));
+        persistDraftHandle(state.fileHandle);
         if (!quiet) setAutosaveNote(true);
         return true;
       } catch (__) {
@@ -3490,6 +3545,56 @@
         return false;
       }
     }
+  }
+
+  /* ---- 下書きと対の fileHandle 保管（IndexedDB。5.8D）----
+     FileSystemFileHandle は structured clone 可・localStorage 不可。
+     復元で handle を捨てると Ctrl+S が「別名」扱いになり、別ファイルが量産される。 */
+  const IDB_DRAFT = "novedit";
+  const IDB_STORE = "kv";
+  const IDB_HANDLE_KEY = "draftFileHandle";
+  function idbReq(fn) {
+    return new Promise((resolve, reject) => {
+      try {
+        if (!window.indexedDB) { resolve(null); return; }
+        const open = indexedDB.open(IDB_DRAFT, 1);
+        open.onupgradeneeded = () => {
+          const db = open.result;
+          if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+        };
+        open.onsuccess = () => {
+          const db = open.result;
+          let done = false;
+          const finish = (v, err) => {
+            if (done) return;
+            done = true;
+            try { db.close(); } catch (_) {}
+            if (err) reject(err); else resolve(v);
+          };
+          try { fn(db, finish); }
+          catch (e) { finish(null, e); }
+        };
+        open.onerror = () => resolve(null);
+      } catch (_) { resolve(null); }
+    });
+  }
+  function persistDraftHandle(h) {
+    /* fire-and-forget。自動保存の成否は LS 側だけ見る */
+    idbReq((db, finish) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      const st = tx.objectStore(IDB_STORE);
+      if (h) st.put(h, IDB_HANDLE_KEY); else st.delete(IDB_HANDLE_KEY);
+      tx.oncomplete = () => finish(true);
+      tx.onerror = () => finish(null);
+    }).catch(() => {});
+  }
+  function loadDraftHandle() {
+    return idbReq((db, finish) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const q = tx.objectStore(IDB_STORE).get(IDB_HANDLE_KEY);
+      q.onsuccess = () => finish(q.result || null);
+      q.onerror = () => finish(null);
+    }).catch(() => null);
   }
   /* 他タブの localStorage 更新のみ届く（同一タブの setItem では発火しない） */
   window.addEventListener("storage", e => {
@@ -3547,6 +3652,8 @@
       t.setSelectionRange(0, 0); rScroll().scrollTop = 0; state.caret = 0;
       setOrigin(text, name);                 // 開いた時点を「初期」にする
       updateHeader(); runEdSearch(); refreshOverlay();
+      rememberFileStamp(state.fileHandle);   // 外部更新監視の基準（5.9E）
+      persistDraftHandle(state.fileHandle);  // 下書き復元用（5.8D）
       toast("「" + name + "」を開きました（この内容を「初期」にしました）");
     });
   }
@@ -3593,6 +3700,8 @@
   async function editRefTab(id) {
     const t = state.tabs.find(x => x.id === id);
     if (!t || t.kind) return;                     // システムタブ（初期／変更）は対象外
+    /* ★同一ファイルでも入れ替え可（5.22E 撤回）。
+       入れ替え後に右の本文がディスク最新より古ければ、外部更新と同じ ⚠ を出す。 */
     if (!await saveManuscriptToFile()) {
       toast("原稿を保存できなかったので入れ替えていません。保存してからもう一度お試しください", 7000);
       return;
@@ -3641,8 +3750,34 @@
     setActiveTab(t.id);                           // 見ていたタブのまま（中身が入れ替わっている）
     renderTabs(); renderRef(); restoreScroll();
     updateHeader(); runEdSearch(); refreshOverlay(); drawAll();
-    /* ★トーストは短く。Ctrl+S の案内は冗長なので出さない（1.3.2） */
+    /* ★基準は「いま右に載せた本文」。ディスクが新しければ同じ ⚠（5.9E / 5.22E'） */
+    stampFromText(srcText, srcName);
+    await armFileWatch();
+    persistDraftHandle(state.fileHandle);
+    /* ★トーストは短く。Ctrl+S の案内は冗長なので出さない（1.3.2）
+       古さ警告（warnIfEditorBehindDisk）は【このあと】——先に出すと入れ替えトーストに上書きされる。 */
     toast("「" + srcName + "」と「" + myName + "」を入れ替えました ／ もう一度押すと戻ります", 6000);
+    await warnIfEditorBehindDisk(srcText, srcHandle, srcName);
+  }
+
+  /** 右ペインの本文が、handle のディスク最新より古ければ外部更新と同じ警告（5.22E'）。
+   *  入れ替え禁止の代わり。同一ファイルでも入れ替え可にし、古さだけ知らせる。 */
+  async function warnIfEditorBehindDisk(editorText, handle, name) {
+    if (!allowOverwriteUI() || !handle || typeof handle.getFile !== "function") return;
+    try {
+      const snap = await snapshotHandle(handle);
+      if (!snap) return;
+      const ed = String(editorText == null ? "" : editorText).replace(/\r\n?/g, "\n");
+      if (snap.sig === textSig(ed)) {
+        /* 一致：ディスク＝本文。stamp をディスク側に揃えておく */
+        fileStamp = snap;
+        fileStale = false;
+        renderFileStale();
+        return;
+      }
+      /* 不一致：タブに残っていた本文が最新でない（またはディスクが先に進んだ） */
+      markFileStale(snap, false);
+    } catch (_) {}
   }
 
   /* ---- 上書き確認（仕様 5.1C） ----
@@ -3772,6 +3907,7 @@
     setOrigin(p.origin.text, p.origin.name);
     renderRef(); restoreScroll();
     updateHeader(); runEdSearch(); refreshOverlay();
+    rememberFileStamp(state.fileHandle);          // Ctrl+Z でハンドルが変わったら監視も付け直す（5.9E）
     toast((p.label || "直前の操作") + "を取り消しました（「" + p.name + "」に戻しました）");
     return true;
   }
@@ -3820,6 +3956,8 @@
     state.fileHandle = null;               // 保存先も引き継がない（＝上書き保存はダイアログに戻る）
     state.dirty = false;
     state.fileSaved = true;                // 空の新規はファイルへ書き出すものが無い（5.22D）
+    clearFileWatch();                      // 監視対象が消えた（5.9E）
+    persistDraftHandle(null);              // 下書き側の旧ハンドルも捨てる（5.8D）
     t.focus();
     t.setSelectionRange(0, 0); eb.scrollTop = 0; state.caret = 0;
     setOrigin("", state.fileName);         // 「初期」も空に戻す（差分が前の原稿を指さないように）
@@ -3912,28 +4050,333 @@
     } catch (_) { return false; }
   }
 
-  /** 上書き保存（Ctrl+S。仕様 5.9.2）。
-   *  iOS は共有シート直行（prompt なし）。Mac Safari は saveAsTxt（名前＋download）。 */
+  /** 上書き保存（Ctrl/Cmd+S。仕様 5.9.2）。
+   *  iOS は共有シート直行（prompt なし）。
+   *  ★Mac Safari 等（FSA 無し）: いまの fileName のまま download。毎回 prompt しない（作者報告 Ver.1.3.6）。
+      名前を変えたいときは Cmd+Shift+S / saveAsTxt。 */
   async function saveOverwrite() {
     if (preferShareFirst()) { saveShareDirect(); return; }
-    if (!allowOverwriteUI() || !state.fileHandle) { saveAsTxt(); return; }
+    if (!allowOverwriteUI() || !state.fileHandle) {
+      const text = withEol(docText());
+      const name = sanitizeSaveName(state.fileName || "無題.txt", "無題.txt");
+      state.fileName = name;
+      updateHeader();
+      await exportTxt(text, name, false);
+      return;
+    }
+    /* ★外部更新を検知しているあいだは黙って上書きしない（5.9E）。
+       ディスク側の変更を消してしまう。［最新を読み直す］か［名前を付けて保存］へ誘導。 */
+    if (fileStale) {
+      await checkFileExternal({ silent: true });
+      if (fileStale) {
+        toast("ファイルが外部で更新されています。［最新を読み直す］か［名前を付けて保存］を使ってください", 8000);
+        renderFileStale();
+        return;
+      }
+    }
     const text = withEol(docText());
     try {
       if (!await ensureWritable(state.fileHandle)) {
         toast("上書きの許可が得られませんでした。［名前を付けて保存］を使ってください");
         return;
       }
+      /* 保存直前にもう一度ディスクを見る（ポーリングの隙間を埋める） */
+      await checkFileExternal({ silent: true });
+      if (fileStale) {
+        toast("ファイルが外部で更新されています。［最新を読み直す］か［名前を付けて保存］を使ってください", 8000);
+        renderFileStale();
+        return;
+      }
+      ignoreOwnFileEvents(FILE_WATCH_IGNORE_MS);
       const w = await state.fileHandle.createWritable();
       await w.write(new Blob([text], { type: "text/plain;charset=utf-8" }));
       await w.close();
+      ignoreOwnFileEvents(FILE_WATCH_IGNORE_MS);
       state.fileName = state.fileHandle.name;
       state.dirty = false; state.fileSaved = true; updateHeader();
+      /* ★保存直後は getFile の mtime が遅れうるので、書いた本文で stamp する */
+      stampFromText(docText(), state.fileHandle.name);
+      await armFileWatch();
+      persistDraftHandle(state.fileHandle);
       toast("「" + state.fileHandle.name + "」に上書き保存しました");
     } catch (err) {
       if (err && err.name === "AbortError") return;
       toast("上書きできませんでした（" + (err && err.name || "不明") + "）。［名前を付けて保存］に切り替えます");
       saveAsTxt();
     }
+  }
+
+  /* =======================================================
+     外部ファイル更新の監視（5.9E）
+     ★再現: ファイルを開く→リロード→下書き復元→上書き保存→別エディタで上書き
+       が検知できなかった。
+     原因:
+       A) Chrome は createWritable 後、同じ handle の getFile()/text() が
+          【自分の最後の書き込み結果】を返し続け、外部上書きを読まないことがある
+       B) FileSystemObserver は外部変更を教えてくれるのに、コールバック内で
+          getFile 比較して「同じ」と誤判定し、警告を握りつぶしていた
+     対策:
+       1) Observer の modified 等は【即 fileStale】（getFile で否定しない）
+       2) 自分の保存前後は ignore 窓で Observer を無視
+       3) ポーリングは getFile 比較を保険に残す（効く環境用）
+       4) 復元直後は permission 確認のうえ Observer を付け直す
+     ======================================================= */
+  let fileStamp = null;          // { mtime, size, sig, name }
+  let fileStale = false;
+  let fileWatchTimer = null;
+  let fileCheckBusy = false;
+  let fileObserver = null;
+  let fileObservedOn = null;     // いま observe している handle 参照
+  let fileWatchIgnoreUntil = 0;  // 自分の保存由来の Observer を無視する期限
+  let fileWatchGen = 0;          // arm の世代（古い callback を捨てる）
+  const FILE_WATCH_MS = 1500;
+  const FILE_SIG_CAP = 1200000;
+  const FILE_WATCH_IGNORE_MS = 1800; // 自分の write〜close 前後
+
+  function canWatchFile() {
+    return allowOverwriteUI() && !!state.fileHandle;
+  }
+  function textSig(s) {
+    const t = String(s == null ? "" : s);
+    let h = 5381 >>> 0;
+    const n = t.length;
+    for (let i = 0; i < n; i++) h = (((h << 5) + h) ^ t.charCodeAt(i)) >>> 0;
+    return n + ":" + h.toString(16);
+  }
+  function textSigFromRaw(raw) {
+    const t = String(raw == null ? "" : raw).replace(/\r\n?/g, "\n");
+    if (t.length <= FILE_SIG_CAP) return textSig(t);
+    return textSig(t.slice(0, 200000) + "\n...\n" + t.slice(-200000));
+  }
+  async function snapshotHandle(h) {
+    if (!h || typeof h.getFile !== "function") return null;
+    try {
+      const f = await h.getFile();
+      const raw = await f.text();
+      return {
+        mtime: f.lastModified || 0,
+        size: f.size || 0,
+        sig: textSigFromRaw(raw),
+        name: f.name || ""
+      };
+    } catch (_) { return null; }
+  }
+  function stampFromText(text, name) {
+    const t = String(text == null ? "" : text).replace(/\r\n?/g, "\n");
+    fileStamp = {
+      mtime: Date.now(),
+      size: new Blob([withEol(t)]).size,
+      sig: textSig(t),
+      name: name || state.fileName || ""
+    };
+    fileStale = false;
+    renderFileStale();
+  }
+  /** 自分の保存・書き込みのあいだ Observer を無視する */
+  function ignoreOwnFileEvents(ms) {
+    const d = ms == null ? FILE_WATCH_IGNORE_MS : ms;
+    fileWatchIgnoreUntil = Math.max(fileWatchIgnoreUntil, Date.now() + d);
+  }
+  async function rememberFileStamp(h) {
+    fileStamp = h ? await snapshotHandle(h) : null;
+    fileStale = false;
+    renderFileStale();
+    await armFileWatch();
+  }
+  function stopFileObserver() {
+    if (fileObserver) {
+      try {
+        if (typeof fileObserver.disconnect === "function") fileObserver.disconnect();
+      } catch (_) {}
+      fileObserver = null;
+    }
+    fileObservedOn = null;
+  }
+  function clearFileWatch() {
+    fileStamp = null;
+    fileStale = false;
+    fileWatchGen++;
+    if (fileWatchTimer) { clearInterval(fileWatchTimer); fileWatchTimer = null; }
+    stopFileObserver();
+    renderFileStale();
+  }
+  /** Observer 1 件でも来たら外部変更とみなす（getFile で打ち消さない） */
+  function onFileObserverRecords(records, gen) {
+    if (gen !== fileWatchGen) return;
+    if (!canWatchFile()) return;
+    if (Date.now() < fileWatchIgnoreUntil) return;
+    if (!records || !records.length) return;
+    let hit = false;
+    for (let i = 0; i < records.length; i++) {
+      const ty = records[i] && records[i].type;
+      /* 型が空の実装もあるので、type 無しも変更扱い */
+      if (!ty || ty === "modified" || ty === "moved" || ty === "disappeared"
+          || ty === "unknown" || ty === "errored") {
+        hit = true; break;
+      }
+    }
+    if (!hit) return;
+    /* ★ここが本命。getFile のキャッシュに頼らない */
+    markFileStale({
+      name: (state.fileHandle && state.fileHandle.name) || state.fileName || "ファイル"
+    }, false);
+  }
+  async function armFileWatch() {
+    if (!canWatchFile()) {
+      if (fileWatchTimer) { clearInterval(fileWatchTimer); fileWatchTimer = null; }
+      stopFileObserver();
+      renderFileStale();
+      return;
+    }
+    const h = state.fileHandle;
+
+    /* 読み取り権限が prompt のままだと Observer が黙って死ぬことがある（復元直後） */
+    try {
+      if (h && typeof h.queryPermission === "function") {
+        let st = "granted";
+        try { st = await h.queryPermission({ mode: "read" }); } catch (_) {}
+        if (st !== "granted") {
+          try { st = await h.queryPermission({ mode: "readwrite" }); } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    /* Observer：handle が変わったときだけ付け直す。
+       ★保存のたびに gen を上げると、既存 Observer の callback が全捨てになるので禁止。 */
+    const sameTarget = fileObserver && fileObservedOn === h;
+    if (!sameTarget) {
+      stopFileObserver();
+      const gen = ++fileWatchGen;
+      try {
+        if (typeof FileSystemObserver === "function") {
+          const obs = new FileSystemObserver((records) => {
+            onFileObserverRecords(records, gen);
+          });
+          fileObserver = obs;
+          fileObservedOn = h;
+          const p = obs.observe(h);
+          if (p && typeof p.then === "function") {
+            p.then(() => {}).catch(() => {
+              if (fileObserver === obs) stopFileObserver();
+            });
+          }
+        }
+      } catch (_) { stopFileObserver(); }
+    }
+
+    if (fileWatchTimer) { clearInterval(fileWatchTimer); fileWatchTimer = null; }
+    const pollGen = fileWatchGen;
+    fileWatchTimer = setInterval(() => { checkFileExternal(); }, FILE_WATCH_MS);
+    setTimeout(() => { if (pollGen === fileWatchGen) checkFileExternal({ silent: true }); }, 300);
+  }
+  function renderFileStale() {
+    const note = $("file-stale-note"), btn = $("btn-reload-file");
+    if (!note || !btn) return;
+    const show = !!(fileStale && canWatchFile());
+    note.hidden = !show;
+    btn.hidden = !show;
+    if (show) {
+      const nm = (state.fileHandle && state.fileHandle.name) || state.fileName || "ファイル";
+      note.textContent = "⚠ 「" + nm + "」が外部で更新されています";
+      note.title = "ディスク上の内容が、最後に読んだ／保存したときと違います。上書きすると外部の変更が消えます";
+    } else {
+      note.textContent = "";
+      note.title = "";
+    }
+    try { fitToolbar(); } catch (_) {}
+  }
+  function markFileStale(snap, silent) {
+    if (Date.now() < fileWatchIgnoreUntil) return;
+    const was = fileStale;
+    fileStale = true;
+    renderFileStale();
+    if (!was && !silent) {
+      const anchor = $("btn-reload-file") || $("file-stale-note");
+      const nm = (snap && snap.name) || state.fileName || "ファイル";
+      toastNear(anchor,
+        "「" + nm + "」が外部で更新されています。［最新を読み直す］で取り込めます",
+        8000);
+    }
+  }
+  /** ポーリング保険。getFile が新鮮な環境向け。キャッシュ環境では Observer が本命。 */
+  async function checkFileExternal(opts) {
+    const silent = opts && opts.silent;
+    if (!canWatchFile() || fileCheckBusy) return;
+    if (composing && !(opts && opts.force)) return;
+    if (document.hidden && !(opts && opts.force) && !silent) return;
+    if (Date.now() < fileWatchIgnoreUntil && !silent) return;
+    fileCheckBusy = true;
+    try {
+      const snap = await snapshotHandle(state.fileHandle);
+      if (!snap) return;
+      if (!fileStamp) {
+        fileStamp = snap;
+        return;
+      }
+      if (snap.sig !== fileStamp.sig) {
+        markFileStale(snap, silent);
+      }
+    } finally {
+      fileCheckBusy = false;
+    }
+  }
+  /** fileHandle から最新本文を右ペインへ読み直す（5.9E）。 */
+  async function reloadFromHandle() {
+    if (!canWatchFile()) {
+      toast("読み直せるファイルハンドルがありません");
+      return;
+    }
+    const doReload = async () => {
+      try {
+        ignoreOwnFileEvents(FILE_WATCH_IGNORE_MS);
+        /* ★キャッシュ回避: 可能なら一度だけ readwrite で触れ直してから getFile。
+           失敗しても getFile 自体は試す。 */
+        try {
+          if (typeof state.fileHandle.createWritable === "function") {
+            /* keepExistingData + abort は環境によって reverse に効くことがあるが保証外。
+               ここでは getFile を複数回呼んで新鮮な blob を狙う。 */
+          }
+        } catch (_) {}
+        let f = await state.fileHandle.getFile();
+        let text = String(await f.text()).replace(/\r\n?/g, "\n");
+        /* まだ stamp と同じで、かつ stale 表示中なら 1 フレーム置いて再読込 */
+        if (fileStale && fileStamp && textSig(text) === fileStamp.sig) {
+          await new Promise(r => setTimeout(r, 50));
+          f = await state.fileHandle.getFile();
+          text = String(await f.text()).replace(/\r\n?/g, "\n");
+        }
+        const name = f.name || state.fileName || "無題.txt";
+        markUndo({ text: docText(), name: state.fileName, handle: state.fileHandle,
+                   origin: state.origin, dirty: state.dirty, fileSaved: state.fileSaved, prevTabId: null,
+                   label: "最新の読み直し" });
+        setWholeDoc(text);
+        state.fileName = name;
+        state.dirty = false;
+        state.fileSaved = true;
+        const t = ta();
+        t.setSelectionRange(0, 0); rScroll().scrollTop = 0; state.caret = 0;
+        setOrigin(text, name);
+        stampFromText(text, name);
+        await armFileWatch();
+        updateHeader(); runEdSearch(); refreshOverlay(); drawAll();
+        toast("「" + name + "」の最新内容を読み直しました（この内容を「初期」にしました）", 6000);
+      } catch (err) {
+        toast("読み直せませんでした（" + ((err && (err.name || err.message)) || "不明") + "）");
+      }
+    };
+    if (unsavedRisk()) {
+      showOpenDialog(
+        "いまの編集内容は破棄されます（Ctrl+Z で戻せます）",
+        doReload,
+        {
+          title: "ディスクの最新版を読み直しますか？",
+          sub: "右ペインの内容を、ファイルの最新内容で差し替えます。<br>外部で直した版を取り込むときに使います。",
+          ok: "最新を読み直す"
+        }
+      );
+      return;
+    }
+    await doReload();
   }
 
   /** iOS: いまの fileName のまま共有シート（prompt なし・rev91）。 */
@@ -3959,6 +4402,10 @@
         state.fileHandle = h;
         state.fileName = h.name;
         state.dirty = false; state.fileSaved = true; updateHeader();
+        ignoreOwnFileEvents(FILE_WATCH_IGNORE_MS);
+        stampFromText(docText(), h.name);
+        await armFileWatch();
+        persistDraftHandle(h);
         toast("「" + h.name + "」に保存しました（次からは Ctrl+S で上書き保存できます）");
         return;
       } catch (err) {
@@ -3968,7 +4415,7 @@
       }
     }
     /* iOS の「名前を付けて保存」経路はメニューの［ファイル名を入力］に分離（rev91）。
-       ここへ来るのは主に Mac Safari 等（メニュー省略の直行）。名前を聞いてから export。 */
+       ここへ来るのは主に Mac Safari の Cmd+Shift+S（名前を変えて download）。 */
     {
       const n = askSaveFileName(name);
       if (n === null) return;
@@ -4016,12 +4463,23 @@
 
   /** 共有を先に試すか。OS 名や standalone では分けない（能力だけ）。
    *  FSA の上書き／保存ピッカーが使える → 共有を先にしない。
-   *  ファイル共有が本当に使える → 共有優先（iPhone/iPad が自然にここに入る）。
+   *  ★Mac デスクトップ Safari は canShare({files}) が true でも共有を先にしない（Ver.1.3.6）。
+      共有シートに「ダウンロードフォルダ」が無く、場所選びは download＋Safari「毎回確認」が正しい（rev63）。
+      判定は UA ではなく pointer/hover（粗いポインタ or hover 無し＝タッチ系）。
+   *  ファイル共有が使えるタッチ系 → 共有優先（iPhone/iPad が自然にここに入る）。
    *  PC のインストール PWA は FSA が使えるので共有に落とさない。 */
   function preferShareFirst() {
     try {
       if (allowOverwriteUI()) return false;
       if (typeof window.showSaveFilePicker === "function" && !isAppleWebKit()) return false;
+    } catch (_) {}
+    try {
+      /* Apple デスクトップ（細ポインタ＋hover あり）は download 経路へ */
+      if (isAppleWebKit() && typeof window.matchMedia === "function") {
+        const touchish = window.matchMedia("(pointer: coarse)").matches
+          || window.matchMedia("(hover: none)").matches;
+        if (!touchish) return false;
+      }
     } catch (_) {}
     try {
       if (typeof navigator === "undefined" || typeof navigator.share !== "function") return false;
@@ -4051,7 +4509,9 @@
     try {
       await navigator.share({ files: [file], title: name });
       state.dirty = false; state.fileSaved = true; updateHeader();
-      toast("「" + name + "」を共有シートに渡しました。「ファイルに保存」で場所を選べます");
+      /* iOS の共有シートに「ダウンロード」という項目は無く、「ファイルに保存」から
+         ダウンロード／iCloud／On My iPhone を選ぶ（OS 仕様）。 */
+      toast("「" + name + "」を共有シートに渡しました。「ファイルに保存」から保存先（ダウンロード等）を選べます", 7000);
       return "shared";
     } catch (err) {
       if (err && err.name === "AbortError") return "cancelled";
@@ -4113,9 +4573,13 @@
       if (safariEmptyDlPromptLikely()) {
         msg += "（先の空欄の許可はSafariの表示で、保存自体はできています）";
       }
-      /* Safari: OS の「名前を付けて保存」API が無いので、毎回場所を選ぶ設定を案内 */
+      /* Safari: OS の「名前を付けて保存」API が無いので、毎回場所を選ぶ設定を案内。
+         ★同名は Downloads 内で「 2」「 3」が付くのがブラウザ仕様（上書き不可）。
+           本当に同じファイルへ上書きしたいなら Chrome、またはダウンロード先「毎回確認」で置き換え。 */
       if (isAppleWebKit() && !preferShareFirst()) {
-        msg += "。毎回場所を選ぶには Safari設定→一般→ファイルのダウンロード先→「毎回確認」";
+        msg += "。同じ名前だと「 2」等が付くことがあります（Safariの仕様）。"
+            + "場所を選ぶ／上書きするなら Safari設定→一般→ダウンロード先→「毎回確認」、"
+            + "常用の上書きは Chrome が確実";
       }
       toast(msg);
       return true;
@@ -5211,7 +5675,8 @@
     }
     if (k === "s") {
       e.preventDefault();
-      /* iOS: Ctrl+S＝共有直行。Shift はメニューを開いて名前欄へ（prompt 禁止）。 */
+      /* iOS: Ctrl+S＝共有直行。Shift はメニューを開いて名前欄へ（prompt 禁止）。
+         Mac Safari: Cmd+S＝いまの名前で download（prompt なし）。Cmd+Shift+S＝名前を付けて。 */
       if (preferShareFirst()) {
         if (e.shiftKey) {
           $("btn-save").click();
@@ -5220,7 +5685,7 @@
         }
         return;
       }
-      (e.shiftKey || !allowOverwriteUI()) ? saveAsTxt() : saveOverwrite();
+      e.shiftKey ? saveAsTxt() : saveOverwrite();
     }
     else if (k === "f") { e.preventDefault(); focusSearchBox(); }
     else if (k === "h") { e.preventDefault(); toggleReplace(true); }
@@ -5247,6 +5712,13 @@
       toastAt = null;
     }
   });
+
+  /* 外部更新：［最新を読み直す］＋ タブ復帰時の即時チェック（5.9E） */
+  $("btn-reload-file").addEventListener("click", () => { reloadFromHandle(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") checkFileExternal({ force: true });
+  });
+  window.addEventListener("focus", () => { checkFileExternal({ force: true }); });
 
   /* ---- ツールバーの幅合わせ（5.15.5）----
      子は縮めず nowrap。足りなければ ①クレジット＋ver ②ロゴ の順に落とす（自動保存表示は残す）。
@@ -5350,10 +5822,13 @@
       const r = items[i];
       const tab = addTab(r.name, r.text, false);
       tab.fileSaved = true;                     // OS から渡されたファイル（5.22D）
+      if (r.handle) tab.handle = r.handle;      // 左もハンドルがあれば保持（入れ替え判定用）
       if (!firstRefId) firstRefId = tab.id;
     }
     if (firstRefId) setActiveTab(firstRefId);
     updateHeader(); runEdSearch(); refreshOverlay(); drawAll();
+    rememberFileStamp(state.fileHandle);
+    persistDraftHandle(state.fileHandle);
     const bits = ["「" + edit.name + "」を開きました"];
     if (items.length > 1) bits.push("参照 " + (items.length - 1) + " 件");
     if (edit.handle) bits.push("Ctrl+S で上書き可");
@@ -5442,20 +5917,46 @@
           $("overlay").classList.add("show");
           $("btn-restore").focus();          // 大きい側＝既定の選択肢としてフォーカスも置く
           $("btn-restore").onclick = () => {
-            setWholeDoc(d.text); state.fileName = d.name || "無題.txt"; state.dirty = false;
-            /* ★復元した下書きは【ブラウザの中にしか無い】。名前が「無題.txt」でも
-               「保存済み」ではない。ここを true にすると、入れ替えや［新規］で
-               黙って捨てられる（作者報告・5.22D）。 */
-            state.fileSaved = false;
-            state.fileHandle = null;
-            ta().setSelectionRange(0, 0); rScroll().scrollTop = 0; state.caret = 0;   // 先頭から読む
-            // 基準も一緒に戻す。origin が無い古い下書きは、復元した内容を基準にする（5.13.1B）
-            const o = d.origin && typeof d.origin.text === "string" ? d.origin : null;
-            setOrigin(o ? o.text : d.text, (o && o.name) || state.fileName);
-            $("overlay").classList.remove("show");
-            updateHeader(); runEdSearch(); refreshOverlay(); drawAll();
+            /* handle 復元は非同期。本文は先に戻し、ハンドルが取れたら上書き先を付け直す（5.8D） */
+            (async () => {
+              setWholeDoc(d.text); state.fileName = d.name || "無題.txt"; state.dirty = false;
+              /* ★復元した下書きの本文は【まだファイルへ書いていない】ことがある。
+                 fileSaved は false のまま（入れ替えで黙って捨てない・5.22D）。
+                 ★fileHandle は捨てない。IDB に残してあれば同じファイルへ Ctrl+S できる。
+                   旧実装は常に null にしており、復元→保存が別名扱いになっていた。 */
+              state.fileSaved = false;
+              state.fileHandle = null;
+              try {
+                const h = await loadDraftHandle();
+                if (h && typeof h.getFile === "function") {
+                  try {
+                    /* 権限や実体が残っているか軽く確かめる。ダメなら null のまま（別名保存へ） */
+                    await h.getFile();
+                    state.fileHandle = h;
+                    if (h.name) state.fileName = h.name;
+                  } catch (_) { state.fileHandle = null; }
+                }
+              } catch (_) { state.fileHandle = null; }
+              ta().setSelectionRange(0, 0); rScroll().scrollTop = 0; state.caret = 0;   // 先頭から読む
+              // 基準も一緒に戻す。origin が無い古い下書きは、復元した内容を基準にする（5.13.1B）
+              const o = d.origin && typeof d.origin.text === "string" ? d.origin : null;
+              setOrigin(o ? o.text : d.text, (o && o.name) || state.fileName);
+              $("overlay").classList.remove("show");
+              updateHeader(); runEdSearch(); refreshOverlay(); drawAll();
+              if (state.fileHandle) {
+                await rememberFileStamp(state.fileHandle);
+                toast("下書きを復元しました（「" + state.fileName + "」へ上書き保存できます）", 5000);
+              } else {
+                clearFileWatch();
+                toast("下書きを復元しました（保存先は未設定。［ファイル保存］で場所を選んでください）", 5000);
+              }
+            })();
           };
-          $("btn-discard").onclick = () => { localStorage.removeItem(LS_DRAFT); $("overlay").classList.remove("show"); };
+          $("btn-discard").onclick = () => {
+            localStorage.removeItem(LS_DRAFT);
+            persistDraftHandle(null);
+            $("overlay").classList.remove("show");
+          };
         }
       }
     } catch (_) {}
