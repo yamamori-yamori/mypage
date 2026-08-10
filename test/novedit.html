@@ -3134,7 +3134,7 @@
         } else {
           $("save-over-hint").textContent = h
             ? "「" + h.name + "」に、ダイアログを出さずに書き込みます"
-            : "保存先がまだ決まっていません。1回目は保存ダイアログが出ます";
+            : "保存先が決まっていません。ダウンロードフォルダに保存します";
         }
       }
       if (ios) {
@@ -4568,8 +4568,9 @@
         try { a.remove(); } catch (_) {}
       }, 2000);
       state.dirty = false; state.fileSaved = true; updateHeader();
+      /* ブラウザは実フルパスを教えないので、場所＋ファイル名で示す（作者: ダウンロードフォルダ／名前） */
       let msg = (fellBack ? "保存ダイアログを開けませんでした。" : "") +
-            "「" + name + "」をダウンロードに保存しました";
+            "「ダウンロードフォルダ／" + name + "」に保存しました";
       if (safariEmptyDlPromptLikely()) {
         msg += "（先の空欄の許可はSafariの表示で、保存自体はできています）";
       }
