@@ -167,6 +167,8 @@
   .dropmenu .tm-field textarea:focus { outline: none; border-color: #4db6ac; }
   .dropmenu .tm-hint { padding: 0 12px 6px; font-size: 11px; color: #90a4ae; line-height: 1.45; }
   .dropmenu .tm-key { float: right; color: #90a4ae; font-size: 11px; margin-left: 18px; }
+  .dropmenu button[role="menuitem"].on { background: #e8f5e9; font-weight: 600; }
+  .dropmenu button[role="menuitem"].on:hover { background: #c8e6c9; }
   /* 自動保存の状態表示（5.8）。一瞬ではなく【出したままにする】。
      「いつ保存されたか」が常に見えていれば、閉じるときに不安にならない。 */
   #autosave-note {
@@ -204,9 +206,10 @@
     cursor: grab; touch-action: none;
   }
 
-  #splitter { background: var(--line); cursor: col-resize; position: relative; }
+  #splitter { background: var(--line); cursor: col-resize; position: relative; z-index: 15; overflow: visible; }
   #splitter:hover, #splitter.dragging { background: #90a4ae; }
   #splitter::after { content: ""; position: absolute; top: 50%; left: 50%; width: 2px; height: 28px; margin: -14px 0 0 -1px; background: #78909c; border-radius: 1px; }
+  body.diff-on #splitter { cursor: default; pointer-events: none; }
 
   .pane { display: flex; flex-direction: column; overflow: hidden; background: #fff; min-width: 0; position: relative; }
 
@@ -259,11 +262,6 @@
   .tab.sys-origin.active { background: #fff; color: #37474f; box-shadow: inset 0 -2px 0 #78909c; }
   .tab.sys-origin.active .pin { color: #78909c; }
 
-  .tab.sys-diff { background: #f6e2cf; color: #8a5320; }
-  .tab.sys-diff:hover { background: #f0d6bc; }
-  .tab.sys-diff .pin { color: #d7a06a; }
-  .tab.sys-diff.active { background: #fff; color: #a1521a; box-shadow: inset 0 -2px 0 #ef6c00; }
-  .tab.sys-diff.active .pin { color: #ef6c00; }
   .tab .x.armed { visibility: visible; background: #e53935; color: #fff; font-weight: 700; animation: pulse .7s ease-in-out infinite alternate; }
   @keyframes pulse { from { opacity: .6 } to { opacity: 1 } }
   #tab-add { flex-shrink: 0; padding: 0 12px; font-size: 15px; color: #607d8b; background: transparent; border: none; cursor: pointer; }
@@ -303,6 +301,11 @@
   .searchbar button { border: 1px solid var(--line); background: #fff; color: #546e7a; border-radius: 3px; padding: 3px 8px; font-size: 12px; cursor: pointer; line-height: 1.4; white-space: nowrap; flex-shrink: 0; }
   .searchbar button:hover { background: var(--panel-bg); }
   .searchbar button.on { background: #dcedc8; border-color: #aed581; color: #33691e; }
+  .searchbar button:disabled,
+  .searchbar button:disabled:hover {
+    background: #eceff1; color: #90a4ae; border-color: #cfd8dc;
+    cursor: not-allowed; text-decoration: line-through;
+  }
   /* 常に「N / M」のヒット数（5.3.4） */
   .searchbar .count { font-size: 11px; color: #78909c; min-width: 52px; text-align: right; flex-shrink: 0; }
   /* 左検索窓は半分まで。残りをコンテキストボタンに使う */
@@ -318,6 +321,24 @@
   #ref-act.swap:hover { background: #fbdaca; }
   #ref-act[hidden] { display: none; }
   .searchbar .lbl { font-size: 11px; color: #7cb342; flex-shrink: 0; }
+  /* 5.23 P0: diff ON 時だけ右検索左。ラベルは表示のみ */
+  #diff-chrome { display: none; align-items: center; gap: 4px; flex-shrink: 0; }
+  body.diff-on #diff-chrome { display: flex; }
+  #diff-chrome button { padding: 3px 7px; }
+  #btn-diff-mode {
+    position: absolute; z-index: 12;
+    left: 50%; transform: translate(-50%, -50%);
+    pointer-events: auto;
+    font-size: 11px; font-weight: 700; white-space: nowrap;
+    padding: 3px 9px; line-height: 1.4; border-radius: 3px;
+    border: 1px solid #90a4ae; background: #eceff1; color: #546e7a;
+    cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12);
+  }
+  #btn-diff-mode:hover { background: #cfd8dc; }
+  #btn-diff-mode.on {
+    background: #dcedc8; border-color: #7cb342; color: #33691e;
+  }
+  #btn-diff-mode.on:hover { background: #c5e1a5; }
 
   /* ---------- bodies ---------- */
   .pane-body {
@@ -361,51 +382,139 @@
   #ref-inner .hd3r { color: var(--hd3r); font-weight: 700; background: transparent; box-shadow: none; }
   #ref-inner .hd3b { color: var(--hd3b); font-weight: 700; background: transparent; box-shadow: none; }
 
-  /* ---------- 差分ビュー（左ペインのシステムタブ） ---------- */
-  /* 行マーカー（− ＋）は行の中に置かず、絶対配置で外に出す。
-     インラインの箱として行頭に置くと、その 1.5em が user-select:none の領域になり、
-     「本文の左の余白からドラッグしても選択が始まらない」状態になる。
-     → マーカーは絶対配置で本文の外へ。.dl 自身には padding を持たせない。
-     溝は #ref-inner の左右パディングの配分で作り、【左右の合計は必ず通常タブと同じ
-     WIDTH_PAD に保つ】（通常 3+3 ／ 変更 5+1）。本文の内容ボックス幅が変わらないので
-     折り返しが揃う。却下案は構築仕様書 5.13.3D。 */
-  #ref-inner.diff-view { padding-left: 5px; padding-right: 1px; }
+  /* ---------- 差分表示（左ペイン・5.23） ---------- */
+  /* 通常タブと折り返しを揃えるため、左右パディングの合計は WIDTH_PAD に保つ。
+     行マーカー（− ＋）の溝を作っていた 5.13.3D の配分は「変更」タブごと廃止した。 */
+  #ref-inner.diff-view { padding: 16px 3px 60vh; }
 
-  .dl {
-    display: block; position: relative; padding-left: 0;
-    white-space: pre-wrap; word-break: break-word; border-radius: 2px;
-    /* 空行の高さを確保する。マーカーを絶対配置にしたので、
-       空行には in-flow の中身が1つも無く、放っておくと高さ0に潰れる。
-       line-height は 1.9（単位なし）なので 1.9em が1行ぶんと一致する。 */
-    min-height: 1.9em;
-    min-height: 1lh;        /* 対応環境では line-height をそのまま使う */
-  }
-  /* 右ペインのカーソル行に対応する行 */
-  .dl.cur-line { box-shadow: inset 3px 0 0 var(--caret); }
-  .dl.same.cur-line { background: #f1f8e9; color: #33691e; }
-  .dl .mk {
-    /* right:100% で本文の左端より外側へ出す。本文の幅を1pxも削らない。
-       置き場所は #ref-inner の左パディング（変更タブ 5px・rev51）の中 */
-    position: absolute; right: 100%; top: 0; margin-right: 1px;
-    font-size: .65em; white-space: nowrap;
-    user-select: none; -webkit-user-select: none; pointer-events: none;     /* マーカー自身でクリックを受けない */
-    color: #b0bec5; text-align: right; font-weight: 700;
-  }
-  /* 検索ヒットの行（5.13.6B）。文字単位ではなく行を示す */
-  .dl.hit-line { box-shadow: inset 0 0 0 1px #ffb300; background-image: linear-gradient(rgba(255,179,0,.20), rgba(255,179,0,.20)); }
-  .dl.hit-cur  { box-shadow: inset 0 0 0 2px #f57c00; background-image: linear-gradient(rgba(255,152,0,.34), rgba(255,152,0,.34)); }
-  .dl.hit-cur.cur-line { box-shadow: inset 0 0 0 2px #f57c00, inset 3px 0 0 var(--caret); }
-  .dl.same { color: #78909c; }
-  .dl.del { background: var(--deleted-bg); color: var(--deleted-text); }
-  .dl.del .mk { color: #ef9a9a; }
-  .dl.add { background: var(--added-bg); color: var(--added-text); }
-  .dl.add .mk { color: #66bb6a; }
-  .dl.del .ci { background: #ef9a9a; border-radius: 2px; }
-  .dl.add .ci { background: #81c784; border-radius: 2px; }
   .dsame-all {
     user-select: none; color: #00695c; background: #e0f2f1; border-radius: 3px;
     font-size: 12px; padding: 8px 10px; margin-bottom: 12px; text-align: center;
   }
+  /* 5.23 P1: novdiff 型アライン（左右別 DOM・同じ viewLine） */
+  #edit-diff {
+    display: none; position: absolute; inset: 0; z-index: 6;
+    overflow: auto; background: #fff; cursor: default;
+    scrollbar-width: none;
+    overscroll-behavior: none;
+  }
+  #edit-diff::-webkit-scrollbar { width: 0; height: 0; }
+  body.diff-on #edit-diff { display: block; }
+  body.diff-on #edit-area,
+  body.diff-on #mirror,
+  body.diff-on #hd-layer,
+  body.diff-on #hit-layer { visibility: hidden; pointer-events: none; }
+  /* ★ON の計算中だけ中身を伏せる。伏せないと、innerHTML 差し替え直後に
+     ブラウザが scrollTop を 0 にクランプした状態が描かれ、
+     「原稿の先頭へ飛んでから戻る」ように見える（5.23）。枠と背景は残す。 */
+  body.diff-busy #ref-inner,
+  body.diff-busy #edit-diff-inner { visibility: hidden; }
+  #edit-diff-inner {
+    margin: 0 auto; padding: 16px 3px 60vh;
+    white-space: pre-wrap; word-break: break-word;
+    line-height: 1.9; color: #212121; font-family: inherit;
+  }
+  .drow {
+    min-height: 1.9em; min-height: 1lh;
+    white-space: pre-wrap; word-break: break-word; border-radius: 2px;
+  }
+  /* ★画面外の same 塊はレイアウトを省く（5.23.13・Ver.1.4.5）。
+     高さは contain-intrinsic-size を【計算して】インラインで入れる（drowHtml）。
+     掛けるのは same 塊だけ——左右が同じ文字なので、同じ式なら高さも構造的に一致する。 */
+  .drow.cv { content-visibility: auto; }
+  /* void 縞は .drow の下地。本文色は .dcell だけに塗る。
+     equalize で伸びた「中身の無い余白」が普通の空行に見えないようにする。 */
+  .drow.k-del,
+  .drow.k-add,
+  .drow.k-chg.side-l,
+  .drow.k-chg.side-r,
+  .drow.gap {
+    background: repeating-linear-gradient(-45deg, #f4f4f4, #f4f4f4 7px, #ebebeb 7px, #ebebeb 14px);
+  }
+  /* ★空行の add/del: 中身 .dcell が高さ0だと「色は gap 側・縞は本文側」に見え左右が逆転する。
+     本文セルは最低1行分の高さを持ち、gap セルは色を塗らない（詳細度で k-add/k-del に勝つ）。 */
+  .drow .dcell {
+    min-height: 1.9em; min-height: 1lh;
+    box-sizing: border-box;
+  }
+  .drow.k-same { color: #546e7a; background: transparent; }
+  /* 行まるごとの追加／削除は行を塗る（その行【全部】が差分なので） */
+  .drow.k-del .dcell {
+    background: var(--deleted-bg); color: var(--deleted-text); border-radius: 2px;
+  }
+  .drow.k-add .dcell {
+    background: var(--added-bg); color: var(--added-text); border-radius: 2px;
+  }
+  /* ★空行の追加／削除は【縞】だけで分かるのでベタ塗りしない（作者指示 2026-08-14）。
+     esc("") で中身が空になる＝:empty で拾える。
+     ただし transparent にすると .drow の下地の縞が透けて、
+     【行を持っている側まで void に見える】（作者報告 2026-08-14。要求 C5 は
+     「片側に無い行はブランク」＝縞は行が無い側だけ）。chg セルと同じ手で、
+     色は付けずにペインの地の色で覆う。min-height: inherit は 0.5px の隙間から
+     縞が細い罫線になって覗くのを防ぐため（§28 と同じ）。 */
+  .drow.k-add .dcell:empty,
+  .drow.k-del .dcell:empty {
+    background: var(--dcell-bg, #fff);
+    min-height: inherit;
+  }
+  /* ★片側に無い行（gap）の【反対側】＝実体がある側の行頭に色帯を出す（作者指示 2026-08-15）。
+     空行の追加／削除はセルを地の色で覆う（縞を透かさないため）ので、それだけでは
+     「どこに足したのか」が実体のある側からも読めなかった（未処置 S-3）。
+     inset の影なので本文の位置は 1px も動かない（padding で作ると折り返しが変わる）。 */
+  .drow.k-add:not(.gap) > .dcell { box-shadow: inset 3px 0 0 var(--added-text); }
+  .drow.k-del:not(.gap) > .dcell { box-shadow: inset 3px 0 0 var(--deleted-text); }
+  /* ★行の一部だけが違う行（chg）は【違う文字だけ】に色を付け、行全体は塗らない
+     （作者指示 2026-08-14）。ただし下地の void 縞が本文の裏に透けると読めないので、
+     .dcell はペインの地の色で覆う。地の色はペインごとに違う
+     （左＝クリーム／「初期」タブのときだけグレー、右＝白）ので変数で渡す。 */
+  #ref-inner.diff-view { --dcell-bg: var(--ref-bg); }
+  #ref-body.origin-view #ref-inner.diff-view { --dcell-bg: var(--origin-bg); }
+  #edit-diff-inner { --dcell-bg: #fff; }
+  .drow.k-chg.side-l .dcell,
+  .drow.k-chg.side-r .dcell {
+    background: var(--dcell-bg, #fff); color: inherit;
+    /* ★覆うのは【本文があるぶんだけ】。equalizeDiffRows が伸ばした余白まで
+       地の色で覆うと、片側に無い行が【白い空行】に見える
+       （作者報告 2026-08-15・スクリーンショット。1 行を Enter で 2 行に割ると、
+        左は折り返して 2 行・右は 1 行なので、右に 1 行ぶんの余白ができる。
+        そこは「行が無い」ので gap と同じ縞で見せるのが正しい）。
+       ★かつて min-height: inherit で行いっぱいを覆っていたのは、
+        equalizeDiffRows が【整数 px】を書いていて 0.5px の隙間から縞が
+        細い罫線になって覗いたため。Ver.1.4.1 で小数（toFixed(2)）を書くように直した
+        （12章 #118）ので、この覆いはもう要らない。角丸は付けない（角から縞が出る）。 */
+    min-height: 1.9em; min-height: 1lh;
+  }
+  .drow.gap .dcell {
+    min-height: inherit;
+    background: transparent;
+    color: transparent; user-select: none; -webkit-user-select: none;
+  }
+  /* ★diff 表示の見出しは【文字色と太字だけ】。背景の帯は付けない（作者指示 2026-08-15）。
+     帯を付けると差分の赤（削除）・緑（追加）と同じ面で喧嘩して、どちらが変更か読めなくなる
+     （AGENTS 罠④「見出し Lv2 の緑を変更の緑と誤認された」）。
+     色は本文と同じ変数を使う。span に直接当てるので、行の色（same のグレー・
+     del/add の赤緑）より必ず優先される。 */
+  .drow .dhd { font-weight: 700; }
+  .drow .dhd1 { color: var(--hd1); }
+  .drow .dhd2 { color: var(--hd2); }
+  .drow .dhd3r { color: var(--hd3r); }
+  .drow .dhd3b { color: var(--hd3b); }
+  .drow .ci { border-radius: 2px; }
+  .drow.k-del .ci, .drow.k-chg.side-l .ci { background: #ef9a9a; color: var(--deleted-text); }
+  .drow.k-add .ci, .drow.k-chg.side-r .ci { background: #81c784; color: var(--added-text); }
+  .drow.flash { outline: 2px solid #ef6c00; outline-offset: -1px; }
+  /* 5.23 P2: 編集中だけ .drow の子になる。absolute は行ボックス基準（IME・ズレ対策） */
+  .drow.editing { position: relative; z-index: 2; }
+  .drow.editing > .dcell { visibility: hidden; }
+  #diff-line-ed {
+    position: absolute; z-index: 3; left: 0; top: 0; right: 0; width: 100%;
+    box-sizing: border-box; margin: 0; resize: none; overflow: hidden;
+    border: 2px solid #1565c0; border-radius: 2px;
+    padding: 0 2px; background: #fffde7; color: #212121;
+    font: inherit; line-height: 1.9; white-space: pre-wrap; word-break: break-word;
+    display: none; min-height: 1.9em;
+  }
+  #diff-line-ed.show { display: block; }
 
   /* ---------- right pane layers ---------- */
   #mirror {
@@ -433,6 +542,9 @@
   #drop-caret.linewise { background: #1565c0; }
   #drop-caret.linewise::before { border-top-color: #1565c0; }
   #drop-caret.show { display: block; }
+  /* ★diff 表示中は #edit-diff（z-index:6）が本文の上に載る。.caret-mark の 3 のままだと
+     ドロップキャレットが差分表示の【下】に隠れて、狙った位置が見えない。 */
+  body.diff-on #drop-caret { z-index: 7; }
   @keyframes blink { 0%,50%{opacity:1} 51%,100%{opacity:.25} }
 
   #edit-area {
@@ -581,7 +693,7 @@
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.3.6　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.4.5　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
@@ -701,7 +813,9 @@
     </div>
   </div>
 
-  <div id="splitter" title="ドラッグでペイン比率を変更（ダブルクリックで 1:1）"></div>
+  <div id="splitter" title="ドラッグでペイン比率を変更（ダブルクリックで 1:1）">
+    <button type="button" id="btn-diff-mode" aria-pressed="false" title="左右の比較表示を切り替えます">差分モードOFF</button>
+  </div>
 
   <!-- 右ペイン（執筆） -->
   <div class="pane" id="pane-edit">
@@ -710,6 +824,12 @@
       <span><span class="caretpos" id="edit-caretpos">1行 1桁</span>　<span class="stat" id="edit-stat">0 文字</span></span>
     </div>
     <div class="searchbar">
+      <span id="diff-chrome" aria-hidden="true">
+        <!-- ★検索の ▲▼ と紛らわしいので矢印にし、並びも検索と同じ「前→次」に揃える
+             （作者指示 2026-08-14。旧: ▼次 → ▲前 の逆順だった） -->
+        <button type="button" id="diff-prev" title="前の差分へ">↑</button>
+        <button type="button" id="diff-next" title="次の差分へ">↓</button>
+      </span>
       <input type="text" id="ed-q" placeholder="右ペインを検索">
       <button id="ed-prev" title="前へ (Shift+Enter)">▲</button>
       <button id="ed-next" title="次へ (Enter)">▼</button>
@@ -729,6 +849,10 @@
       <div class="caret-mark" id="ghost-caret"></div>
       <div class="caret-mark" id="drop-caret"></div>
       <textarea id="edit-area" spellcheck="false"></textarea>
+      <div id="edit-diff" aria-hidden="true">
+        <div id="edit-diff-inner"></div>
+        <textarea id="diff-line-ed" class="diff-line-ed" spellcheck="false" aria-label="差分の1行を編集" rows="1"></textarea>
+      </div>
       <div class="empty-hint" id="edit-empty">
         <div class="pane-wm">編集用</div>
         <div class="hint-box" title="クリックして編集するファイルを選択">
@@ -825,7 +949,9 @@
   const AUTOSAVE_MS = 3000;       // 入力が止まってから自動保存するまで（12章 #6）
   const SIM_THRESHOLD = 0.5;      // 削除行と追加行を「変更」とみなす類似度（12章 #19）
   const CLOSED_MAX = 10;          // 閉じたタブのスタック上限（12章 #11）
-  const DIFF_WARN_LINES = 20000;  // 差分の表示行がこれを超えたら警告トースト（12章 #18）
+  /* これを超える原稿で diff ON にすると、全文 DOM のレイアウトで体感 1 秒級になる。
+     そのときだけ「差分を計算中…」を出し、位置が決まるまで中身を隠す（5.23） */
+  const DIFF_BUSY_CHARS = 20000;
   const LS_DRAFT = "novedit.draft.v1";
   const LS_SETTINGS = "novedit.settings.v1";
   const LS_TAB = "novedit.tabId";
@@ -866,11 +992,12 @@
     showHead: true,
     headCfg: null,               // 見出し検出ルール（起動時に既定値を入れる）
     origin: { text: "", name: "" },      // 右ペインの「初期」
-    diffStale: true,             // 差分の再計算が必要か
     eol: "lf",                    // ツール＞保存する改行コード。"lf"|"crlf"。既定 lf（現状維持。保存時のみ適用＝5.14）
-    sepPat: ""                    // ツール＞区切り行パターン（改行区切りで複数可）。行全体一致で判定（5.14）
+    sepPat: "",                   // ツール＞区切り行パターン（改行区切りで複数可）。行全体一致で判定（5.14）
+    diffMode: false,              // 5.23。起動・復元とも常に false（LS に書かない）
+    diffBaseTabId: null
   };
-  const SYS = { ORIGIN: "origin", DIFF: "diff" };   // システムタブ（閉じられない）
+  const SYS = { ORIGIN: "origin" };   // システムタブ（閉じられない）。DIFF は「変更」タブごと廃止
   const MM_BG_L = "#EFE7D2";                        // 左ミニマップの下地（仕様 5.2C。canvas 塗りなので CSS 変数は持たない）
   const MM_BG_ORIGIN = "#DFE4E6";                   // 「初期」タブのときの下地（グレー）
   const MM_BG_R = "#eceff1";                        // 右ミニマップの下地（左と同じく定義元は1か所）
@@ -1550,7 +1677,7 @@
     const t = ta();
     state.caret = docSelStart();
     const focused = document.activeElement === t;
-    const needGeom = !!forceGeom || !focused || isSysActive(SYS.DIFF);
+    const needGeom = !!forceGeom || !focused;
     const g = $("ghost-caret");
     if (needGeom) {
       const rc = rectForOffset(state.caret), p = toContent(rc);
@@ -1560,11 +1687,30 @@
       g.classList.remove("show");
     }
     paintCaretPos(state.caret, docText());
-    syncDiffToCaret();      // 「変更」タブを同じ行へ追従させる（リアルタイム）
+    syncDiffToCaret();      // 本文が変わっていたら diff の行 DOM を作り直す（5.23）
   }
   function showDropCaret(off) {
     const rc = rectForOffset(off), p = toContent(rc), d = $("drop-caret");
+    /* ★diff 表示では showDiffDropCaret() が transform を "none" にする。
+       通常モードへ戻った直後は次の scroll まで誰も戻さないので、ここで必ず当て直す。
+       （#drop-caret は syncEditLayersScroll() が textarea の scroll ぶん平行移動させている） */
+    syncEditLayersScroll();
     d.style.left = p.left + "px"; d.style.top = p.top + "px"; d.style.height = rc.height + "px";
+    d.classList.add("show");
+  }
+  /** diff 表示中のドロップキャレット。実 DOM の矩形（viewport 座標）を #edit-body 基準に置く。
+   *  #edit-body 自身はスクロールしない（#edit-area も #edit-diff も inset:0 で覆う）ので
+   *  scrollTop 項は要らない。transform は上記の理由で必ず打ち消す。 */
+  function showDiffDropCaret(rect, lineWise) {
+    if (!rect) { hideDropCaret(); return; }
+    const d = $("drop-caret"), b = $("edit-body").getBoundingClientRect();
+    const top = rect.top - b.top;
+    if (top < -40 || top > b.height + 40) { hideDropCaret(); return; }
+    d.style.transform = "none";
+    d.style.left = (rect.left - b.left) + "px";
+    d.style.top = top + "px";
+    d.style.height = (rect.height || 20) + "px";
+    d.classList.toggle("linewise", !!lineWise);
     d.classList.add("show");
   }
   const hideDropCaret = () => $("drop-caret").classList.remove("show");
@@ -1694,11 +1840,14 @@
     const px = Math.round(fs * w) + WIDTH_PAD;
     $("ref-inner").style.fontSize = fs + "px";
     $("ref-inner").style.maxWidth = px + "px";
+    $("edit-diff-inner").style.fontSize = fs + "px";
+    $("edit-diff-inner").style.maxWidth = px + "px";
     ta().style.fontSize = fs + "px";
     ta().style.maxWidth = px + "px";
     /* スタイル適用直後に1回レイアウトを確定させる（この後の scrollHeight 実測と
        左MM描画が古い高さのまま走るのを防ぐ）。 */
     void $("ref-inner").offsetHeight;
+    if (state.diffMode) requestAnimationFrame(equalizeDiffRows);
     void rb.scrollHeight;
     /* ---- 新しい scrollHeight を測って比例補正する（5.1B）----
        左は同期で測れる。右は autoGrow() が height を確定させるまで測れないので
@@ -1729,8 +1878,8 @@
     lastFs = fs;
 
     /* ミニマップは上で scrollTop を書き換えたときの scroll イベントで描き直るので、
-       ここで drawAll() を呼ばない（「変更」タブがアクティブだと drawMinimap が
-       computeDiff() を同期で呼び、文字サイズのスピナーを回すたびに LCS が走る）。 */
+       ここで drawAll() を呼ばない（drawAll は左右とも作り直すので、
+       字級のスピナーを回すたびに差分表示の再レイアウトまで走る）。 */
     refreshOverlay();
     /* 左ミニマップだけは明示的に描き直す。
        ★scrollTop に同じ値（先頭なら必ずそう）を代入するとブラウザは scroll を出さないので、
@@ -1878,12 +2027,10 @@
          字級・幅を変えた瞬間だけ「申し送りが無い」と誤判定する。null 化前に控えた
          hadPendingRightFix を使うこと（5.19L）。 */
       const skipHeavy = doFull && !hadPendingRightFix && !overlayForceHeavy
-        && document.activeElement === ta()
-        && !isSysActive(SYS.DIFF);
+        && document.activeElement === ta();
       const needMirror = (!skipHeavy && doFull)
         || !document.activeElement
-        || document.activeElement !== ta()
-        || isSysActive(SYS.DIFF);
+        || document.activeElement !== ta();
       if (needMirror) {
         syncMirrorStyle();
         syncMirrorText();
@@ -2051,8 +2198,8 @@
     ];
   }
 
-  /** 行単位の差分。共通の先頭・末尾を切り落としてから中央だけ解く */
-  function diffLines(a, b) {
+  /** 非空行だけの LCS（空行は一致に使わない）。戻りは非空配列上の raw。 */
+  function diffNonEmpty(a, b) {
     let pre = 0;
     while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++;
     let suf = 0;
@@ -2062,6 +2209,59 @@
     for (let i = 0; i < pre; i++) out.push({ t: 0, s: a[i] });
     out.push(...middleDiff(a.slice(pre, a.length - suf), b.slice(pre, b.length - suf)));
     for (let i = a.length - suf; i < a.length; i++) out.push({ t: 0, s: a[i] });
+    return out;
+  }
+
+  /**
+   * 行単位の差分。
+   * ★空行同士を LCS の一致に使うと、本文の対応がずれて
+   *   「同じ段落なのに削除＋追加の別ブロック」になる（小説で空行を足しただけ、等）。
+   *   → 非空行だけで LCS し、空行は後から織り込む。
+   */
+  function diffLines(a, b) {
+    const aNe = [], aIx = [];
+    const bNe = [], bIx = [];
+    for (let i = 0; i < a.length; i++) if (a[i] !== "") { aIx.push(i); aNe.push(a[i]); }
+    for (let j = 0; j < b.length; j++) if (b[j] !== "") { bIx.push(j); bNe.push(b[j]); }
+
+    /* 両方とも空行ばかり */
+    if (!aNe.length && !bNe.length) {
+      const out = [];
+      const n = Math.min(a.length, b.length);
+      for (let i = 0; i < n; i++) out.push({ t: 0, s: "" });
+      for (let i = n; i < a.length; i++) out.push({ t: -1, s: "" });
+      for (let j = n; j < b.length; j++) out.push({ t: 1, s: "" });
+      return out;
+    }
+
+    const rawNe = diffNonEmpty(aNe, bNe);
+    /* 非空の一致ペア (aOrigIdx, bOrigIdx) を抽出 */
+    const pairs = [];
+    let ia = 0, ib = 0;
+    for (let r = 0; r < rawNe.length; r++) {
+      const x = rawNe[r];
+      if (x.t === 0) {
+        pairs.push([aIx[ia], bIx[ib]]);
+        ia++; ib++;
+      } else if (x.t === -1) ia++;
+      else ib++;
+    }
+
+    const out = [];
+    let pa = 0, pb = 0, pi = 0;
+    while (pa < a.length || pb < b.length) {
+      const na = pi < pairs.length ? pairs[pi][0] : a.length;
+      const nb = pi < pairs.length ? pairs[pi][1] : b.length;
+      /* 次の本文一致までの隙を del/add で埋める（空行・不一致の本文） */
+      while (pa < na) out.push({ t: -1, s: a[pa++] });
+      while (pb < nb) out.push({ t: 1, s: b[pb++] });
+      if (pi < pairs.length) {
+        out.push({ t: 0, s: a[pa] });
+        pa++; pb++; pi++;
+      } else {
+        break;
+      }
+    }
     return out;
   }
 
@@ -2077,314 +2277,2391 @@
     while (s < d.length - p && s < a.length - p && d[d.length - 1 - s] === a[a.length - 1 - s]) s++;
     return { p: p, s: s };
   }
-  /** 文字単位の強調に使う 3 分割（前方一致 / 違う部分 / 後方一致）。chg 行のときだけ呼ぶ。 */
-  function charSpans(d, a) {
-    const c = commonSpan(d, a), p = c.p, s = c.s;
-    return {
-      d: [d.slice(0, p), d.slice(p, d.length - s), d.slice(d.length - s)],
-      a: [a.slice(0, p), a.slice(p, a.length - s), a.slice(a.length - s)]
-    };
+  /** 文字 2-gram の Dice 係数（0〜1）。
+   *  ★共通の接頭＋接尾だけで測る similarity は、【1 行の中に直しが 2 か所以上】あると
+   *    極端に低く出ます。実例（作者報告 2026-08-14）:
+   *      del「　例えば父さんなら「力持ち」の恩恵を持っている。…僕の授かった恩恵なのだろうか？」
+   *      add「　例えば父さんなら「力持ち」の恩恵を持っていた。…僕の授かった恩恵なのか？」
+   *    は 2 か所しか違わないのに接頭＋接尾では **0.449**（SIM_THRESHOLD 0.5 未満）。
+   *    そのため chg に組まれず「左で全部削除・右で全部追加」になり、
+   *    しかも空行の add をまたぐと上下に離れて並ぶので「同じ行が違う判定になった」と見えます。
+   *    2-gram なら **0.88** なので正しく chg に組めます。
+   *  ★長い行は諦める（コストの上限。21,000 行の差分でも重くしない）。 */
+  const DICE_MAX_LEN = 400;
+  function diceBigram(x, y) {
+    const n = x.length, m = y.length;
+    if (!n || !m) return 0;
+    if (n < 2 || m < 2) return x === y ? 1 : 0;
+    if (n > DICE_MAX_LEN || m > DICE_MAX_LEN) return 0;
+    const map = new Map();
+    for (let i = 0; i + 1 < n; i++) {
+      const g = x.slice(i, i + 2);
+      map.set(g, (map.get(g) || 0) + 1);
+    }
+    let hit = 0;
+    for (let j = 0; j + 1 < m; j++) {
+      const g = y.slice(j, j + 2);
+      const c = map.get(g);
+      if (c > 0) { map.set(g, c - 1); hit++; }
+    }
+    return (2 * hit) / ((n - 1) + (m - 1));
   }
+  /** chg 行の強調を【本当に違う文字だけ】にする（作者指示 5.23）。
+   *  共通の接頭・接尾を落としたうえで、残った中央だけ文字単位 LCS を取り、
+   *  一致した文字は色から外して HTML を組む。
+   *  ★これが無いと「1 行の中に直しが 2 か所」あるときに、その【間にある同じ文章まで】
+   *    色が付きます（実例: 「持っている。…なのだろうか？」→「持っていた。…なのか？」で
+   *    中央 31 文字がまるごと色付き。作者指示の「違う文字だけ」になっていない）。
+   *  ★中央が長い行は DP を諦めて中央まるごと 1 かたまりにする（コストの上限。
+   *    21,000 行の差分でも重くしないため。従来の 3 分割と同じ見え方に落ちるだけ）。 */
+  const CHAR_DP_MAX = 120;
+  function charDiffHtml(d, a) {
+    const c = commonSpan(d, a), p = c.p, s = c.s;
+    const pre = d.slice(0, p);
+    const dSuf = d.slice(d.length - s), aSuf = a.slice(a.length - s);
+    const md = d.slice(p, d.length - s), ma = a.slice(p, a.length - s);
+    const wrap = t => (t ? '<span class="ci">' + esc(t) + "</span>" : "");
+    if (!md.length && !ma.length) return { d: esc(d), a: esc(a) };
+    if (md.length > CHAR_DP_MAX || ma.length > CHAR_DP_MAX) {
+      return { d: esc(pre) + wrap(md) + esc(dSuf), a: esc(pre) + wrap(ma) + esc(aSuf) };
+    }
+    const n = md.length, m = ma.length, w = m + 1;
+    const dp = new Uint16Array((n + 1) * w);
+    for (let x = n - 1; x >= 0; x--) {
+      for (let y = m - 1; y >= 0; y--) {
+        dp[x * w + y] = md.charCodeAt(x) === ma.charCodeAt(y)
+          ? dp[(x + 1) * w + (y + 1)] + 1
+          : Math.max(dp[(x + 1) * w + y], dp[x * w + (y + 1)]);
+      }
+    }
+    let dOut = "", aOut = "", dBuf = "", aBuf = "", sameBuf = "";
+    const flushSame = () => { if (sameBuf) { dOut += esc(sameBuf); aOut += esc(sameBuf); sameBuf = ""; } };
+    const flushDiff = () => {
+      if (dBuf) { dOut += wrap(dBuf); dBuf = ""; }
+      if (aBuf) { aOut += wrap(aBuf); aBuf = ""; }
+    };
+    let x = 0, y = 0;
+    while (x < n && y < m) {
+      if (md.charCodeAt(x) === ma.charCodeAt(y)) {
+        flushDiff();
+        sameBuf += md[x];
+        x++; y++;
+      } else {
+        flushSame();
+        if (dp[(x + 1) * w + y] >= dp[x * w + (y + 1)]) dBuf += md[x++];
+        else aBuf += ma[y++];
+      }
+    }
+    flushSame();
+    while (x < n) dBuf += md[x++];
+    while (y < m) aBuf += ma[y++];
+    flushDiff();
+    return { d: esc(pre) + dOut + esc(dSuf), a: esc(pre) + aOut + esc(aSuf) };
+  }
+
   function similarity(x, y) {
     if (!x.length && !y.length) return 1;
     const c = commonSpan(x, y);          // slice を作らない（旧 charSpans 版は 6 本捨てていた）
-    return (2 * (c.p + c.s)) / (x.length + y.length);
+    const sc = (2 * (c.p + c.s)) / (x.length + y.length);
+    if (sc >= SIM_THRESHOLD) return sc;  // 安いほうで足りる（大半はここで返る）
+    return Math.max(sc, diceBigram(x, y));
   }
 
-  /** 差分 → 表示用の行配列 */
+  /** 差分 → 表示用の行配列。
+   *  ★連続 hunk 内で del[i] と add[i] を添字で結ぶと、空行と本文が組んで表示が崩壊する
+   *    （長い削除の隣に空の緑帯、以降がすべて一段ずれる）。類似度で結ぶ。 */
   function buildDiffRows(oldText, newText) {
     const raw = diffLines(oldText.split("\n"), newText.split("\n"));
     const rows = [];
     let i = 0;
     while (i < raw.length) {
       if (raw[i].t === 0) { rows.push({ k: "same", s: raw[i].s }); i++; continue; }
-      // 連続する削除・追加をまとめて対応付ける
       const dels = [], adds = [];
       while (i < raw.length && raw[i].t === -1) dels.push(raw[i++].s);
       while (i < raw.length && raw[i].t === 1) adds.push(raw[i++].s);
-      const n = Math.max(dels.length, adds.length);
-      for (let k = 0; k < n; k++) {
-        const d = dels[k], a = adds[k];
-        if (d != null && a != null && similarity(d, a) >= SIM_THRESHOLD) {
-          rows.push({ k: "chg", d: d, a: a, sp: charSpans(d, a) });
-        } else {
-          if (d != null) rows.push({ k: "del", s: d });
-          if (a != null) rows.push({ k: "add", s: a });
-        }
-      }
+      alignHunk(dels, adds, rows);
     }
     return rows;
   }
 
-  /** 全文を表示する（省略・折り畳みはしない） */
-  /* 巨大な差分を「固まった」と誤解されないよう警告する（B-3 / 12章 #18）。描画は止めない。
-     表示行は chg が 2 行に開くので rows 数とは一致しない。しきい値を跨いだときだけ出す。
-     LCS_CELL_CAP は計算量の話で、これは表示量の話（別物） */
-  let diffBigWarned = false;
+  /** hunk 内の del/add 対応。
+   *  LCS は変更域を1 hunk にまとめるため、dels=[長い行, 次行…] / adds=[空, 分割1, 分割2, 次行…] になりがち。
+   *  「1 del だけ」判定では分割を拾えない → 先頭から greedy に
+   *  1行↔複数行 join・1:1 類似・空行 を消費する。 */
+  function alignHunk(dels, adds, rows) {
+    dels = dels.slice();
+    adds = adds.slice();
+    if (!dels.length && !adds.length) return;
 
-  function renderDiffHtml(rows) {
-    const changed = rows.filter(r => r.k !== "same").length;
-    let shown = 0;
-    for (const r of rows) shown += (r.k === "chg" ? 2 : 1);
-    if (shown > DIFF_WARN_LINES) {
-      if (!diffBigWarned) {
-        diffBigWarned = true;
-        toast("差分が大きいため表示が重くなります（" + shown.toLocaleString() + "行）");
+    const emitAdd = a => { rows.push({ k: "add", s: a }); };
+    const emitDel = d => { rows.push({ k: "del", s: d }); };
+    /* ★sp（charSpans の 3 分割）は「変更」タブの renderDiffHtml 専用だったので廃止。
+       5.23 は chg セルを組むときに charDiffHtml() を呼ぶ（文字単位 LCS）。
+       残しておくと chg 行ごとに捨てる文字列を 6 本作ることになる。 */
+    const emitChg = (d, a) => {
+      if (d === a) { rows.push({ k: "same", s: d }); return; }
+      rows.push({ k: "chg", d: d, a: a });
+    };
+    const joinSim = (one, many) => {
+      if (!many.length) return 0;
+      return Math.max(similarity(one, many.join("\n")), similarity(one, many.join("")));
+    };
+    /* k 本の many に one を当てる最良スコア。戻り {k, sc} */
+    const bestJoin = (one, many, maxK) => {
+      let bestK = 0, bestSc = 0;
+      const lim = Math.min(many.length, maxK || many.length);
+      for (let k = 1; k <= lim; k++) {
+        /* ★空行を join に巻き込まない（作者報告 2026-08-15）。
+           巻き込むと【相方の空行が余る】ので、「右で空行を追加・左で空行を削除」が
+           1 行ずれて交互に並ぶ（gap の縞と実体の空行が左右で入れ違いに見える）。
+           空行を足しても似ているはずはないのに k=2 が勝つのは similarity が非単調だから——
+           接頭＋接尾が SIM_THRESHOLD 以上なら【即 return】するので、
+           改行を足して接尾が崩れると dice を測る枝に落ち、そちらのほうが高く出ることがある。
+           similarity 側を毎回 max にすると 21,000 行の差分で dice を常に測ることになるので、
+           ここで止める（12章 #121）。 */
+        if (k > 1 && many[k - 1] === "") break;
+        const sc = joinSim(one, many.slice(0, k));
+        if (sc > bestSc + 1e-9) { bestSc = sc; bestK = k; }
       }
-    } else {
-      diffBigWarned = false;                 // 下回ったら次に超えたときまた知らせる
+      return { k: bestK, sc: bestSc };
+    };
+    const pairSc = (d, a) => {
+      if (d === a) return 2;
+      if (!d.length || !a.length) return -1;
+      const c = commonSpan(d, a);
+      const covered = c.p + c.s;
+      const minL = Math.min(d.length, a.length);
+      const maxL = Math.max(d.length, a.length) || 1;
+      /* 一方が他方のほぼ接頭＋接尾（語尾を足しただけ等）→ 必ず chg */
+      if (minL > 0 && covered >= minL * 0.85) {
+        return (2 * covered) / (d.length + a.length);
+      }
+      if (minL / maxL < 0.55) return -1;
+      const sc = similarity(d, a);
+      return sc >= SIM_THRESHOLD ? sc : -1;
+    };
+
+    while (dels.length || adds.length) {
+      if (!dels.length) { while (adds.length) emitAdd(adds.shift()); break; }
+      if (!adds.length) { while (dels.length) emitDel(dels.shift()); break; }
+
+      /* 空行は単独行。ただし空×空は same（左右に空白行が並ぶ） */
+      if (adds[0] === "" && dels[0] === "") {
+        rows.push({ k: "same", s: "" });
+        dels.shift(); adds.shift();
+        continue;
+      }
+      if (adds[0] === "") { emitAdd(adds.shift()); continue; }
+      if (dels[0] === "") { emitDel(dels.shift()); continue; }
+
+      /* 1 del → 複数 add（行分割＋軽い修正） */
+      const jD = bestJoin(dels[0], adds, Math.min(adds.length, 8));
+      /* 1 add → 複数 del（行結合） */
+      const jA = bestJoin(adds[0], dels, Math.min(dels.length, 8));
+      const p01 = pairSc(dels[0], adds[0]);
+
+      /* 分割: k>=2 で十分似ている、または k>=1 で 1:1 より join が明確に良い */
+      if (jD.k >= 2 && jD.sc >= SIM_THRESHOLD && jD.sc >= p01 - 0.02) {
+        emitChg(dels.shift(), adds.splice(0, jD.k).join("\n"));
+        continue;
+      }
+      if (jA.k >= 2 && jA.sc >= SIM_THRESHOLD && jA.sc >= p01 - 0.02) {
+        emitChg(dels.splice(0, jA.k).join("\n"), adds.shift());
+        continue;
+      }
+      /* 1:1 */
+      if (p01 >= SIM_THRESHOLD) {
+        emitChg(dels.shift(), adds.shift());
+        continue;
+      }
+      /* 1 del → 1 add でも joinSim が高い（ほぼ置換） */
+      if (jD.k === 1 && jD.sc >= SIM_THRESHOLD) {
+        emitChg(dels.shift(), adds.shift());
+        continue;
+      }
+      if (jA.k === 1 && jA.sc >= SIM_THRESHOLD) {
+        emitChg(dels.shift(), adds.shift());
+        continue;
+      }
+
+      /* どちらを先に捨てると先が開けるか */
+      let maxD = 0, maxA = 0;
+      for (let i = 0; i < adds.length && i < 6; i++) {
+        maxD = Math.max(maxD, pairSc(dels[0], adds[i]), joinSim(dels[0], adds.slice(0, i + 1)));
+      }
+      for (let i = 0; i < dels.length && i < 6; i++) {
+        maxA = Math.max(maxA, pairSc(dels[i], adds[0]), joinSim(adds[0], dels.slice(0, i + 1)));
+      }
+      if (maxA > maxD) emitAdd(adds.shift());
+      else emitDel(dels.shift());
     }
-    let html = "", plain = "";
-    const line = (cls, mk, inner, rawText) =>
-      '<div class="dl ' + cls + '" data-t="' + esc(rawText).replace(/"/g, "&quot;") + '">' +
-      '<span class="mk">' + mk + '</span><span class="tx">' + inner + '</span></div>';
-
-    if (!changed) html += '<div class="dsame-all">変更はありません</div>';
-
-    for (const r of rows) {
-      if (r.k === "same") {
-        html += line("same", "&nbsp;", esc(r.s), r.s); plain += r.s + "\n";
-      } else if (r.k === "del") {
-        html += line("del", "−", esc(r.s), r.s); plain += r.s + "\n";
-      } else if (r.k === "add") {
-        html += line("add", "＋", esc(r.s), r.s); plain += r.s + "\n";
-      } else {
-        const sp = r.sp;
-        const wrap = p => esc(p[0]) + (p[1] ? '<span class="ci">' + esc(p[1]) + "</span>" : "") + esc(p[2]);
-        html += line("del", "−", wrap(sp.d), r.d);
-        html += line("add", "＋", wrap(sp.a), r.a);
-        plain += r.d + "\n" + r.a + "\n";
-      }
-    }
-    return { html: html, plain: plain };
-  }
-
-  /**
-   * 差分からミニマップ用のマーカーを作る。
-   *  L … 差分ビュー（「変更」タブ）の表示行に対応（削除=赤 / 追加=緑）。
-   *  右ミニマップには変更マーカーを出さない。map/rev は左右の行対応用。
-   */
-  function buildDiffMarks(rows) {
-    const L = [], map = [], rev = [];
-    // map[原稿の行番号] = 表示行番号 ／ rev[表示行番号] = 原稿の行番号
-    let li = 0, ni = 0;
-    for (const r of rows) {
-      if (r.k === "same") { map[ni] = li; rev[li] = ni; li++; ni++; }
-      else if (r.k === "del") {
-        L.push({ i: li, k: "del" });
-        rev[li] = ni;                   // 削除行は「その位置」の原稿行を指す
-        li++;
-      }
-      else if (r.k === "add") {
-        map[ni] = li; rev[li] = ni;
-        L.push({ i: li, k: "add" });
-        li++; ni++;
-      }
-      else {                            // chg: 表示は削除行＋追加行の2行
-        L.push({ i: li, k: "del" });
-        L.push({ i: li + 1, k: "add" });
-        map[ni] = li + 1;               // 原稿の行に対応するのは「追加」側
-        rev[li] = ni; rev[li + 1] = ni;
-        li += 2; ni++;
-      }
-    }
-    if (!map.length) map[0] = 0;
-    if (!rev.length) rev[0] = 0;
-    return { L: L, map: map, rev: rev, lines: li };
-  }
-
-  /** 「変更」タブの tooltip 文面。renderTabs() と computeDiff() の両方がこれを使う（rev42）。
-   *  t.sum（computeDiff が持たせる ＋N/−N）が無いうちは素の文面だけ返す。 */
-  const diffTitle = t => "初期からの変更（閉じられません）" +
-    (t && t.sum ? "　＋" + t.sum.add + "行 −" + t.sum.del + "行" : "");
-
-  function computeDiff() {
-    const t = state.tabs.find(x => x.kind === SYS.DIFF);
-    if (!t) return;
-    const rows = buildDiffRows(state.origin.text, docText());
-    const del = rows.filter(r => r.k === "del" || r.k === "chg").length;
-    const add = rows.filter(r => r.k === "add" || r.k === "chg").length;
-    const marks = buildDiffMarks(rows);
-    t.marks = marks.L;
-    t.lineMap = marks.map;
-    t.revMap = marks.rev;
-    const r = renderDiffHtml(rows);
-    t.html = r.html;
-    t.text = r.plain;
-    t.heads = [];
-    t.sum = { add: add, del: del };
-    /* タブの tooltip に増減行数を出す（検索バーの枠は常に N / M に使うので流用しない）。
-       renderTabs() を呼ぶとタブDOMを作り直して「閉じる武装」状態が消えるので、属性だけ書き換える。
-       ★rev42: 文面の組み立ては diffTitle() の1か所だけ。ここで後付けしても、その後 renderTabs()
-       （タブ切替・タブ開閉・undoClose()・updateUndoChip() 経由など）が走ると消えていた。 */
-    const tabEl2 = $("tabbar").querySelector('.tab[data-id="' + t.id + '"]');
-    if (tabEl2) tabEl2.title = diffTitle(t);
-    state.diffStale = false;
-    return t.sum;
   }
 
   function setOrigin(text, name) {
     state.origin = { text: text, name: name || state.fileName };
     const o = state.tabs.find(x => x.kind === SYS.ORIGIN);
     if (o) { o.text = state.origin.text; o.heads = null; o.scroll = 0; }
-    state.diffStale = true;
-    computeDiff();                       // 差分マーカーを即座に更新する
-    // 「初期」「変更」の中身が差し替わったので、検索も必ずやり直す（5.4D）
-    if (isSysActive(SYS.DIFF) || isSysActive(SYS.ORIGIN)) runRefSearch();
+    if (state.diffMode) rebuildDiffView();
+    // 「初期」の中身が差し替わったので、検索も必ずやり直す（5.4D）
+    if (isSysActive(SYS.ORIGIN)) runRefSearch();
     /* ★右ミニマップは描き直さない。右 MM が読むのは ta().value / state.edHits / state.caret /
        edHeads() で、setOrigin はそのどれも変えない（右 MM に変更マーカーは出ない）。 */
   }
   const isSysActive = kind => { const t = activeTabObj(); return !!t && t.kind === kind; };
 
-  /* ---- 差分ビューを右ペインのカーソル行に追従させる ---- */
-  let diffLineEls = [];     // renderRef のたびにキャッシュする .dl の配列
-  let curLineEl = null;
+  /* ---- 差分表示の行 DOM（5.23）。左＝#ref-inner の .drow ／右＝#edit-diff-inner の .drow ---- */
+  let diffLineEls = [];
+  let diffLineElsR = [];
 
-  let lastSyncCaret = -1;
-  /* 左→右の位置合わせ（rightToHere）の最中だけ true。
-     このときは左ペインをスクロールさせない。
-     右のスクロールは端で頭打ちになったり端数が出たりするので、
-     「揃ったから左は動かないはず」に頼ると必ずズレて左が飛ぶ。 */
-  let followNoScroll = false;
-
-  /** 追従の発火条件は「右にフォーカスがあり、かつカーソルが実際に動いたとき」だけ（5.13.4B）。
-   *  ★左ペインをクリックすると blur するが、blur も updateCaret を通るので、
-   *    フォーカスの判定が無いと読んでいた位置を奪われる。
-   *  force = true はタブ切替や「右をここへ」など明示的な操作のとき。 */
+  /** 本文が変わっていたら diff の行 DOM を作り直す（5.23）。
+   *  ★「変更」タブへ左ペインを追従させる経路（5.13.4B）は、タブごと廃止した。
+   *  force は残してあるが、いまはどちらでも同じ（呼び出し側の互換のため）。 */
   function syncDiffToCaret(force) {
-    if (!isSysActive(SYS.DIFF)) return;
-    if (!force) {
-      if (document.activeElement !== ta()) return;
-      if (state.caret === lastSyncCaret) return;
+    if (suppressLeftScroll) return;
+    if (state.diffMode) {
+      /* ★600ms の遅延再構築は【外しました】（作者指示 2026-08-14）。
+         元の役目は「巨大 textarea への打鍵ごとに re-diff が走るのを抑える」ことでしたが、
+         diff 中は本体 textarea に打てない（行エディタ → applyDiffDocChange がその場で
+         再構築する）ので、役目は終わっています。残っていると:
+           ・キャレットが動くだけで LCS ＋ 全行再レイアウトが走る
+           ・再構築の最後は「読んでいた位置」への当て直しなので、
+             直前に合わせた位置（検索ジャンプなど）を 600ms 後に壊す
+             （実測：10,223 → 10,108 へ引き戻し）
+         ＝バグの元でした。
+         ★代わりに【その場で】作り直す。ただし本文が変わっていないときは何もしない
+           （キャレット移動では走らない）。行 DOM を作り直さずに本文が変わる経路
+           （ツール変換・ファイル挿入・Undo など）への保険はこれで残ります。
+         ★ただし、この関数は【setWholeDoc の途中】から呼ばれることが多い
+           （applyDiffDocChange・OFF 遷移・再構築中の commit）。その場で作り直すと
+           二重に走る／再構築の中から再構築を呼ぶ（再入）ので、
+           マイクロタスク 1 つだけ遅らせて、そのとき本当に食い違っていたら作り直す。
+           遅延は「いまの処理が終わった直後」で、目に見える遅れは無い。 */
+      if (diffRebuildBusy) return;
+      if (diffBuiltText !== null && diffBuiltText === docText()) return;
+      if (diffTimer) return;                       // 予約済み
+      diffTimer = 1;
+      Promise.resolve().then(() => {
+        diffTimer = null;
+        if (!state.diffMode || diffRebuildBusy) return;
+        if (diffBuiltText !== null && diffBuiltText === docText()) return;
+        rebuildDiffView();
+      });
+      return;
     }
-    const t = activeTabObj();
-    if (!t || !t.lineMap || !diffLineEls.length) return;
-
-    const v = docText();
-    const before = v.slice(0, state.caret);
-    const caretLine = before.split("\n").length - 1;
-    const dl = t.lineMap[Math.min(caretLine, t.lineMap.length - 1)];
-    let el = diffLineEls[dl];
-    if (!el) return;
-
-    /* 右ペイン上でのキャレットの画面Y位置に、左の対応行を合わせる。
-       キャレットが右ペインの表示範囲の外にあるときは、キャレットではなく
-       【右ペインでいま見えている先頭行】に合わせる。
-       ファイルを開いた直後は textarea の仕様でキャレットが文末に来るため、
-       キャレットを基準にすると「切り替えた瞬間に左が最下部へ飛ぶ」ことになる。 */
-    const eb = body();
-    const ebR = eb.getBoundingClientRect();
-    const H = $("ref-body").clientHeight;
-    const viewH = rScroll().clientHeight;
-    let y0 = rectForOffset(state.caret).top - ebR.top;
-    let y;
-    if (y0 >= 0 && y0 <= viewH) {
-      y = y0;                                     // キャレットが見えている → その高さに合わせる
-    } else {
-      // 見えていない → 右ペインの上端にある行を基準にし、左もその行を上端に置く
-      syncMirrorStyle(); syncMirrorText();
-      syncEditLayersScroll();
-      const topOff = offsetFromPoint(ebR.left + 24, ebR.top + 2);
-      const topLine = docText().slice(0, topOff).split("\n").length - 1;
-      const dl2 = t.lineMap[Math.min(topLine, t.lineMap.length - 1)];
-      const el2 = diffLineEls[dl2];
-      if (el2) { el = el2; }
-      y = 2;
-    }
-    y = Math.min(Math.max(y, 0), Math.max(0, H - 24));
-
-    const max = Math.max(0, $("ref-body").scrollHeight - H);
-    const top = Math.max(0, Math.min(max, el.offsetTop - y));
-    // 位置合わせ直後は左を動かさない。行の強調だけ更新する
-    if (!followNoScroll && Math.abs($("ref-body").scrollTop - top) > 0.5) $("ref-body").scrollTop = top;
-
-    if (curLineEl !== el) {
-      if (curLineEl) curLineEl.classList.remove("cur-line");
-      el.classList.add("cur-line");
-      curLineEl = el;
-    }
-    lastSyncCaret = state.caret;
-    /* 左 MM は追従のたびに全面再描画しない（打鍵中の主コスト）。
-       force（タブ切替・diff 再計算後）は即描画。通常は短くまとめる。 */
-    if (force) {
-      if (leftMmFollowTimer) { clearTimeout(leftMmFollowTimer); leftMmFollowTimer = null; }
-      drawMinimap("left");
-    } else if (!leftMmFollowTimer) {
-      leftMmFollowTimer = setTimeout(() => {
-        leftMmFollowTimer = null;
-        drawMinimap("left");
-      }, 120);
-    }
-  }
-
-  /** 左（差分ビュー）でいま見ている行に、右ペインの表示とカーソルを合わせる */
-  function rightToHere() {
-    const t = activeTabObj();
-    if (!t || t.kind !== SYS.DIFF || !t.revMap || !diffLineEls.length) return;
-    const rb = $("ref-body"), eb = rScroll();
-    /* ★Safari: focus / setSelectionRange / レイアウトのあとに左の scrollTop が
-       勝手に 0 へ戻ることがある（Chrome では起きない）。操作前の位置を覚えて最後に戻す。 */
-    const leftKeep = rb.scrollTop;
-
-    // 左ビューの上端付近にある表示行を二分探索で求める
-    const top = leftKeep + 6;
-    let lo = 0, hi = diffLineEls.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (diffLineEls[mid].offsetTop <= top) lo = mid; else hi = mid - 1;
-    }
-    const el = diffLineEls[lo];
-    const v = docText();
-    const ni = Math.min(t.revMap[lo] != null ? t.revMap[lo] : 0, v.split("\n").length - 1);
-
-    // その行の先頭オフセット
-    let off = 0;
-    for (let k = 0; k < ni; k++) {
-      const nx = v.indexOf("\n", off);
-      if (nx < 0) break;
-      off = nx + 1;
-    }
-
-    // 左でその行が出ている画面Y位置に、右の同じ行を合わせる
-    const yL = el.offsetTop - leftKeep;
-    const tx = ta();
-    tx.focus();
-    setDocSel(off, off);            /* ★窓の外なら張り直してから合わせる（5.19） */
-    syncMirrorStyle(); syncMirrorText();
-    syncEditLayersScroll();
-    const cur = rectForOffset(off).top - body().getBoundingClientRect().top;
-    const max = Math.max(0, eb.scrollHeight - eb.clientHeight);
-    eb.scrollTop = Math.max(0, Math.min(max, eb.scrollTop + (cur - yL)));
-    syncEditLayersScroll();
-    // 左は動かさない。ここで追従を働かせると、右のスクロールが端で
-    // 頭打ちになった分だけ左が引きずられて「押したら左が飛ぶ」ことになる
-    followNoScroll = true;
-    updateCaret();          // キャレット表示・行桁・対応行の強調は更新する
-    followNoScroll = false;
-    lastSyncCaret = state.caret;   // 直後の blur などでも動かないようにする
-    if (Math.abs(rb.scrollTop - leftKeep) > 0.5) rb.scrollTop = leftKeep;
-    drawMinimap("right");
-    toast((ni + 1) + "行目に合わせました");
   }
 
   let diffTimer = null;
-  function scheduleDiff() {
-    state.diffStale = true;
-    // ★非表示の「変更」タブまで入力のたびに LCS しない。
-    //   以前は 1.2s 後に裏計算しており、長文で打ち止まり直後の一拍遅延になっていた。
-    //   tooltip の ＋N/−N と marks は、タブを開いたとき（setActiveTab / renderRef）に作る。
-    clearTimeout(diffTimer);
-    diffTimer = null;
-    if (!isSysActive(SYS.DIFF)) return;
-    // 表示中だけ、入力が止まってから短めに再計算
-    diffTimer = setTimeout(() => {
-      diffTimer = null;
-      computeDiff();
-      runRefSearch();          // 表示テキストが変わったので検索もやり直す（5.4D）
-      // 再描画で位置がずれるので、右を触っている最中だけ位置を取り直す
-      if (document.activeElement === ta()) syncDiffToCaret(true);
-      /* ★ここでも右ミニマップは描き直さない。入力の full オーバーレイが描く。 */
-    }, 600);
+  /* =======================================================
+     5.23 P1: novdiff 型アライン表示
+     ======================================================= */
+  let diffJumpI = -1;
+  let diffSyncLock = false;
+  let diffUnlockRAF = 0;
+  let diffFlashTimer = null;
+  let pendingDiffAlignOff = null;  // ON 直後：右原稿オフセット（表示上端）
+  let diffSessionReadOff = null; // align で決めた読み位置
+  let diffSessionScrolled = false;
+  let diffAligning = false; // rebuild/align 中は左右 scroll 同期しない
+  /* ★正確に合わせた位置を、左右同期ハンドラの【比例マッピング】に上書きさせないための時限。
+     holdDiffSync（rAF 2 枚）も diffAligning も、再構築の rAF が finally で解除するので
+     取り合いになる。ここだけは他のどこからも触らない専用の時限にする（作者点検 2026-08-14）。
+     実測：検索ジャンプで 7,515 に置いた直後、比例同期が 7,059 へ引き戻していた。 */
+  let diffAlignHoldUntil = 0;
+  /* いまの行 DOM がどの本文から作られたか。syncDiffToCaret の空振り再構築を止めるため */
+  let diffBuiltText = null;
+  /* ★上端に見えている文字の【行内位置】。
+       delta = （その文字の上端の画面 y）−（ペイン上端の画面 y）。ふつう −行高〜0 の負の値。
+     ON→OFF→ON でオフセットだけを控えると、その文字の【上端】がペイン上端に来るように
+     合わせ直すので、行の途中で止まっていたぶん（最大 1 行）本文が上へずれる。
+     実測 −13〜−16px（実原稿・行高 28.5px）。AGENTS 6節 罠⑤ が diff 経路で再発していた。
+     ★測る関数が書き、戻す関数が読む。この 1 か所に閉じること。 */
+  let diffAlignDelta = 0;
+  /* diff 中 Ctrl+↑↓ で最後に着地した見出しの論理行。
+     上端の測りが 1 行手前を返すと、同じ見出しへ何度も飛ぶ（Safari で顕著）。 */
+  let diffNavHeadLine = null;
+  let suppressLeftScroll = false; // ON→OFF 中：renderRef の追従で左を動かさない
+  function holdDiffSync() {
+    diffSyncLock = true;
+    cancelAnimationFrame(diffUnlockRAF);
+    diffUnlockRAF = requestAnimationFrame(() => {
+      diffUnlockRAF = requestAnimationFrame(() => { diffSyncLock = false; });
+    });
+  }
+
+  function baseTabText() {
+    const t = activeTabObj();
+    if (!t) return "";
+    if (t.kind === SYS.ORIGIN) return state.origin.text || "";
+    return t.text || "";
+  }
+
+  /** 見出し行を span で包む。★textContent は変えない（esc も .ci も同じ約束）。
+   *  セル内オフセット → 原稿オフセットの写像（cellOffsetAtY・diffDropInfoAt など）は
+   *  textContent 基準なので、ここが崩れると桁が全部ずれる。
+   *  行頭ルールの Lv3 は色の系統（赤／青）が分からないので赤に寄せる
+   *  （本文中の inline Lv3 は diff 表示では出さない——件数が多く、差分の色と混ざる）。 */
+  function diffHdWrap(raw, inner) {
+    if (!headsOn()) return inner;
+    const lv = headLevel(raw);
+    if (!lv) return inner;
+    const sfx = lv === 3 ? "3r" : String(lv);
+    return '<span class="dhd dhd' + sfx + '">' + inner + "</span>";
+  }
+  /** 行の配列 → セルの中身。見出し行だけ包む。 */
+  function diffCellHtml(lines) {
+    if (!headsOn()) return esc(lines.join("\n"));
+    const out = [];
+    for (let k = 0; k < lines.length; k++) out.push(diffHdWrap(lines[k], esc(lines[k])));
+    return out.join("\n");
+  }
+
+  /** 原稿行 → view 行の逆引き。差分表示中のミニマップが見出しを写すのに使う。
+   *  ★viewLineForDocLine は docOfView を線形に走るので、見出し 100 本 ×  7,861 行を
+   *    スクロールのたびに回すことになる。1 回作って state.diffView に持たせる
+   *    （diffView は再構築のたびに作り直されるので、勝手に無効になる）。 */
+  function docToViewMap() {
+    const dvw = state.diffView;
+    if (!dvw) return null;
+    if (dvw.docToView) return dvw.docToView;
+    const dv = dvw.docOfView || [];
+    const m = [];
+    for (let v = 0; v < dv.length; v++) {
+      const d = dv[v];
+      if (d >= 0 && m[d] === undefined) m[d] = v;
+    }
+    dvw.docToView = m;
+    return m;
+  }
+
+  /* =========================================================================
+     5.23.13 画面外の same 塊はレイアウトを省く（content-visibility・Ver.1.4.5）
+     -------------------------------------------------------------------------
+     12 万字の diff ON は、実測で【レイアウトが 130〜160ms】ぶんを占めていた（S-5）。
+     画面外の塊に content-visibility: auto を掛けると 98ms → 3ms になる（実測）。
+
+     ★高さは「測る」のではなく【計算する】こと。
+       画面外の行を測ると【プレースホルダの値】が返るので、それを minHeight に
+       焼くと壊れる（12章 #118「整数の offsetHeight を焼き戻さない」と同じ型）。
+     ★掛けるのは same 塊だけ。same は左右まったく同じ文字なので、
+       同じ式で計算すれば【左右の高さは構造的に必ず一致する】（左右同期の前提・§42）。
+       文字が食い違う chg / add / del には掛けない（1 行なのでレイアウトも軽い）。
+     ★contain-intrinsic-size の auto を付けると、一度描いた塊は
+       【実寸をブラウザが覚える】ので、スクロールするほど正確になる。
+     ========================================================================= */
+  const CV_MIN_LINES = 20;      /* これ未満の塊は素のまま（囲うほうが高くつく） */
+
+  /** 折り返し幅（px）と字級。syncDiffWrap と【同じ式】を使うこと（値の二重定義を作らない）。 */
+  function diffWrapMetrics() {
+    const fs = parseFloat($("opt-font").value) || 15;
+    const box = Math.min($("ref-body").clientWidth, $("edit-body").clientWidth);
+    const maxCh = Math.max(WIDTH_MIN, Math.floor((box - WIDTH_PAD) / fs));
+    const ch = Math.min(effWidthChars(), maxCh);
+    const px = Math.round(fs * ch) + WIDTH_PAD;
+    let lh = fs * 1.9;                                   /* CSS の line-height: 1.9 */
+    try {
+      const v = parseFloat(getComputedStyle($("edit-diff-inner")).lineHeight);
+      if (isFinite(v) && v > 0) lh = v;
+    } catch (_) {}
+    return { fs: fs, px: Math.max(1, px), lh: lh };
+  }
+
+  /** その 1 行が何行に折り返されるか。和文は全角＝字級ぴったり、半角は 0.5 で数える。
+   *  実測（実原稿 123,152 字）で塊 19 本のうち 17 本が誤差 0px、最悪 29px（-0.2%）。 */
+  function estWrapLines(s, m) {
+    let u = 0;
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      u += (c < 0x3000 || (c >= 0xFF61 && c <= 0xFF9F)) ? 0.5 : 1;
+    }
+    return Math.max(1, Math.ceil(u * m.fs / m.px));
+  }
+  /** 塊の高さ（px）を計算する。lines は論理行の配列。 */
+  function estChunkPx(lines, m) {
+    let dl = 0;
+    for (let k = 0; k < lines.length; k++) dl += estWrapLines(lines[k], m);
+    return Math.round(dl * m.lh);
+  }
+  /** 字級・表示幅が変わったら、計算し直して入れ直す（測らない）。
+   *  ★再構築の途中（diffAligning）は古い DOM を触ることになるので何もしない。 */
+  function refreshDiffCv() {
+    if (!state.diffMode || diffAligning) return;
+    const m = diffWrapMetrics();
+    ["ref-inner", "edit-diff-inner"].forEach(id => {
+      const host = $(id);
+      if (!host) return;
+      host.querySelectorAll(".drow.cv").forEach(el => {
+        const cell = el.querySelector(".dcell");
+        if (!cell) return;
+        el.style.containIntrinsicSize = "auto " + estChunkPx((cell.textContent || "").split("\n"), m) + "px";
+      });
+    });
+  }
+
+  function drowHtml(side, k, inner, gap, a, b, cvPx) {
+    const sideC = k === "chg" ? " side-" + side : "";
+    const ab = ' data-a="' + a + '" data-b="' + b + '"';
+    if (gap) {
+      return '<div class="drow k-' + k + sideC + ' gap" data-k="' + k + '"' + ab + '><div class="dcell gap"> </div></div>';
+    }
+    /* ★末尾が改行のセルは【最後の空行が描かれない】。CSS はブロック末尾の改行を落とすので
+       "あ\n" は 1 行分の高さしか持ちません（実測 29px。"あ\n\n" は 57px）。
+       same 塊の最後の行が空行だと 1 行ぶん詰まり、その空行が無いように見えます
+       （作者報告 2026-08-14「右の空行に空行を挿入しても空行が増えない」。
+       正本には入っているので OFF に戻すと現れる、という見え方になる）。
+       ★<br> で補うこと。ミラー（5.19）が使う ZWSP は textContent を変えてしまい、
+       セル内オフセット → 原稿オフセットの写像（diffDropInfoAt・cellOffsetAtY など）が
+       1 文字ずれます。<br> は textContent に出ないので写像を壊しません。 */
+    const tail = inner.charAt(inner.length - 1) === "\n" ? "<br>" : "";
+    /* cvPx が来た塊だけ content-visibility を掛ける（5.23.13）。左右で同じ値が来る */
+    const cvC = cvPx ? " cv" : "";
+    const cvS = cvPx ? ' style="contain-intrinsic-size:auto ' + cvPx + 'px"' : "";
+    return '<div class="drow k-' + k + sideC + cvC + '" data-k="' + k + '"' + ab + cvS +
+      '><div class="dcell">' + inner + tail + "</div></div>";
+  }
+
+  function equalizeDiffRows() {
+    const L = $("ref-inner").querySelectorAll(".drow");
+    const R = $("edit-diff-inner").querySelectorAll(".drow");
+    const n = Math.min(L.length, R.length);
+    if (!n) return;
+    /* ★高さ読みと書きを分離する。交互にやると毎回 reflow で Enter/BS が死ぬ */
+    for (let i = 0; i < n; i++) {
+      L[i].style.minHeight = "";
+      R[i].style.minHeight = "";
+    }
+    /* ★content-visibility を掛けた same 塊は【測らない・書かない】（5.23.13）。
+       画面外だと実寸ではなくプレースホルダの値が返るので、それを minHeight に焼くと
+       行が育つ／左右が食い違う（12章 #118 と同じ型）。
+       同じ文字なので左右の高さは構造的に一致しており、揃える必要がそもそも無い。 */
+    const skip = new Array(n);
+    for (let i = 0; i < n; i++) {
+      skip[i] = L[i].classList.contains("cv") && R[i].classList.contains("cv");
+    }
+    void (L[0] && L[0].offsetHeight);
+    /* ★整数の offsetHeight を焼くと、行高 28.5px が 29px に切り上がって【毎回 +0.5px 育つ】。
+       小数（getBoundingClientRect）で測り、左右が食い違うときだけ書く（Ver.1.4.1・S-2）。 */
+    const hl = new Array(n), hr = new Array(n);
+    for (let i = 0; i < n; i++) {
+      if (skip[i]) continue;
+      hl[i] = L[i].getBoundingClientRect().height;
+      hr[i] = R[i].getBoundingClientRect().height;
+    }
+    for (let i = 0; i < n; i++) {
+      if (skip[i]) continue;
+      if (Math.abs(hl[i] - hr[i]) <= 0.5) continue;      // すでに揃っている＝触らない
+      /* ★高いほうにも minHeight を書くと、Safari で 28.5→29 に切り上がって
+         全高が育つ（作者 Mac Safari・S-2 で +7px）。短い側だけ伸ばす。 */
+      if (hl[i] < hr[i] - 0.5) L[i].style.minHeight = hr[i].toFixed(2) + "px";
+      else if (hr[i] < hl[i] - 0.5) R[i].style.minHeight = hl[i].toFixed(2) + "px";
+    }
+  }
+
+  function syncDiffWrap() {
+    if (!state.diffMode) return;
+    /* ★折り返し幅は diffWrapMetrics() が正（5.23.13 の高さ計算と同じ式を使う。
+       ここで別式を書くと、計算した高さと実際の折り返しが黙ってずれる）。 */
+    const m = diffWrapMetrics();
+    const px = m.px + "px";
+    $("ref-inner").style.maxWidth = px;
+    $("edit-diff-inner").style.maxWidth = px;
+    $("ref-inner").style.fontSize = m.fs + "px";
+    $("edit-diff-inner").style.fontSize = m.fs + "px";
+    /* 字級・表示幅が変わったら塊の高さを計算し直す（再構築の途中では何もしない） */
+    refreshDiffCv();
+  }
+
+  function diffYForLine(line, els) {
+    els = els || diffLineEls;
+    if (!els.length) return 0;
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i];
+      const a = +el.dataset.a, b = +el.dataset.b;
+      if (line < b || i === els.length - 1) {
+        const span = Math.max(1, b - a);
+        const t = Math.max(0, Math.min(1, (line - a) / span));
+        return el.offsetTop + t * el.offsetHeight;
+      }
+    }
+    return els[els.length - 1].offsetTop;
+  }
+  function diffLineAtY(y, els) {
+    els = els || diffLineEls;
+    if (!els.length) return 0;
+    let lo = 0, hi = els.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (els[mid].offsetTop <= y) lo = mid; else hi = mid - 1;
+    }
+    const el = els[lo];
+    const a = +el.dataset.a, b = +el.dataset.b;
+    const span = Math.max(1, b - a);
+    const t = Math.max(0, Math.min(0.9999, (y - el.offsetTop) / Math.max(1, el.offsetHeight)));
+    return a + t * span;
+  }
+
+  function rebuildDiffView() {
+    if (!state.diffMode) return;
+    /* 編集中 1 行は先に正本へ（再 diff で捨てない） */
+    commitDiffLine({ silent: true, noRebuild: true });
+    /* ★再描画中に左の古い scrollTop が右へ同期すると、OFF で動かした位置より
+       大きく飛ぶ。align 完了まで左右 scroll 同期を止める。 */
+    diffAligning = true;
+    holdDiffSync();
+    /* ON 直後の pending を優先。それ以外は現在の右上端を維持。 */
+    let keepRightOff = pendingDiffAlignOff;
+    if (keepRightOff == null) {
+      try {
+        if (diffLineElsR.length) keepRightOff = docOffsetAtDiffRightTop();
+      } catch (_) { keepRightOff = null; }
+    } else {
+      pendingDiffAlignOff = null;
+    }
+    const t = activeTabObj();
+    state.diffBaseTabId = t ? t.id : null;
+    const base = baseTabText();
+    const neu = docText();
+    if (!t) {
+      const msg = '<div class="dsame-all">比較する左タブがありません</div>';
+      $("ref-inner").innerHTML = msg;
+      $("edit-diff-inner").innerHTML = msg;
+      state.diffView = { n: 0, marks: [], change: [], docOfView: [], baseOfView: [] };
+      diffLineEls = [];
+      diffLineElsR = [];
+      hideDiffLineEd();
+      diffAligning = false;
+      return;
+    }
+    if (base === "" && neu === "") {
+      const msg = '<div class="dsame-all">比較する本文がありません</div>';
+      $("ref-inner").innerHTML = msg;
+      $("edit-diff-inner").innerHTML = msg;
+      $("ref-empty").style.display = "none";
+      $("edit-empty").style.display = "none";
+      innerDiffClass(true);
+      state.diffView = { n: 0, marks: [], change: [], docOfView: [], baseOfView: [] };
+      diffLineEls = [];
+      diffLineElsR = [];
+      hideDiffLineEd();
+      drawLeftMM();
+      diffAligning = false;
+      return;
+    }
+    /* 同一本文は LCS も行 DOM も要らない（10万字で初回が固まる主因） */
+    const ident = base === neu;
+    const rows = ident
+      ? base.split("\n").map(s => ({ k: "same", s: s }))
+      : buildDiffRows(base, neu);
+    let left = "", right = "";
+    const marks = [], change = [];
+    /* viewLine → 原稿の論理行番号（gap は -1）。P2 の 1 行編集用 */
+    const docOfView = [];
+    /* viewLine → 基準タブ（左）の論理行番号（gap は -1）。docOfView と対称。
+       引用 DnD で、左の選択を【表示用 HTML ではなく基準タブ本文】から切り出すために要る（5.23 §6） */
+    const baseOfView = [];
+    let i = 0;
+    let docLine = 0;
+    let baseLine = 0;
+    const changed = !ident && rows.some(r => r.k !== "same");
+    if (!changed) {
+      const ban = '<div class="dsame-all">変更はありません</div>';
+      left += ban; right += ban;
+    }
+    const wrapM = diffWrapMetrics();        /* 折り返し幅・字級・行高（5.23.13） */
+    const flushSame = buf => {
+      if (!buf.length) return;
+      const a = i, b = i + buf.length;
+      const h = diffCellHtml(buf);          /* 見出し行は文字色だけ付ける（5.23.11） */
+      /* 大きい塊だけ、画面外のレイアウトを省く。高さは測らずに計算する（5.23.13） */
+      const cv = buf.length >= CV_MIN_LINES ? estChunkPx(buf, wrapM) : 0;
+      left += drowHtml("l", "same", h, false, a, b, cv);
+      right += drowHtml("r", "same", h, false, a, b, cv);
+      for (let k = 0; k < buf.length; k++) {
+        docOfView[i + k] = docLine++;
+        baseOfView[i + k] = baseLine++;
+      }
+      i = b;
+      buf.length = 0;
+    };
+    const sameBuf = [];
+    for (const r of rows) {
+      if (r.k === "same") { sameBuf.push(r.s); continue; }
+      flushSame(sameBuf);
+      if (r.k === "del") {
+        left += drowHtml("l", "del", diffCellHtml([r.s]), false, i, i + 1);
+        right += drowHtml("r", "del", " ", true, i, i + 1);
+        marks.push({ i: i, k: "del" });
+        change.push(i);
+        docOfView[i] = -1;
+        baseOfView[i] = baseLine++;
+        i++;
+      } else if (r.k === "add") {
+        left += drowHtml("l", "add", " ", true, i, i + 1);
+        right += drowHtml("r", "add", diffCellHtml([r.s]), false, i, i + 1);
+        marks.push({ i: i, k: "add" });
+        change.push(i);
+        docOfView[i] = docLine++;
+        baseOfView[i] = -1;
+        i++;
+      } else {
+        /* ★1 chg に \\n が載ると view は1行なのに原稿だけ複数進む。
+           Enter 分割後に「次行を選べない／黄枠が消える」原因。
+           左右とも論理行にほぐして docOfView を1:1にする。 */
+        const dLines = String(r.d != null ? r.d : "").split("\n");
+        const aLines = String(r.a != null ? r.a : "").split("\n");
+        const nPair = Math.max(dLines.length, aLines.length, 1);
+        for (let j = 0; j < nPair; j++) {
+          const hasD = j < dLines.length;
+          const hasA = j < aLines.length;
+          const ds = hasD ? dLines[j] : "";
+          const as = hasA ? aLines[j] : "";
+          if (hasD && hasA) {
+            if (ds === as) {
+              left += drowHtml("l", "same", diffCellHtml([ds]), false, i, i + 1);
+              right += drowHtml("r", "same", diffCellHtml([as]), false, i, i + 1);
+              docOfView[i] = docLine++;
+              baseOfView[i] = baseLine++;
+            } else {
+              const sp = charDiffHtml(ds, as);      /* 違う文字だけ色を付ける（文字単位 LCS） */
+              /* 見出しの色は外側、違う文字の色は内側（.ci）。内側が勝つので、
+                 直した文字だけ赤緑・残りは見出し色になる。 */
+              left += drowHtml("l", "chg", diffHdWrap(ds, sp.d), false, i, i + 1);
+              right += drowHtml("r", "chg", diffHdWrap(as, sp.a), false, i, i + 1);
+              marks.push({ i: i, k: "chg" });
+              change.push(i);
+              docOfView[i] = docLine++;
+              baseOfView[i] = baseLine++;
+            }
+          } else if (hasA) {
+            left += drowHtml("l", "add", " ", true, i, i + 1);
+            right += drowHtml("r", "add", diffCellHtml([as]), false, i, i + 1);
+            marks.push({ i: i, k: "add" });
+            change.push(i);
+            docOfView[i] = docLine++;
+            baseOfView[i] = -1;
+          } else {
+            left += drowHtml("l", "del", diffCellHtml([ds]), false, i, i + 1);
+            right += drowHtml("r", "del", " ", true, i, i + 1);
+            marks.push({ i: i, k: "del" });
+            change.push(i);
+            docOfView[i] = -1;
+            baseOfView[i] = baseLine++;
+          }
+          i++;
+        }
+      }
+    }
+    flushSame(sameBuf);
+    $("ref-empty").style.display = "none";
+    $("edit-empty").style.display = "none";
+    innerDiffClass(true);
+    syncDiffWrap();
+    $("ref-inner").innerHTML = left;
+    $("edit-diff-inner").innerHTML = right;
+    diffLineEls = [...$("ref-inner").querySelectorAll(".drow")];
+    diffLineElsR = [...$("edit-diff-inner").querySelectorAll(".drow")];
+    state.diffView = { n: Math.max(1, i), marks: marks, change: change, docOfView: docOfView, baseOfView: baseOfView };
+    diffBuiltText = neu;          // この行 DOM を作った本文（syncDiffToCaret の空振り防止）
+    diffJumpI = -1;
+    hideDiffLineEd();
+    /* ★まず【同期で】高さを揃えて位置を合わせる。
+       rAF に任せるだけだと、行を挿入した直後の 1 フレームが
+       「左右の行がズレたまま」描かれる（12万字では 1 フレームが長く、はっきり見える。
+       作者報告 2026-08-14「挿入してすぐは行がズレる」）。
+       equalizeDiffRows は .drow の本数ぶんしか回らない（論理行数ではない）ので、
+       ここで同期に呼んでも重くない。罠1 が禁じているのは【行ごと DOM】のほう。
+       ただし同期の測定は当てにならないことがある（G-9）ので、
+       下の rAF での再調整は残す——こちらが正、rAF が保険。 */
+    try {
+      equalizeDiffRows();
+      if (keepRightOff != null) alignDiffScrollFromRightOff(keepRightOff);
+    } catch (_) {}
+    requestAnimationFrame(() => {
+      equalizeDiffRows();
+      requestAnimationFrame(() => {
+        equalizeDiffRows();
+        try {
+          if (keepRightOff != null) alignDiffScrollFromRightOff(keepRightOff);
+          else {
+            drawLeftMM();
+            drawMinimap("right");
+          }
+        } finally {
+          diffAligning = false;
+        }
+      });
+    });
+  }
+
+  /** 通常編集中：右ペイン表示上端の文字オフセット（行頭へは寄せない）。
+   *  行頭正規化すると折り返し途中の位置が段落頭へ飛び、OFF でスクロールしたあとに
+   *  ON すると「もっと動いた」ように見える。 */
+  function rightDocOffsetAtViewTop() {
+    const full = docText();
+    if (!full) return 0;
+    try {
+      const a = viewAnchor();
+      if (a && typeof a.off === "number") {
+        /* ★viewAnchor は {off, delta} を返す。delta を捨てると行の途中ぶんが落ちる（5.19 罠⑤） */
+        diffAlignDelta = (typeof a.delta === "number" && isFinite(a.delta)) ? a.delta : 0;
+        return Math.max(0, Math.min(full.length, a.off | 0));
+      }
+      diffAlignDelta = 0;
+      const o = caretAtBodyTop();
+      return Math.max(0, Math.min(full.length, o | 0));
+    } catch (_) {
+      try {
+        /* キャレットは当てにしない（setWholeDoc 後は先頭や末尾にいる） */
+        const a2 = viewAnchor();
+        if (a2 && typeof a2.off === "number") return Math.max(0, Math.min(full.length, a2.off | 0));
+      } catch (__) {}
+      return 0;
+    }
+  }
+
+  /** オフセットが属する原稿論理行（0始まり） */
+  function docLineAtOffset(full, off) {
+    if (!full || off <= 0) return 0;
+    off = Math.min(off, full.length);
+    let line = 0;
+    for (let p = 0; p < off; p++) if (full.charCodeAt(p) === 10) line++;
+    return line;
+  }
+
+  /** そのオフセットが属する行の行頭オフセット。
+   *  ★名前を lineStartOffset にしないこと。同名で【引数が (txt, 行番号) の別関数】が
+   *    後方（lineDocY の直前）にあり、function 宣言は後勝ちなので、こちらが丸ごと
+   *    到達不能になる。実際 rev85 まで alignDiffScrollFromRightOff がその巻き添えで
+   *    行番号として解釈された値を受け取っていた（引数の意味が逆なので黙って誤動作する）。 */
+  function lineHeadOffset(full, off) {
+    if (!full || off <= 0) return 0;
+    off = Math.min(off, full.length);
+    let s = off;
+    while (s > 0 && full.charCodeAt(s - 1) !== 10) s--;
+    return s;
+  }
+
+  /** scrollTop 以下で最も下の .drow（床） */
+  function drowAtScrollTop(els, scrollTop) {
+    if (!els || !els.length) return null;
+    let best = els[0];
+    const y = scrollTop;
+    for (let i = 0; i < els.length; i++) {
+      if (els[i].offsetTop <= y + 0.5) best = els[i];
+      else break;
+    }
+    return best;
+  }
+
+  /**
+   * diff：右 off の論理行を表示上端へ。同じ view 行で左も合わせる。
+   * ★same 塊は1 DOM に複数行 → offsetTop（塊先頭）禁止。diffYForLine で行位置。
+   */
+  function alignDiffScrollFromRightOff(off) {
+    if (!state.diffMode || !state.diffView) return;
+    const ed = $("edit-diff"), rb = $("ref-body");
+    if (!ed || !rb || !diffLineElsR.length) return;
+    const full = docText();
+    off = Math.max(0, Math.min(full.length, off | 0));
+    const docLine = docLineAtOffset(full, off);
+    let vl = viewLineForDocLine(docLine);
+    if (vl < 0) {
+      const dv = state.diffView.docOfView || [];
+      for (let v = 0; v < dv.length; v++) {
+        if (dv[v] >= 0 && dv[v] <= docLine) vl = v;
+        if (dv[v] === docLine) break;
+      }
+    }
+    if (vl < 0) vl = 0;
+    /* 行内位置：論理行頭からの文字割合で drow 内を補間（折り返しの途中を大まかに再現） */
+    const ls = lineHeadOffset(full, off);
+    let le = full.indexOf("\n", ls);
+    if (le < 0) le = full.length;
+    const span = Math.max(1, le - ls);
+    const frac = Math.max(0, Math.min(0.999, (off - ls) / span));
+    holdDiffSync();
+    const rowR = drowForViewLine(vl, diffLineElsR);
+    const restoreR = ensureDiffRowLaidOut(rowR);
+    /* ★まず実測を試す。diffYForLine は塊の中を【ピクセル比例】で割るので、
+       行の長さがまちまちな原稿（折り返し数が行ごとに違う）ではその近似が効かない。
+       塊の中の実際の文字の矩形が取れるなら、そちらが正しい。 */
+    let yR = null;
+    try {
+      yR = diffContentYAt(ed, rowR, diffCellOffForDocOffset(off, rowR));
+      if (yR == null) {
+        yR = diffYForLine(vl, diffLineElsR);
+        if (rowR && +rowR.dataset.b > +rowR.dataset.a + 1) {
+          /* 複数論理行の塊：diffYForLine 済み */
+        } else if (rowR && frac > 0.02) {
+          /* 1論理行が折り返している：塊先頭 + 高さ×割合 */
+          yR = rowR.offsetTop + frac * Math.max(0, rowR.offsetHeight - 1);
+        }
+      }
+      const maxE = Math.max(0, ed.scrollHeight - ed.clientHeight);
+      /* ★控えた行内位置を足し戻す。yR はその文字の上端なので、そのまま scrollTop にすると
+         行の途中で止まっていたぶん（delta）だけ本文が上へずれる（未処置 S-1）。 */
+      const dlt = isFinite(diffAlignDelta) ? diffAlignDelta : 0;
+      ed.scrollTop = Math.max(0, Math.min(maxE, Math.round(yR - dlt)));
+      /* 左は同じ view 行の【行頭】（行内位置は右だけでよい）。こちらも塊の中は実測する */
+      const rowL = drowForViewLine(vl, diffLineEls);
+      const restoreL = ensureDiffRowLaidOut(rowL);
+      try {
+        let yL = diffContentYAt(rb, rowL, diffLeftCellOffForViewLine(vl, rowL));
+        if (yL == null) yL = diffYForLine(vl, diffLineEls);
+        const maxL = Math.max(0, rb.scrollHeight - rb.clientHeight);
+        rb.scrollTop = Math.max(0, Math.min(maxL, Math.round(yL)));
+      } finally {
+        restoreL();
+      }
+    } finally {
+      restoreR();
+    }
+    diffSessionReadOff = off;
+    diffSessionScrolled = false;
+    drawLeftMM();
+    drawMinimap("right");
+  }
+
+  /** diff 表示中：原稿オフセット off の行を画面の中ほどへ（左右そろえて）。
+   *  検索のジャンプ用。alignDiffScrollFromRightOff は上端に寄せるので、
+   *  そのままだとヒットが画面のいちばん上に張り付いて前後が読めない。
+   *  ★左右の行の高さは equalizeDiffRows が同じ値に揃えているので、
+   *    同じ差だけ戻せば左右はズレない（§29 の当て直しと同じ理屈）。 */
+  function centerDiffOnDocOffset(off) {
+    const ed = $("edit-diff"), rb = $("ref-body");
+    if (!ed || !rb) return;
+    /* ★左右同期ハンドラを【時間で】止める。holdDiffSync は rAF 2 枚ぶんしか効かないので、
+       主スレッドが混んでいると scroll イベントの配送がそれより後ろにずれ、
+       ハンドラの【比例マッピング】が走ってしまう。塊の中では比例が当たらないため、
+       近くの行が同じピクセルに丸められ「2 回目以降ジャンプしなくなる」ように見える
+       （実測：5 連打とも scrollTop 6,945 のまま。作者点検 2026-08-14）。 */
+    diffAlignHoldUntil = performance.now() + 250;
+    alignDiffScrollFromRightOff(off);
+    const back = Math.round(ed.clientHeight / 2) - 40;
+    if (back > 0 && ed.scrollTop > 0) {
+      ed.scrollTop = Math.max(0, ed.scrollTop - back);
+      rb.scrollTop = Math.max(0, rb.scrollTop - back);
+    }
+    drawLeftMM();
+    drawMinimap("right");
+  }
+
+  /** same 塊の content-visibility を一時的に外して実測できる状態にする。
+   *  cv のまま getClientRects するとプレースホルダ高さになり、見出しジャンプが
+   *  数行手前で止まる（Ver.1.4.5・Mac Safari）。
+   *  ★外したままにしない。測り終わったら実寸を contain-intrinsic-size に書いて
+   *    cv を付け直す——外したまま積もると往復で全高が数十 px 変わる（作者報告）。
+   *  戻り値は restore 関数（何もしなくても安全）。 */
+  function ensureDiffRowLaidOut(row) {
+    if (!row || !row.classList.contains("cv")) return function () {};
+    row.classList.remove("cv");
+    try { row.style.containIntrinsicSize = ""; } catch (_) {}
+    void row.offsetHeight;
+    return function restoreDiffCv() {
+      if (!row || !row.isConnected) return;
+      let h = 0;
+      try { h = row.getBoundingClientRect().height; } catch (_) { return; }
+      if (!(h > 0)) return;
+      row.classList.add("cv");
+      try {
+        row.style.containIntrinsicSize = "auto " + (Math.round(h * 100) / 100) + "px";
+      } catch (_) {}
+    };
+  }
+
+  /** diff 表示：off の文字を【表示上端ぴったり】へ運ぶ（見出し間ジャンプ用）。
+   *  ★中央寄せ（centerDiffOnDocOffset）にしない。見出しは「ここから読む」目印なので
+   *    上端に置くほうが素直。上端ぴったりにすると、次に Ctrl+↓ を押したときの
+   *    現在位置＝その見出しの行になり、【同じ見出しに戻らない】（行番号で厳密に比べられる）。 */
+  function topDiffOnDocOffset(off) {
+    const ed = $("edit-diff"), rb = $("ref-body");
+    if (!ed || !rb) return;
+    diffAlignHoldUntil = performance.now() + 250;   /* 比例同期に引き戻させない（§33） */
+    diffAlignDelta = 0;                            /* 行内位置は使わない＝上端ぴったり */
+    const full = docText();
+    off = Math.max(0, Math.min(full.length, off | 0));
+    const docLine = docLineAtOffset(full, off);
+    let vl = viewLineForDocLine(docLine);
+    if (vl < 0) {
+      const dv = (state.diffView && state.diffView.docOfView) || [];
+      for (let v = 0; v < dv.length; v++) {
+        if (dv[v] >= 0 && dv[v] <= docLine) vl = v;
+        if (dv[v] === docLine) break;
+      }
+    }
+    if (vl < 0) vl = 0;
+    const rowR0 = drowForViewLine(vl, diffLineElsR);
+    const rowL0 = drowForViewLine(vl, diffLineEls);
+    const restoreR = ensureDiffRowLaidOut(rowR0);
+    const restoreL = ensureDiffRowLaidOut(rowL0);
+    try {
+      alignDiffScrollFromRightOff(off);
+      /* ★2 度目のスナップ。align 内の 1 回目が cv 解除前の高さや Safari の
+         行頭吸い付きでずれたとき、レイアウト後の実測で上端へ吸い直す。 */
+      const rowR = drowForViewLine(vl, diffLineElsR);
+      const rowL = drowForViewLine(vl, diffLineEls);
+      let yR = diffContentYAt(ed, rowR, diffCellOffForDocOffset(off, rowR));
+      if (yR == null) yR = diffYForLine(vl, diffLineElsR);
+      if (yR != null && isFinite(yR)) {
+        const maxE = Math.max(0, ed.scrollHeight - ed.clientHeight);
+        ed.scrollTop = Math.max(0, Math.min(maxE, Math.round(yR)));
+      }
+      let yL = diffContentYAt(rb, rowL, diffLeftCellOffForViewLine(vl, rowL));
+      if (yL == null) yL = diffYForLine(vl, diffLineEls);
+      if (yL != null && isFinite(yL)) {
+        const maxL = Math.max(0, rb.scrollHeight - rb.clientHeight);
+        rb.scrollTop = Math.max(0, Math.min(maxL, Math.round(yL)));
+      }
+      /* ★それでも上端が 1 行手前のまま残ることがある（文字の外形 top と
+         行ボックスの差／Safari の caret 系）。表示上端の論理行が目標に
+         届くまで 1 行高ぶんずつ進める。 */
+      const wantLine = docLine;
+      for (let guard = 0; guard < 8; guard++) {
+        let gotLine = wantLine;
+        try { gotLine = docLineAtOffset(docText(), docOffsetAtDiffRightTop()); } catch (_) { break; }
+        if (gotLine >= wantLine) break;
+        const row = drowAtScrollTop(diffLineElsR, ed.scrollTop) || rowR;
+        const span = row ? Math.max(1, (+row.dataset.b) - (+row.dataset.a)) : 1;
+        const lh = Math.max(14, Math.round((row ? row.offsetHeight : 28) / span));
+        const maxE = Math.max(0, ed.scrollHeight - ed.clientHeight);
+        const maxL = Math.max(0, rb.scrollHeight - rb.clientHeight);
+        ed.scrollTop = Math.max(0, Math.min(maxE, ed.scrollTop + lh));
+        rb.scrollTop = Math.max(0, Math.min(maxL, rb.scrollTop + lh));
+      }
+      diffSessionReadOff = off;
+    } finally {
+      restoreR();
+      restoreL();
+    }
+    drawLeftMM();
+    drawMinimap("right");
+  }
+
+  /** diff 表示中の Ctrl+↑↓：見出し（Lv1 / Lv2）の間を移動する。
+   *  ★通常モードの navHead() は「1 話ぶんを選択してコピーする」ためのもので、
+   *    冒頭で document.activeElement !== ta() なら false を返す。diff 中は本体 textarea に
+   *    打てない（フォーカスは黄枠か、どこにも無い）ので必ず false になり、
+   *    Ctrl+↑↓ が【何も起きない】状態だった（作者報告 2026-08-15）。
+   *  ★diff では選択の出番が無い（右は行単位で編集する）ので、Shift は見ない。
+   *    割り当てるのは「読む位置を見出しへ運ぶ」こと。 */
+  function navHeadDiff(dir) {
+    if (!state.diffMode || !state.diffView) return false;
+    const heads = edHeads().filter(h => h.lv === 1 || h.lv === 2);
+    if (!heads.length) return false;
+    const full = docText();
+    /* いまの位置。黄枠が開いていればその行、無ければ右ペイン上端の文字の行。
+       ★行番号で比べる。オフセットで比べると、上端の測り誤差（数文字）で
+         「いまの見出しへ戻る」ことがある。 */
+    let curLine = 0;
+    try {
+      if (diffEdit && $("diff-line-ed").classList.contains("show")) curLine = diffEdit.docLine;
+      else curLine = docLineAtOffset(full, docOffsetAtDiffRightTop());
+    } catch (_) { curLine = 0; }
+    /* 着地が数行手前に読まれたとき、直前に飛んだ見出しを現在地とする（同じ所に留まらない）。
+       手動スクロールで大きく離れたら sticky は使わない。 */
+    if (diffNavHeadLine != null && curLine < diffNavHeadLine
+        && curLine >= diffNavHeadLine - 4) {
+      curLine = diffNavHeadLine;
+    }
+    let tgt = null;
+    if (dir > 0) {
+      for (let i = 0; i < heads.length; i++) if (heads[i].line > curLine) { tgt = heads[i]; break; }
+    } else {
+      for (let i = heads.length - 1; i >= 0; i--) if (heads[i].line < curLine) { tgt = heads[i]; break; }
+    }
+    if (!tgt) return false;
+    commitDiffLine({ silent: true });      /* 打ちかけを正本へ入れてから動く（§34） */
+    topDiffOnDocOffset(offsetAtLineStart(full, tgt.line));
+    diffNavHeadLine = tgt.line;
+    toast("Lv" + tgt.lv + "「" + full.slice(tgt.start, Math.min(tgt.end, tgt.start + 24)) + "」へ");
+    return true;
+  }
+
+  /** テキスト中、論理行 line（0始まり）の先頭オフセット */
+  function offsetAtLineStart(text, line) {
+    if (!text || line <= 0) return 0;
+    let n = 0, start = 0;
+    for (let p = 0; p < text.length; p++) {
+      if (text.charCodeAt(p) === 10) {
+        n++;
+        start = p + 1;
+        if (n === line) return start;
+      }
+    }
+    return start;
+  }
+
+  /** 原稿オフセット off が、右 row のセルの中で何文字目に当たるか（塊なら塊先頭からの通し） */
+  function diffCellOffForDocOffset(off, row) {
+    if (!row) return null;
+    const cell = row.querySelector(".dcell");
+    if (!cell) return null;
+    const full = docText();
+    const dv = (state.diffView && state.diffView.docOfView) || [];
+    const a = +row.dataset.a, b = +row.dataset.b;
+    if (!(dv[a] >= 0)) return null;                 // ギャップ行は文字を持たない
+    let co;
+    if (b > a + 1) co = off - offsetAtLineStart(full, dv[a]);
+    else {
+      const rg = docLineRange(full, dv[a]);
+      if (!rg) return null;
+      co = off - rg.start;
+    }
+    const n = (cell.textContent || "").length;
+    return Math.max(0, Math.min(n, co));
+  }
+
+  /** view 行 vl の【行頭】が、左 row のセルの中で何文字目に当たるか */
+  function diffLeftCellOffForViewLine(vl, row) {
+    if (!row) return null;
+    const cell = row.querySelector(".dcell");
+    if (!cell) return null;
+    const bv = (state.diffView && state.diffView.baseOfView) || [];
+    const a = +row.dataset.a, b = +row.dataset.b;
+    if (!(bv[a] >= 0) || !(bv[vl] >= 0)) return null;
+    if (b <= a + 1) return 0;
+    const base = baseTabText();
+    const co = offsetAtLineStart(base, bv[vl]) - offsetAtLineStart(base, bv[a]);
+    const n = (cell.textContent || "").length;
+    return Math.max(0, Math.min(n, co));
+  }
+
+  /** セル内オフセットの、ペイン内コンテンツ座標 y（scrollTop に代入できる値）。取れなければ null */
+  function diffContentYAt(pane, row, cellOff) {
+    if (!pane || !row || cellOff == null) return null;
+    const cell = row.querySelector(".dcell");
+    const n = cell ? (cell.textContent || "").length : 0;
+    if (!n) return null;
+    const i = Math.max(0, Math.min(cellOff, n - 1));
+    const r = rangeInRoot(cell, i, i + 1);
+    if (!r) return null;
+    const q = r.getClientRects();
+    if (!q.length) return null;
+    return q[0].top - pane.getBoundingClientRect().top + pane.scrollTop;
+  }
+
+  /**
+   * セルの中で、viewport 座標 y の位置に来る文字のセル内オフセット（二分探索）。
+   * ★same 塊は 1 つの .drow に数百〜千数百の論理行が入る。塊のどこを見ているかは
+   *   dataset.a（塊の先頭行）では絶対に分からない。実際の文字の矩形で測る。
+   */
+  function cellOffsetAtY(cell, y) {
+    const n = cell ? (cell.textContent || "").length : 0;
+    if (!n) return 0;
+    let lo = 0, hi = n - 1, best = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const r = rangeInRoot(cell, mid, mid + 1);
+      const q = r && r.getClientRects();
+      const rc = (q && q.length) ? q[0] : null;
+      if (!rc) { lo = mid + 1; continue; }
+      if (rc.bottom <= y) { lo = mid + 1; best = mid + 1; }
+      else hi = mid - 1;
+    }
+    return Math.max(0, Math.min(n, best));
+  }
+
+  /**
+   * diff 中の右表示上端 → 原稿オフセット。
+   * ★以前は床の .drow の dataset.a（＝塊の先頭 view 行）を「上端の行」として使っていた。
+   *   same 塊が 1489 行という原稿では、OFF に戻したとき塊の先頭（第12段落）へ丸められ、
+   *   読んでいた場所（第158段落）を失う＝「初期化されたように飛ぶ」
+   *   （作者報告 2026-08-14。罠20 と同じ型が逆向きの変換に残っていた）。
+   */
+  function docOffsetAtDiffRightTop() {
+    const ed = $("edit-diff");
+    if (!ed || !diffLineElsR.length) return diffSessionReadOff || 0;
+    const row = drowAtScrollTop(diffLineElsR, ed.scrollTop);
+    if (!row) return 0;
+    const full = docText();
+    const dv = (state.diffView && state.diffView.docOfView) || [];
+    const a = +row.dataset.a, b = +row.dataset.b;
+    if (!(dv[a] >= 0)) {
+      /* ギャップ（右に実体が無い行）：前後の実体行の境界へ */
+      for (let v = a - 1; v >= 0; v--) if (dv[v] >= 0) {
+        const rg = docLineRange(full, dv[v]);
+        return rg ? (rg.hasNL ? rg.end + 1 : full.length) : 0;
+      }
+      for (let v = a + 1; v < dv.length; v++) if (dv[v] >= 0) return offsetAtLineStart(full, dv[v]);
+      return 0;
+    }
+    const cell = row.querySelector(".dcell");
+    const co = cellOffsetAtY(cell, ed.getBoundingClientRect().top);
+    /* ★行内位置も控える（S-1）。その文字の上端が上端より上にあるぶんだけ負になる。 */
+    try {
+      const yc = diffContentYAt(ed, row, co);
+      diffAlignDelta = (yc == null || !isFinite(yc)) ? 0 : (yc - ed.scrollTop);
+    } catch (_) { diffAlignDelta = 0; }
+    if (b > a + 1) {
+      const n = (cell.textContent || "").length;
+      return offsetAtLineStart(full, dv[a]) + Math.min(n, co);
+    }
+    const rg = docLineRange(full, dv[a]);
+    return rg ? rg.start + Math.min(rg.end - rg.start, co) : 0;
+  }
+
+  /** diff 中の左表示上端 → 基準タブオフセット。右と同じ理由で塊の中まで測る */
+  function baseOffsetAtDiffLeftTop() {
+    const rb = $("ref-body");
+    if (!rb || !diffLineEls.length) return 0;
+    const row = drowAtScrollTop(diffLineEls, rb.scrollTop);
+    if (!row) return 0;
+    const base = baseTabText();
+    const bv = (state.diffView && state.diffView.baseOfView) || [];
+    const a = +row.dataset.a, b = +row.dataset.b;
+    if (!(bv[a] >= 0)) {
+      for (let v = a - 1; v >= 0; v--) if (bv[v] >= 0) {
+        const rg = docLineRange(base, bv[v]);
+        return rg ? (rg.hasNL ? rg.end + 1 : base.length) : 0;
+      }
+      for (let v = a + 1; v < bv.length; v++) if (bv[v] >= 0) return offsetAtLineStart(base, bv[v]);
+      return 0;
+    }
+    const cell = row.querySelector(".dcell");
+    const co = cellOffsetAtY(cell, rb.getBoundingClientRect().top);
+    if (b > a + 1) {
+      const n = (cell.textContent || "").length;
+      return offsetAtLineStart(base, bv[a]) + Math.min(n, co);
+    }
+    const rg = docLineRange(base, bv[a]);
+    return rg ? rg.start + Math.min(rg.end - rg.start, co) : 0;
+  }
+
+  /** 右ペイン：off の文字を表示上端へ（行頭に強制しない） */
+  function scrollRightToDocOffsetTop(off) {
+    const full = docText();
+    if (!full.length) return;
+    off = Math.max(0, Math.min(full.length, off | 0));
+    if (off < docBase()) {
+      try { pushWinUndo(); } catch (_) {}
+      try { rebaseWindow(Math.max(0, off - WIN_KEEP_TGT)); } catch (_) {}
+    }
+    try {
+      invalidateMirrorStyle();
+      syncMirrorStyle();
+      syncMirrorText();
+      syncEditLayersScroll();
+      const top = toContent(rectForOffset(off)).top;
+      const sc = rScroll();
+      const max = Math.max(0, sc.scrollHeight - sc.clientHeight);
+      if (!isFinite(top)) return;
+      /* ★行内位置を足し戻す（S-1）。diff 側で控えた delta と符号をそろえる。 */
+      const dlt = isFinite(diffAlignDelta) ? diffAlignDelta : 0;
+      sc.scrollTop = Math.max(0, Math.min(max, Math.round(top - dlt)));
+      syncEditLayersScroll();
+    } catch (_) {}
+  }
+
+  /**
+   * ON→OFF：左右とも「読んでいた位置」を動かさない。
+   * 右＝setWholeDoc で落ちる分を上端文字へ戻す。
+   * 左＝pixel 固定は drow→平文で中身がずれるので、基準タブ上端オフセットで戻す。
+   */
+  function restoreScrollAfterDiffExit(keepRightOff, keepLeftOff, keepLeftScroll) {
+    const go = () => {
+      try {
+        if (keepRightOff != null) scrollRightToDocOffsetTop(keepRightOff);
+      } catch (_) {}
+      try {
+        const rb = $("ref-body");
+        let y = null;
+        if (keepLeftOff != null && keepLeftOff >= 0) {
+          try { y = leftTopForOffset(keepLeftOff); } catch (_) { y = null; }
+        }
+        if (y == null || !isFinite(y)) y = keepLeftScroll;
+        if (y != null && isFinite(y)) {
+          rb.scrollTop = Math.max(0, Math.round(y));
+          rememberScroll();
+        }
+      } catch (_) {}
+      try { drawAll(); } catch (_) {}
+    };
+    requestAnimationFrame(go);
+  }
+
+  /* ---- 5.23 P2: 右 1 行 textarea ----
+     ★打鍵中に rebuildDiffView（LCS）を回すと重い・IME が左上に飛ぶ・キャレットが行末へ飛ぶ。
+       確定（blur / 他行 / Enter / 行頭BS / OFF）のときだけ正本へ書いて re-diff する。 */
+  let diffEdit = null;   // { viewLine, docLine, snapFull, row }
+  /* ↑↓ を続けている間だけ覚えておく「桁」（画面上の x, px）。
+     空行や短い行を通り抜けても元の桁に戻れるようにするため（作者指示 2026-08-14）。
+     ↑↓ 以外のキー・打鍵・クリックで捨てる。 */
+  let diffGoalX = null;
+  let diffLineComposing = false;
+  let diffLineDirty = false;   // 行 textarea が正本と違う
+  let diffRebuildBusy = false;
+
+  function hideDiffLineEd() {
+    const ed = $("diff-line-ed");
+    if (!ed) return;
+    restoreDiffRowHeight();          /* 広げたぶんを残さない（S-2） */
+    const host = ed.parentElement;
+    if (host && host.classList && host.classList.contains("drow")) {
+      host.classList.remove("editing");
+    }
+    /* 置き場は #edit-diff 直下に戻す（rebuild で inner が消えても生き残る） */
+    const root = $("edit-diff");
+    if (root && ed.parentElement !== root) root.appendChild(ed);
+    ed.classList.remove("show");
+    ed.value = "";
+    diffEdit = null;
+    diffLineComposing = false;
+    diffLineDirty = false;
+  }
+
+  /** 原稿の論理行 docLine の [start, end)＝本文（終端 \\n は含まない） */
+  function docLineRange(full, docLine) {
+    if (docLine < 0) return null;
+    let start = 0, line = 0;
+    for (let p = 0; p <= full.length; p++) {
+      if (line === docLine) {
+        const nl = full.indexOf("\n", start);
+        if (nl < 0) return { start: start, end: full.length, hasNL: false };
+        return { start: start, end: nl, hasNL: true };
+      }
+      if (p === full.length) break;
+      if (full.charCodeAt(p) === 10) { line++; start = p + 1; }
+    }
+    return null;
+  }
+
+  function drowForViewLine(viewLine, els) {
+    els = els || diffLineElsR;
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i], a = +el.dataset.a, b = +el.dataset.b;
+      if (viewLine >= a && viewLine < b) return el;
+    }
+    return null;
+  }
+
+  /**
+   * same 塊から【クリックした行だけ】を 1 行 DOM に切り出す（前後は塊のまま残す）。左右ペアでやる。
+   * 黄枠（#diff-line-ed）はその 1 行の上に載るので、必要なのはその行だけです。
+   *
+   * ★以前は塊の【全行】をほぐしていました。実原稿の 7,849 行の塊では 1 クリックで
+   *   行DOM が 15,698 本になり、同期処理 2,139ms＝はっきりしたフリーズになります
+   *   （引き継ぎ 罠4「行DOM が 5 → 501 に激増」の本体。ここが発生源でした）。
+   *   [a,k) / [k,k+1) / [k+1,b) の 3 分割なら 1 クリックで 2 本増えるだけで済みます。
+   * ★行の本文を docText() から数え直さないこと。docLineRange は毎回本文の先頭から
+   *   走るので、行ごとに呼ぶと O(n²)（実測 1,451ms／同じ結果が一括なら 0.6ms）。
+   *   セルの中身はすでに「塊の行を \n で繋いだもの」なので、それを切るだけでよい。
+   */
+  /**
+   * ほぐし・黄枠移動のあと、ペインの scrollHeight が target を超えていたら
+   * cv の CIS / 非編集行の minHeight を削って戻す（S-2・Safari で +7px の砦）。
+   * content-visibility は画面内に入ると実寸が CIS を超えて全体を押し広げることがある。
+   */
+  function clampDiffPaneHeight(pane, target) {
+    if (!pane || !(target > 0)) return;
+    let guard = 0;
+    while (pane.scrollHeight > target + 0.5 && guard++ < 40) {
+      const drift = pane.scrollHeight - target;
+      const scope = pane.id === "edit-diff" ? $("edit-diff-inner")
+        : pane.id === "ref-body" ? $("ref-inner")
+        : pane;
+      if (!scope) break;
+      /* 1) いちばん高い cv 行の CIS を削る */
+      const cvs = [...scope.querySelectorAll(".drow.cv")];
+      let best = null, bestH = 0;
+      for (let i = 0; i < cvs.length; i++) {
+        const h = cvs[i].getBoundingClientRect().height;
+        if (h > bestH) { bestH = h; best = cvs[i]; }
+      }
+      if (best && bestH > 16) {
+        const nh = Math.max(14, bestH - drift);
+        try { best.style.containIntrinsicSize = "auto " + nh.toFixed(2) + "px"; } catch (_) {}
+        void pane.offsetHeight;
+        continue;
+      }
+      /* 2) 編集中以外の minHeight を外す（equalize の焼き残り） */
+      const rows = [...scope.querySelectorAll(".drow")];
+      let cleared = false;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        if (rows[i].classList.contains("editing")) continue;
+        if (rows[i].style.minHeight) {
+          rows[i].style.minHeight = "";
+          cleared = true;
+          break;
+        }
+      }
+      if (cleared) { void pane.offsetHeight; continue; }
+      break;
+    }
+  }
+
+  function expandSameChunkAt(viewLine) {
+    const L = drowForViewLine(viewLine, diffLineEls);
+    const R = drowForViewLine(viewLine, diffLineElsR);
+    if (!R) return null;
+    const a = +R.dataset.a, b = +R.dataset.b;
+    if (b <= a + 1) return R;
+    if (!L || +L.dataset.a !== a || +L.dataset.b !== b) return R;
+    const k = Math.max(a, Math.min(b - 1, viewLine));
+    /* ★ほぐす前の高さを控える。あとで head+mid+tail の合計がこれを超えないようにする。
+       estChunkPx は実寸より少し大きく出ることがあり、↑↓ で塊を 14 回ほぐすと
+       Safari で全高 +7px（作者報告・S-2）。合計を旧高に閉じ込める。 */
+    const oldHR = R.getBoundingClientRect().height;
+    const oldHL = L.getBoundingClientRect().height;
+    const edPane = $("edit-diff"), rbPane = $("ref-body");
+    const paneHR = edPane ? edPane.scrollHeight : 0;
+    const paneHL = rbPane ? rbPane.scrollHeight : 0;
+    /* セルの中身を行に分けて 3 つに組み直す。<br>（末尾の空行対策）は textContent に
+       出ないので、split("\n") の結果は塊の行数とぴったり合う。合わなければ触らない。 */
+    /* ★ほぐした前後の塊にも content-visibility を掛け直す（5.23.13）。
+       付け忘れると、大きな塊をほぐした瞬間に【その塊が全部レイアウトされる】。 */
+    const splitCell = (row, side) => {
+      const cell = row.querySelector(".dcell");
+      const lines = (cell ? (cell.textContent || "") : "").split("\n");
+      if (lines.length !== b - a) return null;
+      let html = "";
+      /* ★ここで esc() だけにすると、ほぐした瞬間に見出しの色が消える（5.23.11） */
+      /* cv の高さは後で旧高から配分する。ここでは仮 0（cv なし）で組み、直後に付ける。 */
+      if (k > a) {
+        const head = lines.slice(0, k - a);
+        html += drowHtml(side, "same", diffCellHtml(head), false, a, k, 0);
+      }
+      html += drowHtml(side, "same", diffCellHtml([lines[k - a]]), false, k, k + 1);
+      if (k + 1 < b) {
+        const tail2 = lines.slice(k + 1 - a);
+        html += drowHtml(side, "same", diffCellHtml(tail2), false, k + 1, b, 0);
+      }
+      return html;
+    };
+    const lhtml = splitCell(L, "l"), rhtml = splitCell(R, "r");
+    if (lhtml == null || rhtml == null) return R;
+    const lParent = L.parentNode, rParent = R.parentNode;
+    const lBox = document.createElement("div");
+    const rBox = document.createElement("div");
+    lBox.innerHTML = lhtml; rBox.innerHTML = rhtml;
+    const rFirst = rBox.firstChild;
+    while (lBox.firstChild) lParent.insertBefore(lBox.firstChild, L);
+    while (rBox.firstChild) rParent.insertBefore(rBox.firstChild, R);
+    lParent.removeChild(L); rParent.removeChild(R);
+    diffLineEls = [...$("ref-inner").querySelectorAll(".drow")];
+    diffLineElsR = [...$("edit-diff-inner").querySelectorAll(".drow")];
+    const nL = diffLineEls.filter(el => +el.dataset.a >= a && +el.dataset.b <= b);
+    const nR = diffLineElsR.filter(el => +el.dataset.a >= a && +el.dataset.b <= b);
+    for (let i = 0; i < nL.length; i++) nL[i].style.minHeight = "";
+    for (let i = 0; i < nR.length; i++) nR[i].style.minHeight = "";
+
+    /** ほぐし断片の高さを【旧塊の高さ】に閉じ込める。mid は実測、head/tail は残りを行数比で CIS。 */
+    function pinExpandParts(parts, oldH, midA) {
+      if (!parts.length || !(oldH > 0)) return;
+      const mid = parts.find(el => +el.dataset.a === midA && +el.dataset.b === midA + 1);
+      const head = parts.find(el => +el.dataset.b === midA && +el.dataset.a < midA);
+      const tail = parts.find(el => +el.dataset.a === midA + 1);
+      if (mid) {
+        mid.classList.remove("cv");
+        try { mid.style.containIntrinsicSize = ""; } catch (_) {}
+        void mid.offsetHeight;
+      }
+      const midH = mid ? mid.getBoundingClientRect().height : 0;
+      let remain = oldH - midH;
+      if (!(remain >= 0)) remain = 0;
+      const headLines = head ? Math.max(0, (+head.dataset.b) - (+head.dataset.a)) : 0;
+      const tailLines = tail ? Math.max(0, (+tail.dataset.b) - (+tail.dataset.a)) : 0;
+      const tot = headLines + tailLines;
+      const setFrag = (el, lines, share) => {
+        if (!el || lines <= 0) return;
+        el.style.minHeight = "";
+        /* ★CV_MIN 未満でも CIS で高さを固定する。素のレイアウトにすると
+           行ボックスの端数で旧高を超え、↑↓ のたびに全高が育つ（S-2）。 */
+        el.classList.add("cv");
+        try {
+          el.style.containIntrinsicSize = "auto " + Math.max(1, share).toFixed(2) + "px";
+        } catch (_) {}
+      };
+      if (tot > 0) {
+        const hShare = remain * (headLines / tot);
+        setFrag(head, headLines, hShare);
+        setFrag(tail, tailLines, remain - hShare);
+      }
+      /* なお合計が旧高を超えていれば、cv 断片から削る（S-2 の最後の砦） */
+      let sum = 0;
+      for (let i = 0; i < parts.length; i++) sum += parts[i].getBoundingClientRect().height;
+      let drift = sum - oldH;
+      if (drift > 0.25) {
+        for (let i = 0; i < parts.length && drift > 0.25; i++) {
+          const el = parts[i];
+          if (!el.classList.contains("cv")) continue;
+          const h = el.getBoundingClientRect().height;
+          const nh = Math.max(14, h - drift);
+          try { el.style.containIntrinsicSize = "auto " + nh.toFixed(2) + "px"; } catch (_) {}
+          drift -= (h - nh);
+        }
+      }
+    }
+    pinExpandParts(nR, oldHR, k);
+    pinExpandParts(nL, oldHL, k);
+
+    /* mid の左右だけ短い側を揃える（塊全体 equalize はしない・育たせない） */
+    const mL = nL.find(el => +el.dataset.a === k && +el.dataset.b === k + 1);
+    const mR = nR.find(el => +el.dataset.a === k && +el.dataset.b === k + 1);
+    if (mL && mR) {
+      const hl = mL.getBoundingClientRect().height;
+      const hr = mR.getBoundingClientRect().height;
+      if (hl < hr - 0.5) mL.style.minHeight = hr.toFixed(2) + "px";
+      else if (hr < hl - 0.5) mR.style.minHeight = hl.toFixed(2) + "px";
+    }
+    /* ★ペイン全高がほぐし前を超えたら削って戻す（画面内 cv の実寸化で育つ Safari 対策） */
+    if (edPane && paneHR > 0) clampDiffPaneHeight(edPane, paneHR);
+    if (rbPane && paneHL > 0) clampDiffPaneHeight(rbPane, paneHL);
+    return drowForViewLine(viewLine, diffLineElsR) || rFirst;
+  }
+
+  /* 黄枠を載せるあいだだけ行を広げたときの、元の minHeight の控え。
+     ★戻さないと【訪れた行が 1 回 +0.5px ずつ育ち続ける】。textarea の高さは丸め上げなので、
+       ↑↓ を 24 回押すと全高が 6,284 → 6,296px になり、上にたまったぶんだけ本文が流れる
+       （作者報告「1 回 3px ほど上へ流れる」の本体。未処置 S-2）。 */
+  let diffEdGrown = null;
+  function restoreDiffRowHeight() {
+    if (!diffEdGrown) return;
+    /* rebuild で行 DOM が入れ替わっていても、外れた節点に書くだけなので害はない */
+    try { diffEdGrown.r.style.minHeight = diffEdGrown.rh; } catch (_) {}
+    try { if (diffEdGrown.l) diffEdGrown.l.style.minHeight = diffEdGrown.lh; } catch (_) {}
+    diffEdGrown = null;
+  }
+
+  function mountDiffLineEd(row) {
+    const ta = $("diff-line-ed");
+    if (!ta || !row) return;
+    restoreDiffRowHeight();          /* 前に広げた行を先に戻す（積もらせない） */
+    $("edit-diff-inner").querySelectorAll(".drow.editing").forEach(el => {
+      if (el !== row) el.classList.remove("editing");
+    });
+    row.classList.add("editing");
+    row.appendChild(ta);
+    const fs = parseFloat($("opt-font").value) || 15;
+    ta.style.fontSize = fs + "px";
+    ta.style.left = "0";
+    ta.style.top = "0";
+    ta.style.width = "100%";
+    ta.style.right = "0";
+    ta.style.maxWidth = "none";
+    /* ★ offsetHeight（整数）で base を取ると 28.5→29 になり、黄枠を載せるだけで育つ。
+       getBoundingClientRect の小数を使う（S-2・Safari）。 */
+    const rowH = row.getBoundingClientRect().height;
+    const baseH = Math.max(rowH, fs * 1.9);
+    ta.style.minHeight = baseH.toFixed(2) + "px";
+    ta.classList.add("show");
+    ta.style.height = "auto";
+    const th = Math.max(baseH, ta.scrollHeight);
+    ta.style.height = th + "px";
+    /* 行高が伸びたら左右の minHeight も追従（同期スクロール用）。
+       ★広げるのは【折り返しで本当に高くなるとき】だけ。1px 未満の丸め差で毎回書くと、
+         その差が行に焼き付いて積もる（S-2）。元の値は控えて hide で必ず戻す。 */
+    const a = +row.dataset.a;
+    const L = drowForViewLine(a, diffLineEls);
+    const taH = ta.getBoundingClientRect().height;
+    if (taH > rowH + 1.5) {
+      const px = taH.toFixed(2) + "px";
+      diffEdGrown = { r: row, l: L, rh: row.style.minHeight, lh: L ? L.style.minHeight : null };
+      row.style.minHeight = px;
+      if (L) L.style.minHeight = px;
+    }
+  }
+
+  /** 黄枠にフォーカスを移す。★ブラウザ既定のスクロールをさせない。
+   *  素の focus() は、行が見えていても【勝手に寄せる】ことがある
+   *  （実測：↓ を 20 回押した所で scrollTop が 13 → 378 に 365px 飛んだ。未処置 S-2）。
+   *  位置は keepDiffRowVisible() で自分で決める。 */
+  function focusDiffLineEd() {
+    const ta = $("diff-line-ed");
+    if (!ta) return;
+    try { ta.focus({ preventScroll: true }); }
+    catch (_) {
+      /* preventScroll 未対応：前後で scrollTop を控えて戻す */
+      const ed = $("edit-diff"), st = ed ? ed.scrollTop : 0;
+      ta.focus();
+      if (ed && Math.abs(ed.scrollTop - st) > 0.5) ed.scrollTop = st;
+    }
+  }
+
+  /** 黄枠の行を、いちばん少ない移動で見える所に置く。
+   *  上下に 1 行ぶんの「のぞき代」を確保する所までしか動かさない。
+   *  ★scrollIntoView に任せると、行が見えていても中央へ寄せられることがある（S-2）。 */
+  function keepDiffRowVisible(row) {
+    const ed = $("edit-diff");
+    if (!ed || !row || !row.getBoundingClientRect) return;
+    const pad = Math.round((parseFloat($("opt-font").value) || 15) * 1.9);
+    const pr = ed.getBoundingClientRect(), rr = row.getBoundingClientRect();
+    const top = rr.top - pr.top, bot = rr.bottom - pr.top;
+    const h = ed.clientHeight;
+    let d = 0;
+    if (top < pad) d = top - pad;                       // 上へ出た → 必要なぶんだけ上へ
+    else if (bot > h - pad) {
+      /* 下へ出た → 必要なぶんだけ下へ。ただし行がペインより高いときに
+         上端を追い出さない（top - pad で頭打ち）。 */
+      d = Math.min(bot - (h - pad), Math.max(0, top - pad));
+    }
+    if (!d) return;
+    const max = Math.max(0, ed.scrollHeight - h);
+    const want = Math.max(0, Math.min(max, Math.round(ed.scrollTop + d)));
+    if (Math.abs(want - ed.scrollTop) > 0.5) ed.scrollTop = want;
+  }
+
+  function patchDocLineBody(docLine, body) {
+    const full = docText();
+    const rg = docLineRange(full, docLine);
+    if (!rg) return null;
+    if (full.slice(rg.start, rg.end) === body) return null;
+    return full.slice(0, rg.start) + body + full.slice(rg.end);
+  }
+
+  function setDocTextQuiet(next) {
+    /* diff 編集中の正本更新。hidden の #edit-area へ毎回代入すると 10万字で固まる。
+       docCache だけ進める。OFF/commit の setWholeDoc で area と揃う。 */
+    docHead = "";
+    docCache = next;
+    headTop = 0;
+  }
+
+  /** opt.sync=true なら rebuild をその場で（他行へ移るとき）。打鍵中は呼ぶな */
+  function commitDiffLine(opt) {
+    opt = opt || {};
+    if (!diffEdit) return false;
+    if (diffLineComposing) return false;
+    const lineTa = $("diff-line-ed");
+    if (!lineTa || !lineTa.classList.contains("show")) { hideDiffLineEd(); return false; }
+    let body = lineTa.value;
+    const multi = body.indexOf("\n") >= 0;
+    const snap = diffEdit.snapFull;
+    const docLine = diffEdit.docLine;
+    const caretInLine = Math.min(lineTa.selectionStart || 0, body.length);
+
+    let next;
+    if (multi) {
+      const full = docText();
+      const rg = docLineRange(full, docLine);
+      if (!rg) { hideDiffLineEd(); return false; }
+      next = full.slice(0, rg.start) + body + full.slice(rg.end);
+    } else {
+      /* soft 更新済みだと patch が null → snap と比較 */
+      const live = docText();
+      const rg = docLineRange(live, docLine);
+      if (!rg) { hideDiffLineEd(); return false; }
+      const curBody = live.slice(rg.start, rg.end);
+      if (curBody === body && live === snap) {
+        if (!opt.noHide) hideDiffLineEd();
+        return false;
+      }
+      next = live.slice(0, rg.start) + body + live.slice(rg.end);
+    }
+    if (next === snap) {
+      if (!opt.noHide) hideDiffLineEd();
+      return false;
+    }
+    return applyDiffDocChange(next, {
+      snapFull: snap,
+      caret: (function () {
+        const rg = docLineRange(next, docLine);
+        if (!rg) return 0;
+        if (multi) return rg.start + body.length;
+        return rg.start + Math.min(caretInLine, body.length);
+      })(),
+      focusDocLine: multi ? docLine + body.split("\n").length - 1 : (opt.refocus ? docLine : null),
+      caretInLine: multi ? body.split("\n").pop().length : caretInLine,
+      selectEnd: !!opt.selectEnd,
+      label: opt.label || "diff行編集",
+      opt: opt
+    });
+  }
+
+  /** 原稿論理行 → view 行。無いときは -1（gap のみの行など） */
+  function viewLineForDocLine(docLine) {
+    const dv = state.diffView && state.diffView.docOfView;
+    if (!dv || docLine == null || docLine < 0) return -1;
+    for (let v = 0; v < dv.length; v++) if (dv[v] === docLine) return v;
+    return -1;
+  }
+
+  function applyDiffDocChange(next, pack) {
+    pack = pack || {};
+    const opt = pack.opt || {};
+    const prev = pack.snapFull != null ? pack.snapFull : docText();
+    if (next === prev) {
+      if (!opt.noHide) hideDiffLineEd();
+      return false;
+    }
+    const edScroll = $("edit-diff").scrollTop;   // Undo の控え（keepView）に持たせる
+    const wantFocus = pack.focusDocLine;
+    const wantCaret = pack.caretInLine;
+    const wantSelEnd = pack.selectEnd;
+
+    /* ★読んでいた場所の控えは【setWholeDoc より前】に取る。
+       rebuildDiffView は自前で docOffsetAtDiffRightTop() を呼ぶが、そこへ着く頃には
+       docText() は新しい本文なのに docOfView はまだ古い（＝行番号が 1 つずれている）。
+       挿入が読んでいた場所より前にあると、その 1 行ぶんずれた位置に戻ってしまう。
+       ここで正しく求めて pendingDiffAlignOff に預け、rebuild にそれを使わせる。 */
+    let keepOff = null;
+    if (!opt.noRebuild && state.diffMode) {
+      try { keepOff = docOffsetAtDiffRightTop(); } catch (_) { keepOff = null; }
+      if (keepOff != null) {
+        let p = 0;
+        const lim = Math.min(prev.length, next.length);
+        while (p < lim && prev.charCodeAt(p) === next.charCodeAt(p)) p++;
+        if (p < keepOff) keepOff += next.length - prev.length;   // 変更が読んでいた場所より前
+        keepOff = Math.max(0, Math.min(next.length, keepOff));
+      }
+    }
+
+    markUndo({
+      text: prev, name: state.fileName, handle: state.fileHandle,
+      origin: state.origin, dirty: state.dirty, fileSaved: state.fileSaved, prevTabId: null,
+      label: pack.label || "diff行", keepView: true, caret: pack.caret || 0,
+      scroll: edScroll
+    });
+    hideDiffLineEd();
+    /* ★このあと自分で再構築するので、setWholeDoc の中の syncDiffToCaret に
+       先を越させない（越されると Enter/BS 1 回で 2 回作り直すことになる）。
+       noRebuild のときは立てない（after() まで行かず、下ろせないので）。 */
+    if (!opt.noRebuild) diffRebuildBusy = true;
+    setWholeDoc(next);
+    state.dirty = true;
+    state.fileSaved = false;
+    try { $("edit-dirty").textContent = " ●"; } catch (_) {}
+
+    const after = () => {
+      if (!opt.noRebuild && state.diffMode) {
+        /* ★古いピクセル位置を当て直さない。行を挿入すると左右で伸び方が違うので、
+           同じ scrollTop を両方に入れると【左右で違う行】が上端に来る＝行がズレて見える。
+           位置は rebuildDiffView が keepOff（文字オフセット）から左右そろえて決める。 */
+        if (keepOff != null) pendingDiffAlignOff = keepOff;
+        rebuildDiffView();
+        holdDiffSync();
+        requestAnimationFrame(() => {
+          drawLeftMM();
+          drawMinimap("right");
+        });
+        if (wantFocus != null && !opt.noHide) {
+          /* equalize の rAF のあとに黄枠を載せる（高さ0行に mount しない） */
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              const vl = viewLineForDocLine(wantFocus);
+              if (vl < 0) return;
+              beginDiffLineEdit(vl, {
+                selectEnd: !!wantSelEnd,
+                caret: wantCaret
+              });
+              const row = drowForViewLine(vl, diffLineElsR);
+              keepDiffRowVisible(row);   /* ★scrollIntoView に任せると中央へ寄せられる（S-2） */
+              copyDiffScroll(true);      /* 右だけ動くので左を写す（§42） */
+            });
+          });
+        }
+      }
+      try { updateHeader({ statsDelay: true }); } catch (_) {}
+      clearTimeout(saveTimer);
+      if (!autosavePaused) saveTimer = setTimeout(autoSave, AUTOSAVE_MS);
+      diffRebuildBusy = false;
+      document.documentElement.style.cursor = "";
+    };
+
+    if (opt.noRebuild) {
+      try { updateHeader({ statsDelay: true }); } catch (_) {}
+      clearTimeout(saveTimer);
+      if (!autosavePaused) saveTimer = setTimeout(autoSave, AUTOSAVE_MS);
+      return true;
+    }
+
+    /* 他行へ移るときは同期 rebuild（その直後に新行を開く） */
+    if (opt.sync) {
+      diffRebuildBusy = true;
+      after();
+      return true;
+    }
+
+    /* Enter/BS は二重 rAF（カーソルを progress に） */
+    diffRebuildBusy = true;
+    document.documentElement.style.cursor = "progress";
+    requestAnimationFrame(() => { requestAnimationFrame(after); });
+    return true;
+  }
+
+  /** 黄枠を原稿の前後行へ。dir = -1|1 */
+  /* ---- 行エディタの縦移動をスクリーンエディタ風にする（作者指示 2026-08-14）----
+     ・折り返しの【途中】では何もしない＝ブラウザに任せる。textarea は桁を保ったまま
+       次の表示行へ動くので、画面どおりに動く（1 論理行＝1 回の移動、にはしない）
+     ・表示行の端まで来たときだけ、前後の論理行へ移す
+     ・移った先の桁は「いま画面のどこにいるか（x 座標）」で決める。行頭・行末へ飛ばさない
+     測るには textarea と同じ折り返しをする隠し要素が要る（本体の #mirror と同じ考え方。5.19）。 */
+  let diffLineMirrorEl = null;
+  function diffLineMirrorFor(ta, text) {
+    if (!diffLineMirrorEl) {
+      diffLineMirrorEl = document.createElement("div");
+      diffLineMirrorEl.id = "diff-line-mirror";
+      diffLineMirrorEl.setAttribute("aria-hidden", "true");
+      document.body.appendChild(diffLineMirrorEl);
+    }
+    const m = diffLineMirrorEl, cs = getComputedStyle(ta);
+    ["fontFamily", "fontSize", "fontWeight", "fontStyle", "lineHeight", "letterSpacing",
+     "textIndent", "textAlign", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+     "whiteSpace", "wordBreak", "overflowWrap", "tabSize", "boxSizing",
+     "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth", "borderStyle"
+    ].forEach(k => { m.style[k] = cs[k]; });
+    m.style.position = "absolute";
+    m.style.visibility = "hidden";
+    m.style.pointerEvents = "none";
+    m.style.zIndex = "-1";
+    m.style.top = "0px";
+    const r = ta.getBoundingClientRect();
+    m.style.left = Math.round(r.left + (window.scrollX || 0)) + "px";
+    m.style.width = ta.offsetWidth + "px";
+    /* 末尾に ZWSP。行末（pos === length）でも矩形が取れるようにするため */
+    const v = String(text == null ? "" : text) + ZWSP;
+    if (m.textContent !== v) m.textContent = v;
+    return m;
+  }
+  function rectInLineMirror(m, pos) {
+    const node = m.firstChild;
+    if (!node) return null;
+    const i = Math.max(0, Math.min(pos | 0, node.length - 1));
+    const r = document.createRange();
+    r.setStart(node, i); r.setEnd(node, i + 1);
+    const q = r.getClientRects();
+    if (!q.length) return null;
+    return { left: q[0].left, top: q[0].top, height: q[0].height };
+  }
+  /** 行エディタの pos が、最初(-1)／最後(1) の表示行にいるか */
+  function atEdgeVisualRow(ta, pos, dir) {
+    const m = diffLineMirrorFor(ta, ta.value);
+    const a = rectInLineMirror(m, pos);
+    const b = rectInLineMirror(m, dir < 0 ? 0 : ta.value.length);
+    if (!a || !b) return true;                       // 測れないときは端とみなす（従来動作に落ちる）
+    return Math.abs(a.top - b.top) < 1;
+  }
+  /** text の最初("first")／最後("last") の表示行で、x にいちばん近い文字位置 */
+  function offsetNearestX(ta, text, x, which) {
+    const n = String(text == null ? "" : text).length;
+    if (x == null || !n) return which === "first" ? 0 : n;
+    const m = diffLineMirrorFor(ta, text);
+    const edge = rectInLineMirror(m, which === "first" ? 0 : n);
+    if (!edge) return which === "first" ? 0 : n;
+    let best = which === "first" ? 0 : n, bestDx = Infinity;
+    for (let i = 0; i <= n; i++) {
+      const r = rectInLineMirror(m, i);
+      if (!r || Math.abs(r.top - edge.top) >= 1) continue;   // 別の表示行は見ない
+      const dx = Math.abs(r.left - x);
+      if (dx < bestDx) { bestDx = dx; best = i; }
+    }
+    return best;
+  }
+
+  /** @param {number} dir -1|1  @param {number|null} [goalX] 移る先の桁を決める画面 x 座標 */
+  function moveDiffLineEdit(dir, goalX) {
+    if (!diffEdit || !state.diffMode || diffRebuildBusy) return;
+    if (diffLineComposing) return;
+    const curDoc = diffEdit.docLine;
+    if (curDoc == null || curDoc < 0) return;
+    const targetDoc = curDoc + dir;
+    if (targetDoc < 0) return;
+    const nLines = docText().split("\n").length;
+    if (targetDoc >= nLines) return;
+    const lineTa = $("diff-line-ed");
+    const body = lineTa && lineTa.classList.contains("show")
+      ? lineTa.value.replace(/\n/g, "")
+      : null;
+    const which = dir < 0 ? "last" : "first";      // ↑なら移る先の最終表示行、↓なら先頭表示行
+    /* 行に変更があれば正本へ書いて rebuild しつつ target を開く */
+    if (body != null) {
+      const live = docText();
+      const rg = docLineRange(live, curDoc);
+      if (rg && live.slice(rg.start, rg.end) !== body) {
+        const next = live.slice(0, rg.start) + body + live.slice(rg.end);
+        /* ★桁は【ミラーがまだ測れるうち】に出す（hide 後は幅が 0 になる） */
+        const trg = docLineRange(next, targetDoc);
+        const tbody = trg ? next.slice(trg.start, trg.end) : "";
+        const col = goalX != null
+          ? offsetNearestX(lineTa, tbody, goalX, which)
+          : (dir < 0 ? tbody.length : 0);
+        applyDiffDocChange(next, {
+          snapFull: diffEdit.snapFull,
+          caret: rg.start + (dir < 0 ? body.length : 0),
+          focusDocLine: targetDoc,
+          caretInLine: col,
+          label: "diff行編集",
+          opt: { sync: true }
+        });
+        return;
+      }
+    }
+    /* 変更なし：re-diff せず隣行へ */
+    const full = docText();
+    const trg = docLineRange(full, targetDoc);
+    const tbody = trg ? full.slice(trg.start, trg.end) : "";
+    const col = (goalX != null && lineTa && lineTa.classList.contains("show"))
+      ? offsetNearestX(lineTa, tbody, goalX, which)
+      : (dir < 0 ? tbody.length : 0);
+    const edPane = $("edit-diff"), rbPane = $("ref-body");
+    const paneHR = edPane ? edPane.scrollHeight : 0;
+    const paneHL = rbPane ? rbPane.scrollHeight : 0;
+    hideDiffLineEd();
+    const vl = viewLineForDocLine(targetDoc);
+    if (vl < 0) return;
+    beginDiffLineEdit(vl, { caret: col });
+    const row = drowForViewLine(vl, diffLineElsR);
+    keepDiffRowVisible(row);
+    /* ★右だけが動くので、左は scroll ハンドラ任せにできない
+       （このあたりは holdDiffSync が効いていて取りこぼす）ので、その場で写す。 */
+    copyDiffScroll(true);
+    /* ★↑↓ 1 手で全高が育たない（S-2）。ほぐし・黄枠載せの端数をここで閉じる。 */
+    if (edPane && paneHR > 0) clampDiffPaneHeight(edPane, paneHR);
+    if (rbPane && paneHL > 0) clampDiffPaneHeight(rbPane, paneHL);
+  }
+
+  /**
+   * クリックした点 → その点にある view 行。
+   * ★same 塊（1 つの .drow に数百〜2000 行）の中は【比例配分してはいけない】。
+   *   行ごとに折り返し数が違うので、実原稿（1 塊 2,699 行）では 52 行ずれた。
+   *   ずれた行に黄枠を載せると、mountDiffLineEd → focus() がその行を見せに行き、
+   *   画面が別の場所へ飛ぶ（作者報告 2026-08-14「差分モードに入って最初にスクロールして
+   *   クリックした瞬間に別の場所へスクロールする」。2 回目が正常なのは、1 回目の
+   *   expandSameChunkAt で塊が 1 行ずつにほぐれて b === a+1 になるから）。
+   *   罠20 と同じ型＝【塊の中は必ず実測する】。当て方は DnD の diffRowHitAt と共用。
+   */
+  function diffViewLineAtPoint(row, x, y) {
+    const hit = diffHitAtPoint(row, x, y);
+    return hit ? hit.viewLine : +row.dataset.a;
+  }
+
+  /** クリック点 → { viewLine, col }。col は【その行の中の桁】（分からなければ null）。
+   *  ★桁も返すのは、クリックした場所にキャレットを置くため（作者指示 2026-08-14。
+   *    それまでは常に行末に飛んでいた）。 */
+  function diffHitAtPoint(row, x, y) {
+    const a = +row.dataset.a, b = +row.dataset.b;
+    const cell = row.querySelector(".dcell");
+    const txt = cell ? (cell.textContent || "") : "";
+    let cellOff = null;
+    if (txt.length) {
+      const hit = diffRowHitAt(x, y);          // caretRangeFromPoint（左ペインと同じ当て方）
+      if (hit && hit.row === row && hit.cell && hit.node) {
+        cellOff = charOffsetInRoot(hit.cell, hit.node, hit.nodeOffset);
+      }
+      if (cellOff == null) {
+        /* Safari は行間・余白で null を返す。文字の矩形で二分探索（上端の求め方と同じ） */
+        try { cellOff = cellOffsetAtY(cell, y); } catch (_) { cellOff = null; }
+      }
+    }
+    if (cellOff == null) {
+      /* 最後の逃げ道だけ従来の比例配分（塊の中の位置は当てにならない）。桁は分からない */
+      if (b <= a + 1) return { viewLine: a, col: null };
+      const ed = $("edit-diff");
+      const rel = (y - ed.getBoundingClientRect().top + ed.scrollTop) - row.offsetTop;
+      const t = Math.max(0, Math.min(0.9999, rel / Math.max(1, row.offsetHeight)));
+      return { viewLine: Math.min(b - 1, a + Math.floor(t * (b - a))), col: null };
+    }
+    cellOff = Math.max(0, Math.min(txt.length, cellOff));
+    if (b <= a + 1) return { viewLine: a, col: cellOff };   // セル＝その 1 行なので桁そのもの
+    let nl = 0, lineStart = 0;
+    for (let p = 0; p < cellOff; p++) {
+      if (txt.charCodeAt(p) === 10) { nl++; lineStart = p + 1; }
+    }
+    return { viewLine: Math.min(b - 1, a + nl), col: cellOff - lineStart };
+  }
+
+  function beginDiffLineEdit(viewLine, opt) {
+    opt = opt || {};
+    if (!state.diffMode || !state.diffView || diffRebuildBusy) return;
+    const dv = state.diffView.docOfView;
+    if (!dv || viewLine < 0 || viewLine >= dv.length) return;
+    let docLine = dv[viewLine];
+    if (docLine < 0) return;
+
+    if (diffEdit && diffEdit.viewLine === viewLine && $("diff-line-ed").classList.contains("show")) {
+      focusDiffLineEd();
+      return;
+    }
+    /* 他行へ移る：同期 commit＋re-diff してから開く */
+    if (diffEdit) commitDiffLine({ silent: true, sync: true });
+
+    /* ★塊をほぐすと行 DOM の高さの合計が変わる（実原稿で 300,427 → 301,439px）。
+       クリックより上が伸びたぶん、見ていた本文が下へずれる。ほぐす前に【その行の y】を
+       控えておき、ほぐしたあとに同じ y へ戻す。focus() を動かせないためでもある。 */
+    let keepY = null;
+    {
+      const pre = drowForViewLine(viewLine, diffLineElsR);
+      if (pre && +pre.dataset.b > +pre.dataset.a + 1) {
+        const cell = pre.querySelector(".dcell");
+        if (cell) {
+          const co = offsetAtLineStart(cell.textContent || "", viewLine - (+pre.dataset.a));
+          /* 空行は論理行の矩形が取れない（範囲が空）。実原稿は 2,889 行が空行なので
+             ここで諦めると空行クリックだけ 261px 飛ぶ。キャレット矩形（改行 1 文字ぶん）で拾う。 */
+          const rc = diffLogicalLineRect(cell, co) || diffCaretRectAt(cell, co);
+          if (rc) keepY = rc.top;
+        }
+      }
+    }
+
+    const row0 = expandSameChunkAt(viewLine);
+    if (!row0) return;
+
+    if (keepY != null) {
+      /* ほぐせたときだけ（左右で塊の境界が違うと expandSameChunkAt は何もせず塊を返す） */
+      const now = drowForViewLine(viewLine, diffLineElsR);
+      if (now && +now.dataset.b === +now.dataset.a + 1) {
+        const d = Math.round(now.getBoundingClientRect().top - keepY);
+        if (d) {
+          /* 左右は同じ minHeight に揃えてある（expandSameChunkAt）ので同じ差で動かす。
+             近似の左右同期（scroll ハンドラ）に上書きさせない。 */
+          holdDiffSync();
+          const edPane = $("edit-diff"), rbPane = $("ref-body");
+          edPane.scrollTop = Math.max(0, edPane.scrollTop + d);
+          rbPane.scrollTop = Math.max(0, rbPane.scrollTop + d);
+        }
+      }
+    }
+
+    docLine = (state.diffView.docOfView || [])[viewLine];
+    if (docLine == null || docLine < 0) return;
+
+    const full = docText();
+    const rg = docLineRange(full, docLine);
+    if (!rg) return;
+    const body = full.slice(rg.start, rg.end);
+    const row = drowForViewLine(viewLine, diffLineElsR) || row0;
+    diffEdit = { viewLine: viewLine, docLine: docLine, snapFull: full, row: row };
+    diffLineDirty = false;
+    const lineTa = $("diff-line-ed");
+    lineTa.value = body;
+    mountDiffLineEd(row);
+    focusDiffLineEd();
+    const pos = opt.caret != null ? Math.max(0, Math.min(body.length, opt.caret))
+      : (opt.selectEnd ? body.length : body.length);
+    try { lineTa.setSelectionRange(pos, pos); } catch (_) {}
+  }
+
+  function onDiffLineKeydown(e) {
+    if (!diffEdit) return;
+    if (e.isComposing || e.keyCode === 229 || diffLineComposing) return;
+    if (diffRebuildBusy) { e.preventDefault(); return; }
+    const lineTa = e.target;
+    /* ★↑↓ 以外のキーが来たら goal column（覚えている桁）は捨てる。
+       スクリーンエディタと同じで、横移動・打鍵・Enter のあとは「いまの桁」が新しい目標。 */
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") diffGoalX = null;
+    if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      const c = lineTa.selectionStart, v = lineTa.value;
+      const left = v.slice(0, c), right = v.slice(lineTa.selectionEnd);
+      const live = docText();
+      const rg = docLineRange(live, diffEdit.docLine);
+      if (!rg) return;
+      const next = live.slice(0, rg.start) + left + "\n" + right + live.slice(rg.end);
+      applyDiffDocChange(next, {
+        snapFull: diffEdit.snapFull,
+        caret: rg.start + left.length + 1,
+        focusDocLine: diffEdit.docLine + 1,
+        caretInLine: 0,
+        label: "diff行分割",
+        opt: {}
+      });
+      return;
+    }
+    /* ↑↓: スクリーンエディタと同じ動き。
+       折り返しの途中なら【何もしない】＝ブラウザに任せる（桁を保ったまま次の表示行へ）。
+       表示行の端まで来たときだけ、前後の論理行へ移す。桁は画面の x 座標で引き継ぐ。 */
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown")
+        && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const dir = e.key === "ArrowUp" ? -1 : 1;
+      const pos = lineTa.selectionStart;
+      if (pos !== lineTa.selectionEnd) { diffGoalX = null; return; }   // 選択中はブラウザに任せる
+      if (!atEdgeVisualRow(lineTa, pos, dir)) {
+        /* 折り返しの途中はブラウザに任せる。桁は画面上の x で覚えておく
+           （このあと論理行をまたぐときに使う） */
+        const m0 = diffLineMirrorFor(lineTa, lineTa.value);
+        const rc0 = rectInLineMirror(m0, pos);
+        if (rc0 && diffGoalX == null) diffGoalX = rc0.left;
+        return;
+      }
+      const m = diffLineMirrorFor(lineTa, lineTa.value);
+      const rc = rectInLineMirror(m, pos);
+      /* ★覚えている桁（goal column）を持ち越す。
+         空行や短い行を通り抜けると、いまの x はその行の行頭（＝0桁）になってしまい、
+         次の長い行でも 0 桁に着く。スクリーンエディタは元の桁を覚えているので、
+         ↑↓ を続けている間は最初の x を使い続ける（作者指示 2026-08-14）。 */
+      if (diffGoalX == null && rc) diffGoalX = rc.left;
+      e.preventDefault();
+      moveDiffLineEdit(dir, diffGoalX != null ? diffGoalX : (rc ? rc.left : null));
+      return;
+    }
+    if (e.key === "Backspace" && lineTa.selectionStart === 0 && lineTa.selectionEnd === 0) {
+      if (diffEdit.docLine <= 0) return;
+      e.preventDefault();
+      const live = docText();
+      /* 先に現在行の未 commit を正本へ（re-diff なし） */
+      const body = lineTa.value.replace(/\n/g, "");
+      let base = live;
+      const patched = patchDocLineBody(diffEdit.docLine, body);
+      if (patched != null) { setDocTextQuiet(patched); base = patched; }
+      const cur = docLineRange(base, diffEdit.docLine);
+      const prev = docLineRange(base, diffEdit.docLine - 1);
+      if (!cur || !prev) return;
+      const next = base.slice(0, prev.end) + base.slice(cur.start);
+      const joinAt = prev.end;
+      applyDiffDocChange(next, {
+        snapFull: diffEdit.snapFull,
+        caret: joinAt,
+        focusDocLine: diffEdit.docLine - 1,
+        selectEnd: true,
+        label: "diff行結合",
+        opt: {}
+      });
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      commitDiffLine({ silent: true });
+    }
+  }
+
+  function onDiffLineInput() {
+    if (!diffEdit || diffLineComposing) return;
+    const lineTa = $("diff-line-ed");
+    diffGoalX = null;                   // 打鍵（IME 確定も）で覚えている桁は捨てる
+    diffLineDirty = true;
+    state.dirty = true;
+    try { $("edit-dirty").textContent = " ●"; } catch (_) {}
+    /* 高さだけ。正本文字列の再構築も re-diff もしない（10万字で打鍵が死ぬ） */
+    const fs = parseFloat($("opt-font").value) || 15;
+    const baseH = Math.round(fs * 1.9);
+    lineTa.style.height = "auto";
+    const h = Math.max(baseH, lineTa.scrollHeight);
+    lineTa.style.height = h + "px";
+    if (diffEdit.row) {
+      diffEdit.row.style.minHeight = h + "px";
+      const L = drowForViewLine(diffEdit.viewLine, diffLineEls);
+      if (L) L.style.minHeight = h + "px";
+    }
+    clearTimeout(saveTimer);
+    if (!autosavePaused) saveTimer = setTimeout(autoSave, AUTOSAVE_MS);
+  }
+
+  /** 行 textarea → docCache だけ（autoSave / commit 直前） */
+  function flushDiffLineToCache() {
+    if (!diffEdit || diffLineComposing) return;
+    const lineTa = $("diff-line-ed");
+    if (!lineTa || !lineTa.classList.contains("show")) return;
+    const body = lineTa.value;
+    if (body.indexOf("\n") >= 0) return;
+    const next = patchDocLineBody(diffEdit.docLine, body);
+    if (next != null) setDocTextQuiet(next);
+  }
+
+  function bindDiffLineEdit() {
+    const root = $("edit-diff");
+    const lineTa = $("diff-line-ed");
+    root.addEventListener("click", e => {
+      if (!state.diffMode || diffRebuildBusy) return;
+      if (e.target === lineTa || lineTa.contains(e.target)) return;
+      const row = e.target.closest && e.target.closest(".drow");
+      if (!row || !$("edit-diff-inner").contains(row)) {
+        commitDiffLine({ silent: true });
+        return;
+      }
+      if (row.classList.contains("gap")) return;
+      diffGoalX = null;                 // クリックした桁が新しい目標になる
+      /* ★キャレットは【クリックした桁】へ。行末へ飛ばさない（作者指示 2026-08-14） */
+      const hit = diffHitAtPoint(row, e.clientX, e.clientY);
+      if (!hit) return;
+      beginDiffLineEdit(hit.viewLine, hit.col != null ? { caret: hit.col } : {});
+    });
+    lineTa.addEventListener("keydown", onDiffLineKeydown);
+    lineTa.addEventListener("input", onDiffLineInput);
+    lineTa.addEventListener("compositionstart", () => {
+      diffLineComposing = true;
+    });
+    lineTa.addEventListener("compositionend", () => {
+      diffLineComposing = false;
+      onDiffLineInput();
+    });
+    lineTa.addEventListener("blur", () => {
+      setTimeout(() => {
+        if (document.activeElement === lineTa) return;
+        if (diffLineComposing) return;
+        commitDiffLine({ silent: true });
+      }, 0);
+    });
+  }
+
+  function innerDiffClass(on) {
+    $("ref-inner").classList.toggle("diff-view", !!on);
+    $("edit-diff").setAttribute("aria-hidden", on ? "false" : "true");
+  }
+
+  function exitDiffPaint() {
+    commitDiffLine({ silent: true, noRebuild: true });
+    hideDiffLineEd();
+    innerDiffClass(false);
+    $("edit-diff-inner").innerHTML = "";
+    diffLineEls = [];
+    diffLineElsR = [];
+    state.diffView = null;
+    /* ★追従・タブ保存 scroll で左を動かさない（呼び出し側が位置を決める） */
+    const prev = suppressLeftScroll;
+    suppressLeftScroll = true;
+    try {
+      renderRef();
+      updateEditEmpty();
+      drawAll();
+    } finally {
+      suppressLeftScroll = prev;
+    }
+  }
+
+  /** いま読んでいる view 行。差分箇所の移動（jumpDiff）の起点に使う。
+   *  ★飛び先は【画面中央】に置く（jumpDiff の mid）ので、起点も中央で測ること。
+   *    上端で測ると、飛んだ直後の上端は目的の差分より手前になり、
+   *    次に押しても同じ差分を選び直して【その場から動かない】。
+   *  ★黄枠が開いていればその行を優先する（作者がカーソルを置いた場所が「いまいる所」）。 */
+  function currentDiffViewLine() {
+    try {
+      if (diffEdit && $("diff-line-ed").classList.contains("show") &&
+          typeof diffEdit.viewLine === "number") return diffEdit.viewLine;
+    } catch (_) {}
+    const ed = $("edit-diff");
+    if (!ed || !diffLineElsR.length) return 0;
+    return diffLineAtY(ed.scrollTop + ed.clientHeight / 2, diffLineElsR);
+  }
+
+  function jumpDiff(dir) {
+    if (!state.diffMode || !state.diffView) return;
+    commitDiffLine({ silent: true });
+    const ch = state.diffView.change || [];
+    if (!ch.length) { toast("差分はありません"); return; }
+    /* ★以前はカウンタ diffJumpI を ±1 するだけで、【いまどこを読んでいるかを見ていなかった】。
+       差分モードに入ると −1 に戻るので、画面をどこまでスクロールしていても
+       最初の［↓］は必ず先頭の差分へ飛ぶ（作者報告 2026-08-15。
+       実測：右 120,000px で［↓］→ 12,778px＝1 番目、手で 200,000px へ動かしても
+       次の［↓］は 38,599px＝3 番目＝カウンタの続き）。
+       押すたびに現在位置から選び直す。端まで来たら従来どおり巡回する。 */
+    /* ★行番号は floor して【整数で】比べること。diffLineAtY は塊の中を比例で割るので
+       小数（例 399.99）が返る。「cur ± 0.5」で比べると、いま乗っている差分の行を
+       【自分より前】と数えてしまい、［↑］がその場から動かない
+       （実測：最後の差分 view 399 に居るとき 中央 = 399.9 → ［↑］が 399 を選び直した。
+        自己診断「★［↑］は【いまいる位置より前】の差分へ戻る」が拾った）。 */
+    const cur = Math.floor(currentDiffViewLine());
+    let idx = -1;
+    if (dir > 0) {
+      for (let k = 0; k < ch.length; k++) if (ch[k] > cur) { idx = k; break; }
+      if (idx < 0) idx = 0;                    // 最後の差分より後ろ → 先頭へ巡回
+    } else {
+      for (let k = ch.length - 1; k >= 0; k--) if (ch[k] < cur) { idx = k; break; }
+      if (idx < 0) idx = ch.length - 1;        // 最初の差分より前 → 末尾へ巡回
+    }
+    diffJumpI = idx;
+    const i = ch[diffJumpI];
+    const L = [...$("ref-inner").querySelectorAll(".drow")].find(el => +el.dataset.a <= i && i < +el.dataset.b);
+    const R = [...$("edit-diff-inner").querySelectorAll(".drow")].find(el => +el.dataset.a <= i && i < +el.dataset.b);
+    if (!L) return;
+    $("ref-inner").querySelectorAll(".drow.flash").forEach(el => el.classList.remove("flash"));
+    $("edit-diff-inner").querySelectorAll(".drow.flash").forEach(el => el.classList.remove("flash"));
+    L.classList.add("flash");
+    if (R) R.classList.add("flash");
+    clearTimeout(diffFlashTimer);
+    diffFlashTimer = setTimeout(() => {
+      L.classList.remove("flash");
+      if (R) R.classList.remove("flash");
+    }, 900);
+    const rb = $("ref-body"), ed = $("edit-diff");
+    const mid = L.offsetTop - (rb.clientHeight / 2) + (L.offsetHeight / 2);
+    holdDiffSync();
+    rb.scrollTop = Math.max(0, mid);
+    ed.scrollTop = diffYForLine(diffLineAtY(rb.scrollTop, diffLineEls), diffLineElsR);
+    drawLeftMM();
+    drawMinimap("right");
+  }
+
+  /* 自分が書いた scrollTop の echo（跳ね返り）だけを捨てるための時刻。
+     ★カウンタ方式は、clamp されて scroll イベントが起きなかったときに詰まる。時刻なら詰まらない。 */
+  let diffEchoLeftUntil = 0, diffEchoRightUntil = 0;
+
+  /** 片方の位置をもう片方へ写す（fromRight=true なら 右 → 左）。
+   *  ★左右の .drow は equalizeDiffRows で【同じ高さ】に揃えてあるので、
+   *    scrollTop をそのまま写すのがいちばん正確（実測でも総高さは左右一致）。
+   *    行番号経由（diffLineAtY → diffYForLine）は塊の中を比例で割るので、
+   *    大きな same 塊では数百 px ずれます（罠20 と同じ型）。高さが食い違うときだけ
+   *    そちらに落とす。 */
+  function copyDiffScroll(fromRight) {
+    if (!state.diffMode) return;
+    const ed = $("edit-diff"), rb = $("ref-body");
+    if (!ed || !rb) return;
+    const src = fromRight ? ed : rb, dst = fromRight ? rb : ed;
+    const dMax = Math.max(0, dst.scrollHeight - dst.clientHeight);
+    let want = src.scrollTop;
+    if (Math.abs(src.scrollHeight - dst.scrollHeight) > 2) {
+      const srcEls = fromRight ? diffLineElsR : diffLineEls;
+      const dstEls = fromRight ? diffLineEls : diffLineElsR;
+      want = diffYForLine(diffLineAtY(src.scrollTop, srcEls), dstEls);
+    }
+    want = Math.max(0, Math.min(dMax, Math.round(want)));
+    if (Math.abs(dst.scrollTop - want) <= 0.5) return;
+    const t = performance.now() + 80;
+    if (fromRight) diffEchoLeftUntil = t; else diffEchoRightUntil = t;
+    dst.scrollTop = want;
+  }
+
+  function bindDiffScroll() {
+    const rb = $("ref-body"), ed = $("edit-diff");
+    const on = (src, fromLeft) => {
+      src.addEventListener("scroll", () => {
+        if (!state.diffMode || diffSyncLock || diffAligning) return;
+        if (diffAlignHoldUntil && performance.now() < diffAlignHoldUntil) return;
+        /* ★以前はここで holdDiffSync()＝【両方の】同期を rAF 2 枚ぶん止めていました。
+           跳ね返りは防げますが、矢印キーのように小刻みな scroll が続くと
+           そのあいだの動きを取りこぼします（作者報告 2026-08-14。黄枠で ↓ を 12 回で
+           右だけ進み左が 806px 置いていかれた）。自分が書いたぶんだけを時刻で捨てる。 */
+        const now = performance.now();
+        if (fromLeft) {
+          if (now < diffEchoLeftUntil) { diffEchoLeftUntil = 0; return; }
+        } else {
+          if (now < diffEchoRightUntil) { diffEchoRightUntil = 0; return; }
+        }
+        diffSessionScrolled = true;
+        copyDiffScroll(!fromLeft);
+        if (!fromLeft) {
+          try { diffSessionReadOff = docOffsetAtDiffRightTop(); } catch (_) {}
+        }
+        drawMinimap("left");
+        drawMinimap("right");
+      }, { passive: true });
+    };
+    on(rb, true);
+    on(ed, false);
+  }
+
+  function placeDiffBtn() {
+    const btn = $("btn-diff-mode"), sp = $("splitter");
+    const sbR = $("pane-edit").querySelector(".searchbar");
+    const sbL = $("pane-ref").querySelector(".searchbar");
+    if (!btn || !sp || !sbR) return;
+    const sr = sbR.getBoundingClientRect(), pr = sp.getBoundingClientRect();
+    btn.style.top = (sr.top + sr.height / 2 - pr.top) + "px";
+    const pad = Math.ceil(btn.offsetWidth / 2) + 8;
+    if (sbL) sbL.style.paddingRight = pad + "px";
+    sbR.style.paddingLeft = pad + "px";
+  }
+  function syncDiffChrome() {
+    document.body.classList.toggle("diff-on", !!state.diffMode);
+    const btn = $("btn-diff-mode");
+    btn.classList.toggle("on", !!state.diffMode);
+    btn.setAttribute("aria-pressed", state.diffMode ? "true" : "false");
+    /* OFF は「差分モードOFF」だと『差分モードという名前のOFF』と読めて分かりにくい。
+       灰色のまま【差分】＝これから入る入口、ONのときだけ状態を明示する（作者指示 2026-08-14）。 */
+    btn.textContent = state.diffMode ? "差分モードON" : "差分";
+    btn.title = state.diffMode
+      ? "差分表示をやめて通常の編集に戻ります"
+      : "左右の本文を比べる差分表示にします";
+    $("diff-chrome").setAttribute("aria-hidden", state.diffMode ? "false" : "true");
+    const rep = $("ed-rep-toggle");
+    if (state.diffMode) {
+      $("ed-repbar").hidden = true;
+      rep.classList.remove("on");
+      rep.disabled = true;
+      rep.textContent = "置換 不可";
+      rep.title = "diff 表示中は置換できません";
+    } else {
+      rep.disabled = false;
+      rep.textContent = "置換 ▾";
+      rep.title = "置換 (Ctrl+H)";
+    }
+    placeDiffBtn();
+  }
+  let ratioBeforeDiff = null;
+  function setDiffMode(on) {
+    const next = !!on;
+    if (state.diffMode === next) { syncDiffChrome(); return; }
+    /* 遅延 rebuild（syncDiffToCaret）が ON/OFF 直後に走って位置を壊さない */
+    if (diffTimer) { clearTimeout(diffTimer); diffTimer = null; }
+    if (!next) {
+      pendingDiffAlignOff = null;
+      diffNavHeadLine = null;
+      commitDiffLine({ silent: true, noRebuild: true });
+      hideDiffLineEd();
+      /* ★ON→OFF：左右とも「見ていた文」を動かさない。
+         右＝上端文字オフセット。左＝基準タブ上端オフセット（pixel 固定は drow→平文でずれる）。
+         renderRef の syncDiffToCaret / restoreScroll は suppress で止める。 */
+      let keepRightOff = 0;
+      try {
+        if (diffLineElsR.length) keepRightOff = docOffsetAtDiffRightTop();
+        else if (diffSessionReadOff != null) keepRightOff = diffSessionReadOff;
+      } catch (_) {
+        keepRightOff = diffSessionReadOff || 0;
+      }
+      let keepLeftOff = 0;
+      try { keepLeftOff = baseOffsetAtDiffLeftTop(); } catch (_) { keepLeftOff = 0; }
+      const keepLeftScroll = $("ref-body").scrollTop;
+      suppressLeftScroll = true;
+      try {
+        setWholeDoc(docText());
+        state.diffMode = false;
+        state.diffBaseTabId = null;
+        diffSessionReadOff = keepRightOff;
+        diffSessionScrolled = false;
+        ratioBeforeDiff = null;
+        syncDiffChrome();
+        exitDiffPaint();
+        /* 平文描画直後：同じ基準テキストが上端に来るよう1回だけ合わせる */
+        try {
+          const y = leftTopForOffset(keepLeftOff);
+          $("ref-body").scrollTop = (y != null && isFinite(y)) ? Math.max(0, Math.round(y)) : keepLeftScroll;
+          rememberScroll();
+        } catch (_) {
+          try { $("ref-body").scrollTop = keepLeftScroll; rememberScroll(); } catch (__) {}
+        }
+      } finally {
+        suppressLeftScroll = false;
+      }
+      restoreScrollAfterDiffExit(keepRightOff, keepLeftOff, keepLeftScroll);
+      return;
+    }
+    /* ★右が主。OFF 中にスクロールした位置＝表示上端の文字をそのまま使う（行頭寄せしない）。 */
+    pendingDiffAlignOff = rightDocOffsetAtViewTop();
+    diffSessionReadOff = pendingDiffAlignOff;
+    diffSessionScrolled = false;
+    state.diffMode = true;
+    if (Math.abs(state.ratio - 0.5) > 0.02) {
+      ratioBeforeDiff = state.ratio;
+      state.ratio = 0.5;
+      applyRatio(); reflowWidth();
+    } else {
+      /* 見た目は 1:1 でも ratio が 0.5 ぴったりでないと applyRatio の中心合わせが効かない */
+      if (state.ratio !== 0.5) {
+        state.ratio = 0.5;
+        applyRatio();
+      }
+      ratioBeforeDiff = null;
+    }
+    const t = activeTabObj();
+    state.diffBaseTabId = t ? t.id : null;
+    syncDiffChrome();
+    /* ★ON は重い。12万字だと LCS より【全文 DOM を左右 2 面ぶんレイアウトする】ほうが支配的で、
+       体感 1 秒。仮想スクロールは V2 の課題（要求仕様 §12-1「一期は全文 DOM ＋警告でよい」）。
+       速くできない以上、次の 2 つで体感を直す（作者指示 2026-08-14）:
+       ① 先に「差分を計算中…」を【塗ってから】重い処理に入る（二重 rAF。5.14.1 と同じ手）
+       ② 位置が決まるまで中身を隠す。隠さないと、innerHTML 差し替えでブラウザが
+          scrollTop を 0 にクランプした状態が描かれ、
+          「小説の最初へ飛んでから戻る」ように見える（実測で左ペインが 0 → 元位置）。
+       OFF は平文へ戻すだけで軽いので、この段取りは要らない。 */
+    const heavy = docLen() > DIFF_BUSY_CHARS;
+    if (!heavy) { rebuildDiffView(); return; }
+    document.body.classList.add("diff-busy");
+    document.documentElement.style.cursor = "progress";
+    toast("差分を計算中…", 120000);        // 完了トーストで上書きする
+    let ran = false;
+    const run = () => {
+      if (ran) return;
+      ran = true;
+      try {
+        if (state.diffMode) rebuildDiffView();
+      } finally {
+        document.body.classList.remove("diff-busy");
+        document.documentElement.style.cursor = "";
+        const n = (state.diffView && state.diffView.change) ? state.diffView.change.length : 0;
+        toast(n ? ("差分 " + n + " 箇所（↑↓ で移動できます）") : "差分はありません");
+      }
+    };
+    requestAnimationFrame(() => { requestAnimationFrame(run); });
+    /* ★保険：rAF が来ない状況（バックグラウンドタブ等）でも必ず走らせる。
+       走らないと diff-busy が付いたまま＝中身を伏せたまま固まって見える。 */
+    setTimeout(run, 400);
   }
 
   /* =======================================================
@@ -2394,7 +4671,7 @@
     /* ★fileSaved：このタブの本文がディスクにあるか（5.22D）。
        ファイルから開いた資料は true。［新規］の退避など本文だけのタブは false。
        右ペインへ入れ替えたあと「保存しなくてよいか」の判断に使う。 */
-    const t = { id: "t" + (++tabSeq), name: name, text: text, scroll: scroll || 0, heads: null, kind: kind || null, html: null, fileSaved: false };
+    const t = { id: "t" + (++tabSeq), name: name, text: text, scroll: scroll || 0, heads: null, kind: kind || null, fileSaved: false };
     state.tabs.push(t);
     renderTabs();
     if (activate !== false) setActiveTab(t.id);
@@ -2427,7 +4704,7 @@
   function undoClose() {
     const c = state.closed.pop();
     if (!c) return;
-    const t = { id: "t" + (++tabSeq), name: c.name, text: c.text, scroll: c.scroll, heads: null, kind: null, html: null, fileSaved: !!c.fileSaved };
+    const t = { id: "t" + (++tabSeq), name: c.name, text: c.text, scroll: c.scroll, heads: null, kind: null, fileSaved: !!c.fileSaved };
     state.tabs.splice(Math.max(sysCount(), Math.min(c.at, state.tabs.length)), 0, t);
     updateUndoChip();
     setActiveTab(t.id);
@@ -2446,19 +4723,16 @@
     rememberScroll();
     state.activeTab = id; state.refIdx = -1;
     const t = state.tabs.find(x => x.id === id);
-    if (t && t.kind === SYS.DIFF && state.diffStale) computeDiff();
     renderTabs(); runRefSearch(); restoreScroll();
+    if (state.diffMode) rebuildDiffView();
   }
   function restoreScroll() {
+    if (suppressLeftScroll) return;
     const t = activeTabObj();
-    // 「変更」タブは、保存位置ではなくカーソル行に合わせる（追従は常時ON）
-    if (t && t.kind === SYS.DIFF) {
-      requestAnimationFrame(() => { syncDiffToCaret(true); drawMinimap("left"); });
-      return;
-    }
     const top = t ? (t.scroll || 0) : 0;
     // レンダリング確定後に戻す
     requestAnimationFrame(() => {
+      if (suppressLeftScroll) return;
       $("ref-body").scrollTop = top;
       drawMinimap("left");
     });
@@ -2510,10 +4784,10 @@
     state.tabs.forEach(t => {
       const el = document.createElement("div");
       el.className = "tab" + (t.id === state.activeTab ? " active" : "")
-        + (t.kind ? " sys sys-" + (t.kind === SYS.ORIGIN ? "origin" : "diff") : "");
+        + (t.kind ? " sys sys-origin" : "");
       el.dataset.id = t.id;
       el.title = t.kind
-        ? (t.kind === SYS.ORIGIN ? "右ペインを開いた時点の内容（閉じられません）" : diffTitle(t))
+        ? "右ペインを開いた時点の内容（閉じられません）"
         : (t.note || t.name);          // 「前の編集」だけ由来を出す（rev56）
       /* × はアクティブな資料タブだけ（誤タップで別タブを閉じない） */
       if (t.kind) {
@@ -2553,7 +4827,6 @@
     const t = activeTabObj();
     if (!t) return true;                                     // タブが選ばれていない
     if (t.kind === SYS.ORIGIN) return state.origin.text === "";  // 右ペインを開く前
-    if (t.kind === SYS.DIFF)   return state.origin.text === "" && docLen() === 0;
     return t.text === "";                                    // 空の資料タブ
   }
 
@@ -2570,20 +4843,20 @@
   }
 
   function renderRef() {
+    if (state.diffMode) { rebuildDiffView(); return; }
     const t = activeTabObj(), inner = $("ref-inner");
     const empty = refIsEmpty();
     $("ref-body").classList.toggle("origin-view", !!t && t.kind === SYS.ORIGIN);
-    inner.classList.toggle("diff-view", !!t && t.kind === SYS.DIFF);
+    inner.classList.remove("diff-view");      /* 平文表示。diff（5.23）は innerDiffClass が付ける */
     updateRefSearchEnabled();
     $("ref-empty").style.display = empty ? "flex" : "none";
-    if (empty) { inner.innerHTML = ""; diffLineEls = []; curLineEl = null; drawLeftMM(); return; }
+    if (empty) { inner.innerHTML = ""; diffLineEls = []; drawLeftMM(); return; }
 
     /* 保険：ヒットが「古いテキスト」に対するものだったら作り直す（5.4D）。
        文字オフセットは元テキストと1対1なので、テキストが差し替わった状態で
        古いヒットを使うと <mark> の位置がずれる。
        ここで弾いておけば、再検索を忘れた経路が将来出ても壊れない。
        比較は文字列の同一性（===）なので、同じ文字列なら実質ノーコスト。 */
-    if (t.kind === SYS.DIFF && (state.diffStale || t.html == null)) computeDiff();
     if (state.refHitsSrc !== null && state.refHitsSrc !== t.text) {
       state.refHits = findAll(t.text, $("ref-q").value);
       state.refHitsSrc = t.text;
@@ -2592,24 +4865,16 @@
       updateCount("ref");
     }
 
-    // 「変更」タブは専用の色付きHTMLを描く
-    if (t.kind === SYS.DIFF) {
-      inner.innerHTML = t.html || "";
-      diffLineEls = [...inner.querySelectorAll(".dl")];
-      curLineEl = null;
-      markDiffHits();          // 検索ヒットの行に色を付ける（5.13.6B）
-      drawLeftMM();
-      syncDiffToCaret();
-      return;
-    }
-    diffLineEls = []; curLineEl = null;
+    diffLineEls = [];
     const text = t.text;
     const heads = headsOn() ? tabHeads(t) : [];
     const hits = state.refHits;
 
     if (!heads.length && !hits.length) {
       inner.innerHTML = '<div class="rtext"></div>';
-      inner.querySelector(".rtext").textContent = text;
+      const rt = inner.querySelector(".rtext");
+      rt.textContent = text;
+      tailBrIfNeeded(rt, text);
       drawLeftMM();
       return;
     }
@@ -2634,7 +4899,19 @@
       html += frag;
     }
     inner.innerHTML = '<div class="rtext">' + html + "</div>";
+    tailBrIfNeeded(inner.querySelector(".rtext"), text);
     drawLeftMM();
+  }
+
+  /** 末尾が改行のとき、最後の空行を描かせるための <br> を足す。
+   *  CSS はブロック末尾の改行を落とすので（"あ\n" は 1 行分しか高さを持たない）、
+   *  原稿の最後が空行だとその 1 行が出ない。diff の drowHtml と同じ手当て。
+   *  ★ZWSP ではなく <br>。ZWSP は textContent を変えてしまい、
+   *    charOffsetInRoot / refOffsetAt の文字オフセットが 1 つずれる。 */
+  function tailBrIfNeeded(root, text) {
+    if (!root || !text) return;
+    if (text.charAt(text.length - 1) !== "\n") return;
+    root.appendChild(document.createElement("br"));
   }
 
   function findAll(text, q) {
@@ -2656,12 +4933,11 @@
     return i < 0 ? 0 : i;
   }
   /** 左ペインのいま画面上端に見えている文字オフセット（初回検索の起点に使う）。
-   *  「変更」タブは行がブロック要素で refOffsetAt が使えないため素通し（先頭から）にする。
    *  ★Safari は caretRangeFromPoint が余白／未レイアウトで null を返しやすい。
       複数点を試し、それでも駄目ならスクロール比で近似する（5.4E・作者 Mac Safari）。 */
   function refViewOffset() {
-    const t = activeTabObj();
-    if (t && t.kind === SYS.DIFF) return null;
+    const t = activeTabObj();          /* ★下の保険が t.text を読む。消すと catch に落ちて
+                                          常に null＝検索が先頭固定になる（自己診断が検出） */
     const rb = $("ref-body"), r = rb.getBoundingClientRect();
     const xs = [hitX(r), r.left + Math.min(24, Math.max(8, r.width * 0.15))];
     const ys = [r.top + 2, r.top + 8, r.top + 18];
@@ -2685,8 +4961,6 @@
   }
   function runRefSearch() {
     const t = activeTabObj();
-    // 「変更」タブは t.text（表示テキスト）が検索対象。古いままだと位置がずれる
-    if (t && t.kind === SYS.DIFF && (state.diffStale || t.text == null)) computeDiff();
     const searchable = refSearchable();
     state.refHits = searchable ? findAll(t.text, $("ref-q").value) : [];
     state.refHitsSrc = searchable ? t.text : null;   // どのテキストに対するヒットか（5.4D）
@@ -2696,39 +4970,12 @@
     updateCount("ref"); renderRef();
   }
 
-  /** 「変更」タブの検索ヒットを【行単位】で示す（5.13.6B）。
-      差分ビューは行がブロック要素なので、文字単位の <mark> を入れるには
-      HTML を組み直すことになる（キーストロークごとに数千の div を作り直す）。
-      クラスの付け外しだけで済む行単位にして、DOM は触らない。 */
-  function markDiffHits() {
-    if (!diffLineEls.length) return;
-    for (const el of diffLineEls) el.classList.remove("hit-line", "hit-cur");
-    const t = activeTabObj();
-    if (!t || t.kind !== SYS.DIFF || !state.refHits.length) return;
-    const txt = t.text || "";
-    // 行頭オフセットの表を1回作って二分探索する（ヒット毎に slice すると O(n×件数)）
-    const ls = [0];
-    for (let i = 0; i < txt.length; i++) if (txt.charCodeAt(i) === 10) ls.push(i + 1);
-    const lineOfOff = off => {
-      let lo = 0, hi = ls.length - 1;
-      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (ls[mid] <= off) lo = mid; else hi = mid - 1; }
-      return lo;
-    };
-    state.refHits.forEach((hit, i) => {
-      const li = lineOfOff(hit.start);
-      const el = diffLineEls[li];
-      if (!el) return;
-      el.classList.add("hit-line");
-      if (i === state.refIdx) el.classList.add("hit-cur");
-    });
-  }
-
   /** 左検索欄の有効・無効。
       renderRef のたびに呼ぶ。タブ切替のときだけ更新していると、
       ファイルを開いて「初期」に中身が入っても無効のまま残り、
       「タブを何度か切り替えると入力できる」という状態になる（仕様 5.4C）。 */
   function refSearchable() {
-    return !!activeTabObj() && !refIsEmpty();      // 「変更」タブでも検索できる（5.13.6B）
+    return !!activeTabObj() && !refIsEmpty();
   }
   function updateRefSearchEnabled() {
     const q = $("ref-q"), ok = refSearchable();
@@ -2750,11 +4997,6 @@
       b.textContent = "←現状を初期に設定";
       b.title = "いまの右ペインの内容を新しい「初期」として記録し直します（ここが変更の起点になります）";
       b.dataset.act = "rebase";
-    } else if (t && t.kind === SYS.DIFF) {
-      b.hidden = false;
-      b.textContent = "→カーソル位置";
-      b.title = "左でいま見ている行に、右ペインの表示とカーソルを合わせます";
-      b.dataset.act = "tohere";
     } else if (t && !t.kind) {
       /* ★資料タブでは未使用だった枠を使う（5.22）。
          ここに出すことで「見ていたタブを直す」導線が本文のすぐ上に来る。
@@ -2783,10 +5025,7 @@
     state.refIdx = (state.refIdx + d + state.refHits.length) % state.refHits.length;
     updateCount("ref"); renderRef();
     const rb = $("ref-body");
-    const t = activeTabObj();
-    const target = t && t.kind === SYS.DIFF
-      ? $("ref-inner").querySelector(".dl.hit-cur")
-      : $("ref-inner").querySelector("mark.cur");
+    const target = $("ref-inner").querySelector("mark.cur");
     if (target) { rb.scrollTop = target.offsetTop - rb.clientHeight / 2; rememberScroll(); drawMinimap("left"); }
   }
   function updateCount(which) {
@@ -2843,11 +5082,30 @@
     syncMirrorText(); buildHitLayer(); drawMinimap("right");
   }
   function stepEd(d) {
+    /* ★diff 表示中は、まず編集中の 1 行を【同期で】確定させる。
+       確定で本文が変わるとヒットのオフセットが動くので、動いたら数え直す。 */
+    let rebuilt = false;
+    if (state.diffMode) {
+      if (commitDiffLine({ silent: true, sync: true })) rebuilt = true;
+      if (state.edHitsSrc !== null && state.edHitsSrc !== docText()) runEdSearch(true);
+    }
     if (!state.edHits.length) return;
     state.edIdx = (state.edIdx + d + state.edHits.length) % state.edHits.length;
     const h = state.edHits[state.edIdx];
     setDocSel(h.start, h.end);      /* ★窓の外のヒットへも飛べるように（5.19） */
-    scrollToOffset(h.start);
+    /* ★diff 表示中の右ペインは .drow の集まりで、ミラー（#mirror）の座標では動かせない。
+       scrollToOffset をそのまま呼ぶと「2 / 313」と数は出るのに画面が動かない
+       （実測：ヒットが 22,557px 上にあっても scrollTop はほぼ据え置き。作者点検 2026-08-14）。
+       位置合わせは既存の alignDiffScrollFromRightOff に任せる＝左右そろって動く。 */
+    if (state.diffMode) {
+      /* ★確定で再構築が走ったときは、その再構築が【rAF 2 枚のあと】に
+         「元の読み位置」へ当て直すので、そのままだとジャンプが打ち消される
+         （実測：同期直後 22,023 → 120ms 後 21,793＝元の位置。作者点検 2026-08-14）。
+         再構築があったときだけ、当て直しの【あと】に合わせる。 */
+      if (rebuilt) requestAnimationFrame(() => requestAnimationFrame(() => centerDiffOnDocOffset(h.start)));
+      else centerDiffOnDocOffset(h.start);
+    }
+    else scrollToOffset(h.start);
     markCurrentHit(); updateCount("ed"); updateCaret(); drawMinimap("right");
   }
   function scrollToOffset(off) {
@@ -3004,6 +5262,8 @@
     if (toolBusy) { toast("前の処理が終わるまでお待ちください"); return; }
     toolBusy = true;
     closeToolsMenu();
+    /* diff 行編集中なら先に正本へ */
+    if (state.diffMode) commitDiffLine({ silent: true, noRebuild: true });
     const btn = $("btn-tools");
     const prevLabel = btn.textContent;
     btn.disabled = true;
@@ -3028,10 +5288,14 @@
                      origin: state.origin, dirty: state.dirty, fileSaved: state.fileSaved, prevTabId: null,
                      label: label, keepView: true, scroll: keep, caret: caret0 });
           setWholeDoc(r.text);
-          t.focus();
-          setDocSel(caret, caret);
-          rScroll().scrollTop = keep;   /* setWholeDoc で headTop=0 */
-          onEdit(true); runEdSearch();
+          if (state.diffMode) {
+            rebuildDiffView();
+          } else {
+            t.focus();
+            setDocSel(caret, caret);
+            rScroll().scrollTop = keep;   /* setWholeDoc で headTop=0 */
+            onEdit(true); runEdSearch();
+          }
           toast(label + "：" + r.count + "か所（Ctrl+Z で元に戻せます）");
         } finally {
           toolBusy = false;
@@ -3106,6 +5370,21 @@
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runSepBlank(); }
     });
     $("tool-indent").addEventListener("click", () => applyTransform("段落頭を字下げ", indentParagraphs));
+
+    $("btn-diff-mode").addEventListener("pointerdown", e => e.stopPropagation());
+    $("btn-diff-mode").addEventListener("click", e => {
+      e.stopPropagation();
+      setDiffMode(!state.diffMode);
+    });
+    /* ★ボタンは #splitter の子。ダブルクリックが親に浮くと「1:1 に戻しました」が出る */
+    $("btn-diff-mode").addEventListener("dblclick", e => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    $("diff-next").addEventListener("click", () => jumpDiff(1));
+    $("diff-prev").addEventListener("click", () => jumpDiff(-1));
+    syncDiffChrome();
+    placeDiffBtn();
 
     $("tool-eol-crlf").addEventListener("change", () => { state.eol = "crlf"; saveSettings(); toast("保存する改行コード：Windows（CRLF）"); });
     $("tool-eol-lf").addEventListener("change", () => { state.eol = "lf"; saveSettings(); toast("保存する改行コード：Mac・Unix（LF）"); });
@@ -3185,45 +5464,27 @@
     return off;
   }
 
+  /** root 内の文字オフセット [s, e) を指す Range。取れなければ null。
+   *  charOffsetInRoot の逆向き（nodeAtOffset はテキストノードだけを歩く）。 */
+  function rangeInRoot(root, s, e) {
+    const ps = nodeAtOffset(root, s), pe = nodeAtOffset(root, e);
+    if (!ps || !pe || !ps.node || !pe.node) return null;
+    const r = document.createRange();
+    try {
+      r.setStart(ps.node, Math.min(ps.off, ps.node.nodeValue.length));
+      r.setEnd(pe.node, Math.min(pe.off, pe.node.nodeValue.length));
+    } catch (_) { return null; }
+    return r;
+  }
+
   /**
-   * 左ペインの選択範囲が「行として完結しているか」を判定し、
-   * 行単位ならば前後の余白まで含めて切り出し、末尾に改行を付けて返す。
-   * これにより連続してドロップしても毎回 Enter を押す必要がなくなる。
+   * 選択範囲を「行として完結しているか」で振り分け、行単位なら前後の余白まで含めて
+   * 切り出して末尾に改行を付ける。連続ドロップで毎回 Enter を押さずに済む。
+   * ★引数は【テキスト上のオフセット】に揃えてから渡す。左ペインの DOM が
+   *   平文（.rtext）でも diff の .drow でも、この判定規則は 1 つに保つ（操作感を揃えるため）。
    */
-  function buildDragPayload() {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
-    const raw = sel.toString();
-    if (!raw) return null;
-
-    // 本文だけを含む要素を基準にする（将来ヘッダ等を足しても文字数がずれないように）
-    const t = activeTabObj();
-    const root = $("ref-inner").querySelector(".rtext") || $("ref-inner");
-    const r = sel.getRangeAt(0);
-    if (!t || !root.contains(r.startContainer) || !root.contains(r.endContainer)) {
-      return { text: raw, lineWise: false };
-    }
-
-    // 「変更」タブは行がブロック要素なので、行単位で切り出す
-    if (t.kind === SYS.DIFF) {
-      const touched = [...$("ref-inner").querySelectorAll(".dl")].filter(el => r.intersectsNode(el));
-      if (!touched.length) return { text: raw, lineWise: false };
-      if (touched.length === 1) {
-        // 1行だけ。完全に含まれていれば行として、途中までなら文字として扱う
-        const r2 = document.createRange();
-        r2.selectNodeContents(touched[0]);
-        const full = r.compareBoundaryPoints(Range.START_TO_START, r2) <= 0 &&
-                     r.compareBoundaryPoints(Range.END_TO_END, r2) >= 0;
-        return full ? { text: touched[0].dataset.t + "\n", lineWise: true }
-                    : { text: raw, lineWise: false };
-      }
-      // 複数行にまたがる選択は「行の集まり」。端が行の途中でも、その行ごと持っていく
-      return { text: touched.map(el => el.dataset.t).join("\n") + "\n", lineWise: true };
-    }
-
-    const text = t.text;
-    let s = charOffsetInRoot(root, r.startContainer, r.startOffset);
-    let e = charOffsetInRoot(root, r.endContainer, r.endOffset);
+  function payloadFromRange(text, s, e, raw) {
+    if (s == null || e == null) return { text: raw, lineWise: false };
     if (e < s) { const tmp = s; s = e; e = tmp; }
 
     // 選択の先頭を行頭まで戻す
@@ -3247,6 +5508,239 @@
     let out = text.slice(lineStart, sliceEnd);
     if (!out.endsWith("\n")) out += "\n";
     return { text: out, lineWise: true };
+  }
+
+  /** diff 左ペイン：DOM 位置 → 基準タブ本文のオフセット。ギャップ行の上なら null */
+  function diffBaseOffsetAt(node, nodeOffset) {
+    if (!node) return null;
+    const el = node.nodeType === 3 ? node.parentElement : node;
+    const row = el && el.closest ? el.closest(".drow") : null;
+    if (!row || !$("ref-inner").contains(row)) return null;
+    const cell = row.querySelector(".dcell");
+    if (!cell || !cell.contains(node)) return null;
+    const bv = (state.diffView && state.diffView.baseOfView) || [];
+    const a = +row.dataset.a, b = +row.dataset.b;
+    if (!(bv[a] >= 0)) return null;                    // 右にしか無い行（add）＝基準側は空
+    const base = baseTabText();
+    const cellOff = charOffsetInRoot(cell, node, nodeOffset);
+    if (b > a + 1) {
+      /* same 塊は「連続する基準行を \n で繋いだもの」が 1 セルに入っている。
+         esc() も ci クラスの span も textContent を変えないので、そのまま足せる。 */
+      const cellLen = (cell.textContent || "").length;
+      return offsetAtLineStart(base, bv[a]) + Math.max(0, Math.min(cellLen, cellOff));
+    }
+    const rg = docLineRange(base, bv[a]);
+    if (!rg) return null;
+    return rg.start + Math.max(0, Math.min(rg.end - rg.start, cellOff));
+  }
+
+  /** diff 表示中の左ペインからのドラッグ。基準タブ本文のオフセットに直して共通規則へ流す */
+  function buildDiffDragPayload(r, raw) {
+    const base = baseTabText();
+    const bv = (state.diffView && state.diffView.baseOfView) || [];
+    let s = diffBaseOffsetAt(r.startContainer, r.startOffset);
+    let e = diffBaseOffsetAt(r.endContainer, r.endOffset);
+    if (s == null || e == null) {
+      /* 端がギャップ（右にしか無い行）に落ちている。触れた実体行から補う。
+         .drow.gap .dcell は user-select:none なので、選択文字列にギャップは混ざらない。 */
+      const touched = diffLineEls.filter(el =>
+        !el.classList.contains("gap") && bv[+el.dataset.a] >= 0 && r.intersectsNode(el));
+      if (!touched.length) return { text: raw, lineWise: false };
+      if (s == null) s = offsetAtLineStart(base, bv[+touched[0].dataset.a]);
+      if (e == null) {
+        const last = touched[touched.length - 1];
+        const a = +last.dataset.a, b = +last.dataset.b;
+        const rg = docLineRange(base, bv[a] + Math.max(0, b - a - 1));
+        e = rg ? rg.end : base.length;
+      }
+    }
+    return payloadFromRange(base, s, e, raw);
+  }
+
+  function buildDragPayload() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+    const raw = sel.toString();
+    if (!raw) return null;
+
+    // 本文だけを含む要素を基準にする（将来ヘッダ等を足しても文字数がずれないように）
+    const t = activeTabObj();
+    const root = $("ref-inner").querySelector(".rtext") || $("ref-inner");
+    const r = sel.getRangeAt(0);
+
+    /* diff 表示中の左は .drow の集まり。.rtext は無いので通常経路には乗らない */
+    if (state.diffMode) return buildDiffDragPayload(r, raw);
+
+    if (!t || !root.contains(r.startContainer) || !root.contains(r.endContainer)) {
+      return { text: raw, lineWise: false };
+    }
+
+    return payloadFromRange(t.text,
+      charOffsetInRoot(root, r.startContainer, r.startOffset),
+      charOffsetInRoot(root, r.endContainer, r.endOffset), raw);
+  }
+
+  /* ---- diff 表示中の右ペイン：点 → 原稿オフセット（5.23 §6） ----
+     通常モードのミラー二分探索（offsetFromPoint）は使えない。表示は実 DOM の .drow なので、
+     左ペインの refOffsetAt と同じく caretRangeFromPoint で当てる。
+     ★「表示行 → 原稿オフセット」の写像はここ 1 か所に閉じる（要求仕様 §6）。 */
+
+  /** (x, y) にある .drow と、その中のテキスト位置 */
+  function diffRowHitAt(x, y) {
+    const inner = $("edit-diff-inner");
+    let node = null, nodeOffset = 0;
+    if (document.caretRangeFromPoint) {
+      const rg = document.caretRangeFromPoint(x, y);
+      if (rg) { node = rg.startContainer; nodeOffset = rg.startOffset; }
+    } else if (document.caretPositionFromPoint) {
+      const cp = document.caretPositionFromPoint(x, y);
+      if (cp) { node = cp.offsetNode; nodeOffset = cp.offset; }
+    }
+    let row = null;
+    if (node) {
+      const el = node.nodeType === 3 ? node.parentElement : node;
+      const r0 = el && el.closest ? el.closest(".drow") : null;
+      if (r0 && inner.contains(r0)) row = r0;
+    }
+    if (!row) {
+      /* 行間の余白などで取れないことがある。y から床の行を拾う（罠21 と同じ「床」） */
+      const ed = $("edit-diff");
+      row = drowAtScrollTop(diffLineElsR, y - ed.getBoundingClientRect().top + ed.scrollTop);
+      node = null;
+    }
+    if (!row) return null;
+    const cell = row.querySelector(".dcell");
+    if (node && (!cell || !cell.contains(node))) node = null;
+    return { row: row, cell: cell, node: node, nodeOffset: nodeOffset };
+  }
+
+  /** セル内オフセットの位置に置くキャレットの矩形（viewport 座標） */
+  function diffCaretRectAt(cell, cellOff) {
+    if (!cell) return null;
+    const n = (cell.textContent || "").length;
+    if (!n) return null;
+    const s = Math.max(0, Math.min(cellOff, n));
+    /* 折りたたみ Range は矩形が空になることがある（leftTopForOffset と同じ逃げ道）。
+       1 文字ぶんに広げて、左端／右端のどちらを使うかで位置を作る。 */
+    const useRight = s >= n;
+    const r = rangeInRoot(cell, useRight ? n - 1 : s, useRight ? n : s + 1);
+    if (!r) return null;
+    const rects = r.getClientRects();
+    if (!rects.length) return null;
+    const q = useRight ? rects[rects.length - 1] : rects[0];
+    return { left: useRight ? q.right : q.left, top: q.top, height: q.height };
+  }
+
+  /** セル内オフセットが属する【論理行】の矩形（折り返しを含む縦の範囲） */
+  function diffLogicalLineRect(cell, cellOff) {
+    const txt = cell ? (cell.textContent || "") : "";
+    if (!txt.length) return null;
+    const s = cellOff <= 0 ? 0 : txt.lastIndexOf("\n", cellOff - 1) + 1;
+    let e = txt.indexOf("\n", cellOff);
+    if (e < 0) e = txt.length;
+    if (e <= s) return null;
+    const r = rangeInRoot(cell, s, e);
+    if (!r) return null;
+    const rc = r.getBoundingClientRect();
+    return (rc && rc.height) ? rc : null;
+  }
+
+  /** ギャップ行（右に実体が無い＝削除された行）に落とされたときの挿入位置。
+   *  前の実在行の直後（＝次の実在行の行頭）へ丸める。 */
+  function diffGapDropOffset(viewLine) {
+    const full = docText();
+    const dv = (state.diffView && state.diffView.docOfView) || [];
+    for (let v = viewLine - 1; v >= 0; v--) {
+      if (dv[v] >= 0) {
+        const rg = docLineRange(full, dv[v]);
+        if (!rg) break;
+        return rg.hasNL ? rg.end + 1 : full.length;
+      }
+    }
+    return 0;
+  }
+
+  /**
+   * diff 表示中の右ペイン：(x, y) → { off, rect }。
+   * ★文字として選択された引用は【文字位置】、行として選択された引用は【行境界】へ丸める
+   *   （作者指示 2026-08-14）。キャレット表示もここが返す rect をそのまま使うので、
+   *   「見えている位置」と「入る位置」が必ず一致する。
+   */
+  function diffDropInfoAt(x, y, lineWise) {
+    if (!state.diffMode || !state.diffView) return null;
+    const hit = diffRowHitAt(x, y);
+    if (!hit) return null;
+    const full = docText();
+    const dv = state.diffView.docOfView || [];
+    const a = +hit.row.dataset.a, b = +hit.row.dataset.b;
+
+    if (hit.row.classList.contains("gap") || !(dv[a] >= 0)) {
+      const q = hit.row.getBoundingClientRect();
+      return { off: diffGapDropOffset(a), rect: { left: q.left, top: q.top, height: q.height } };
+    }
+
+    const cellTxt = hit.cell ? (hit.cell.textContent || "") : "";
+    let cellOff = hit.node ? charOffsetInRoot(hit.cell, hit.node, hit.nodeOffset) : cellTxt.length;
+    cellOff = Math.max(0, Math.min(cellTxt.length, cellOff));
+
+    let off;
+    if (b > a + 1) {
+      off = offsetAtLineStart(full, dv[a]) + cellOff;   // same 塊＝連続する原稿行を \n で繋いだもの
+    } else {
+      const rg = docLineRange(full, dv[a]);
+      if (!rg) return null;
+      off = rg.start + Math.min(rg.end - rg.start, cellOff);
+    }
+    off = Math.max(0, Math.min(full.length, off));
+
+    if (!lineWise) {
+      const q = hit.row.getBoundingClientRect();
+      return {
+        off: off,
+        rect: diffCaretRectAt(hit.cell, cellOff) || { left: q.left, top: q.top, height: q.height }
+      };
+    }
+
+    /* 行単位：論理行の上半分なら【その行の前】、下半分なら【次の行の前】へ */
+    const box = diffLogicalLineRect(hit.cell, cellOff) || hit.row.getBoundingClientRect();
+    const col = off - lineHeadOffset(full, off);
+    if (y <= (box.top + box.bottom) / 2) {
+      const rc = diffCaretRectAt(hit.cell, cellOff - col);
+      return { off: off - col, rect: rc || { left: box.left, top: box.top, height: box.height } };
+    }
+    let lineEnd = cellTxt.indexOf("\n", cellOff);
+    if (lineEnd < 0) lineEnd = cellTxt.length;
+    const qe = diffCaretRectAt(hit.cell, lineEnd);
+    const nl = full.indexOf("\n", off - col);
+    return {
+      off: nl < 0 ? full.length : nl + 1,
+      rect: qe ? { left: box.left, top: qe.top + qe.height, height: qe.height }
+               : { left: box.left, top: box.bottom, height: Math.min(box.height, 30) }
+    };
+  }
+
+  /**
+   * 通常モード（diff OFF）：行として選択された引用の落とし先を【行境界】へ丸める。
+   * 論理行の上半分なら その行の前、下半分なら 次の行の前。
+   * ★丸めないと、落とした文字位置で行が真っ二つに割れる（rev84 まではそうだった）。
+   *   diff ON と操作を揃える（作者指示 2026-08-14）。
+   * ミラーは常に全文なので（5.19）、ミラー上のオフセット＝原稿のオフセット。
+   */
+  function lineWiseSnapOffset(full, off, clientY) {
+    const ls = lineHeadOffset(full, off);
+    let le = full.indexOf("\n", ls);
+    if (le < 0) le = full.length;
+    if (le <= ls) return ls;                       // 空行はその行頭へ
+    const node = mirrorNode();
+    const r = document.createRange();
+    try {
+      r.setStart(node, Math.max(0, Math.min(ls, node.length)));
+      r.setEnd(node, Math.max(0, Math.min(le, node.length)));
+    } catch (_) { return ls; }
+    const box = r.getBoundingClientRect();
+    if (!box || !box.height) return ls;
+    if (clientY <= (box.top + box.bottom) / 2) return ls;
+    return le >= full.length ? full.length : le + 1;
   }
 
   $("ref-inner").addEventListener("dragstart", e => {
@@ -3273,9 +5767,18 @@
     $("pane-edit").classList.remove("drop-overwrite");
     body().classList.remove("drop-overwrite");
     // dragover 中は getData() が使えないため、独自 MIME の有無で行単位かを判別する
-    $("drop-caret").classList.toggle("linewise", types.includes(LINEWISE_MIME));
+    const lineWise = types.includes(LINEWISE_MIME);
+    $("drop-caret").classList.toggle("linewise", lineWise);
+    if (state.diffMode) {
+      const info = diffDropInfoAt(e.clientX, e.clientY, lineWise);
+      showDiffDropCaret(info && info.rect, lineWise);
+      return;
+    }
     syncMirrorStyle(); syncMirrorText();
-    showDropCaret(offsetFromPoint(e.clientX, e.clientY));
+    let off = offsetFromPoint(e.clientX, e.clientY);
+    // 行として掴んだ引用は行境界へ丸める（diff ON と同じ。落とす前に見える位置＝入る位置）
+    if (lineWise) off = lineWiseSnapOffset(docText(), off, e.clientY);
+    showDropCaret(off);
   }));
   body().addEventListener("dragleave", e => {
     if (e.relatedTarget && body().contains(e.relatedTarget)) return;
@@ -3301,22 +5804,91 @@
     }
     const text = e.dataTransfer.getData("text/plain");
     if (!text) return;
+    if (state.diffMode) { dropIntoDiff(text, e.clientX, e.clientY); return; }
     syncMirrorStyle(); syncMirrorText();
-    const off = offsetFromPoint(e.clientX, e.clientY), t = ta();
+    let off = offsetFromPoint(e.clientX, e.clientY);
+    const t = ta();
 
-    // 行単位（末尾が改行）の場合、行の途中に落とされたら先頭にも改行を足して
-    // 独立した行として挿入する。挿入後キャレットは次行の先頭に残る
     let ins = text;
     const lineWise = ins.endsWith("\n");
-    if (lineWise && off > 0 && docText()[off - 1] !== "\n") ins = "\n" + ins;
+    /* 行として掴んだ引用は【行境界】へ丸めてから入れる（diff ON と同じ。作者指示 2026-08-14）。
+       丸めたので改行を足すのは「原稿の末尾が改行で終わっていない」ときだけ。
+       挿入後キャレットは次行の先頭に残る。 */
+    if (lineWise) {
+      off = lineWiseSnapOffset(docText(), off, e.clientY);
+      if (off > 0 && docText()[off - 1] !== "\n") ins = "\n" + ins;
+    }
 
-    t.focus(); setDocSel(off, off);
+    /* ★読んでいた位置を動かさない。
+       `t.focus()` はブラウザが【いまのキャレット】を見せようとしてスクロールする。
+       右ペインを一度もクリックせず、ホイールでスクロールしただけの状態では
+       キャレットが本文末（value 代入直後の位置）に残っているので、
+       ドロップした瞬間に原稿の最後まで飛ぶ（作者報告 2026-08-14）。
+       ① 先に選択を移してから focus する（古いキャレットを見せに行かせない）
+       ② それでも execCommand がキャレットを見せに動くので、表示上端を控えて戻す
+       挿入がその上端より前なら、同じ本文を上端に保つぶんだけずらす。 */
+    let keepTop = null;
+    try { keepTop = rightDocOffsetAtViewTop(); } catch (_) { keepTop = null; }
+    setDocSel(off, off);
+    t.focus();
     insertText(ins);
     onEdit();
+    if (keepTop != null) {
+      const back = keepTop + (off <= keepTop ? ins.length : 0);
+      requestAnimationFrame(() => { try { scrollRightToDocOffsetTop(back); } catch (_) {} });
+    }
     toast(lineWise
       ? (ins.split("\n").length - 1) + "行を挿入しました（改行付き）"
       : "引用を挿入しました（" + ins.length + "文字）");
   });
+
+  /**
+   * diff 表示中のドロップ。正本は常に右の原稿（要求仕様 §6）。
+   * 表示用 HTML やギャップ DOM には一切書かない。
+   */
+  function dropIntoDiff(text, x, y) {
+    if (diffLineComposing) { toast("変換中はドロップできません"); return; }
+    if (diffRebuildBusy) return;
+    /* 黄枠は左ペインを触った時点の blur で閉じている（＝右ペインからフォーカスが外れたら消える）。
+       それでも残っていたときのために正本へ書き出しておく。
+       ★noRebuild なので DOM は動かない＝この直後の当たり判定のジオメトリが有効なまま。
+         ここで再構築すると高さ揃え（equalizeDiffRows）が rAF に載り、古い高さで当ててしまう。
+         rebuildDiffView が冒頭で採っているのと同じ手。 */
+    if (diffEdit) commitDiffLine({ silent: true, noRebuild: true });
+
+    const lineWise = text.endsWith("\n");
+    const info = diffDropInfoAt(x, y, lineWise);
+    hideDropCaret();
+    if (!info) { toast("ドロップ位置を特定できませんでした"); return; }
+    const full = docText();
+    const off = Math.max(0, Math.min(full.length, info.off));
+    /* 行として落とす場合、位置はすでに行境界へ丸めてある（diffDropInfoAt）。
+       原稿の末尾が改行で終わっていないときだけ、独立した行になるよう改行を足す。 */
+    let ins = text;
+    if (lineWise && off > 0 && full[off - 1] !== "\n") ins = "\n" + ins;
+    const next = full.slice(0, off) + ins + full.slice(off);
+    const caret = off + ins.length;
+    /* 落とした直後にその行の黄枠を開く。diff OFF 時に「落とした位置から書き続けられる」
+       のと操作感を合わせる（作者指示 2026-08-14）。
+       ★行として落としたときは【挿入した最後の行の末尾】に置く。caret は挿入ブロックの
+         次の行の行頭にあるが、そこは原稿の未変更行なので、黄枠を載せると
+         beginDiffLineEdit → expandSameChunkAt がその行の属する same 塊を
+         丸ごと 1 行ずつの DOM に展開する。2000 行・変更2か所の原稿で
+         行 DOM が 5 → 501 に増え、長い原稿では固まる（作者報告 2026-08-14「行コピーでフリーズ」）。
+         挿入した行自身は add 行（1 行 = 1 DOM）なので展開が起きない。 */
+    const focusAt = lineWise ? Math.max(off, caret - 1) : caret;
+    applyDiffDocChange(next, {
+      snapFull: full,
+      caret: caret,
+      focusDocLine: docLineAtOffset(next, focusAt),
+      caretInLine: focusAt - lineHeadOffset(next, focusAt),
+      label: "引用ドロップ",
+      opt: {}
+    });
+    toast(lineWise
+      ? (ins.split("\n").length - 1) + "行を挿入しました（改行付き）"
+      : "引用を挿入しました（" + ins.length + "文字）");
+  }
 
   $("pane-ref").addEventListener("dragover", e => {
     if (e.dataTransfer.types && [...e.dataTransfer.types].includes("Files")) {
@@ -3409,7 +5981,6 @@
        が 10万字全文のレイアウト計測を毎回走らせていた。文末ほど重い。
        改行・貼付・削除・Undo など高さに効きうるものだけ grow。 */
     refreshOverlay({ typing: true, grow: inputMayChangeHeight(ev) });
-    scheduleDiff();
     clearTimeout(saveTimer);
     if (!autosavePaused) saveTimer = setTimeout(autoSave, AUTOSAVE_MS);
   }
@@ -3435,7 +6006,6 @@
     /* 自動保存だけ予約（本体の value 読みは autoSave 内・停止後） */
     clearTimeout(saveTimer);
     if (!autosavePaused) saveTimer = setTimeout(autoSave, AUTOSAVE_MS);
-    state.diffStale = true;
     /* 統計・行桁・overlay はさらに遅らせて 1 回。value 読みを連打しない */
     clearTimeout(headerStatsTimer);
     headerStatsTimer = setTimeout(() => {
@@ -3523,6 +6093,8 @@
   /** 下書きを LocalStorage に保存する。成功したら true を返す（5.8） */
   function autoSave(quiet) {
     if (autosavePaused || composing) return false;
+    /* diff 行編集中は textarea の中身を docCache へ載せてから書く */
+    if (state.diffMode) try { flushDiffLineToCache(); } catch (_) {}
     const payload = { name: state.fileName, text: docText(), at: Date.now(), tabId: draftTabId,
                       origin: { text: state.origin.text, name: state.origin.name } };
     try {
@@ -3730,8 +6302,6 @@
     t.name = myName;
     t.text = myText;
     t.handle = myHandle;
-    /* ★t.html は kind 付きタブ（変更）しか読まない。ここで触ると
-       rev79 で消した死にコードを復活させることになる（自己診断が見ている）。 */
     t.heads = null; t.scroll = 0;
     t.prevEdit = false;
     /* ★左へ渡す本文は、直前の saveManuscriptToFile() でファイルに書いてある。
@@ -3905,8 +6475,14 @@
       t.setSelectionRange(0, 0); rScroll().scrollTop = 0; state.caret = 0;
     }
     setOrigin(p.origin.text, p.origin.name);
-    renderRef(); restoreScroll();
-    updateHeader(); runEdSearch(); refreshOverlay();
+    if (state.diffMode) {
+      hideDiffLineEd();
+      rebuildDiffView();
+    } else {
+      renderRef(); restoreScroll();
+      refreshOverlay();
+    }
+    updateHeader(); runEdSearch();
     rememberFileStamp(state.fileHandle);          // Ctrl+Z でハンドルが変わったら監視も付け直す（5.9E）
     toast((p.label || "直前の操作") + "を取り消しました（「" + p.name + "」に戻しました）");
     return true;
@@ -3921,7 +6497,7 @@
     /* ↩ で復元したタブは prevEdit の印を失っているので、名前でも拾う。
        拾えないと［新規］のたびに同名タブが増える。 */
     let t = state.tabs.find(x => !x.kind && (x.prevEdit || x.name === PREV_EDIT_TAB));
-    if (t) { t.text = text; t.heads = null; t.scroll = 0; }   // t.html は kind 付きタブしか読まない
+    if (t) { t.text = text; t.heads = null; t.scroll = 0; }
     else { t = addTab(PREV_EDIT_TAB, text, false, 0, null); }
     /* ★退避した本文がディスクにあるかは［新規］の確認ダイアログ側の判断（5.22D）。
        使い回したタブの古い印を必ず上書きすること。 */
@@ -4055,6 +6631,7 @@
    *  ★Mac Safari 等（FSA 無し）: いまの fileName のまま download。毎回 prompt しない（作者報告 Ver.1.3.6）。
       名前を変えたいときは Cmd+Shift+S / saveAsTxt。 */
   async function saveOverwrite() {
+    if (state.diffMode) try { flushDiffLineToCache(); } catch (_) {}
     if (preferShareFirst()) { saveShareDirect(); return; }
     if (!allowOverwriteUI() || !state.fileHandle) {
       const text = withEol(docText());
@@ -4387,6 +6964,7 @@
   }
 
   async function saveAsTxt() {
+    if (state.diffMode) try { flushDiffLineToCache(); } catch (_) {}
     const text = withEol(docText());
     let name = state.fileName || "無題.txt";
     /* Chrome: OS の保存ダイアログで場所と名前を選ぶ */
@@ -4598,7 +7176,7 @@
     const isL = side === "left";
     const canvas = isL ? $("mm-left") : $("mm-right");
     const wrap = canvas.parentElement;
-    const pane = isL ? $("ref-body") : rScroll();
+    const pane = isL ? $("ref-body") : (state.diffMode ? $("edit-diff") : rScroll());
     const dpr = window.devicePixelRatio || 1;
     // canvas 内の余白。上下 1px は 1 行目の見出しが枠に埋もれないため。
     // 左右は【本文に接する側を厚く】して、色棒・青枠・キャレットが隣ペインに
@@ -4632,10 +7210,12 @@
     ctx.translate(padL, MM_OUT_Y);
 
     const refEmpty = isL && refIsEmpty();
-    const text = isL ? (refEmpty || !t ? "" : t.text) : docText();
+    let text = isL ? (refEmpty || !t ? "" : t.text) : docText();
+    const isDiffTab = isL && state.diffMode;
+    if (state.diffMode && state.diffView && state.diffView.n) {
+      text = Array(state.diffView.n).fill("x").join("\n");
+    }
     const total = text.length;
-
-    const isDiffTab = isL && !!t && t.kind === SYS.DIFF;
 
     /* ミニマップの縦軸は【行】である。density・見出し・検索・変更行・キャレット・
        そしてビューポート枠まで、すべて行番号で位置を決める。
@@ -4659,20 +7239,35 @@
     if (total > 0) {
       const rowH = Math.max(.6, h / n), x0 = xMark0 + 2, maxW = Math.max(1, markMaxW - 4);
       // 本文density
-      // 「変更」タブでは描かない。変更行だけを見せたい場所に灰色の縞を敷くと、
+      // 差分表示中は描かない。変更行だけを見せたい場所に灰色の縞を敷くと、
       // 行数が多いときに色が埋もれて見えなくなる。
-      if (!isDiffTab) {
+      if (!isDiffTab && !state.diffMode) {
         ctx.fillStyle = "#b0bec5";
         for (let i = 0; i < n; i++) {
           const len = lines[i].length;
           if (len) ctx.fillRect(x0, (i / n) * h, Math.max(1, Math.min(maxW, (len / 42) * maxW)), Math.min(rowH, 2));
         }
       }
-      // 見出しマーカー：Lv1＝赤系・全幅／Lv2＝緑・幅55%（本文の見出し色と揃える）
-      // 変更の赤緑と同系だが、「変更」タブでは見出しを描かない、で役割を分ける
-      // Lv3（** / ***）は本文中の強調で件数が多く、ミニマップには出さない
-      if (headsOn() && !isDiffTab) {
-        for (const hd of (isL ? tabHeads(t) : edHeads())) {
+      /* 見出しマーカー：Lv1＝赤系・全幅／Lv2＝緑・幅55%（本文の見出し色と揃える）。
+         Lv3（** / ***）は本文中の強調で件数が多く、ミニマップには出さない。
+         ★差分表示中は【右だけ】描く（作者指示 2026-08-15）。左は変更マーカー専用にする——
+           見出しの赤緑と変更の赤緑が同じ面で混ざると、どちらが変更か読めない（罠④）。
+         ★差分表示では行番号が【view 行】なので、原稿行を写してから描く。 */
+      const hdList = (() => {
+        if (!headsOn()) return [];
+        if (!state.diffMode) return (isL ? tabHeads(t) : edHeads());
+        if (isL) return [];
+        const map = docToViewMap();
+        if (!map) return [];
+        const out = [];
+        for (const hd of edHeads()) {
+          const vl = map[hd.line];
+          if (vl != null && vl >= 0) out.push({ lv: hd.lv, kind: hd.kind, line: vl });
+        }
+        return out;
+      })();
+      if (hdList.length) {
+        for (const hd of hdList) {
           if (hd.lv === 3) continue;
           const y = (hd.line / n) * h;
           // 整数座標で塗り、本文側に 2px・窓端に 1px 空けて隣ペインへにじませない
@@ -4688,16 +7283,26 @@
         }
       }
 
-      // 変更マーカー（左「変更」タブのみ。右ミニマップには出さない＝変更の分布は左だけで示す）
+      // 変更マーカー（差分表示中の左ペインだけ。右ミニマップには出さない＝変更の分布は左だけで示す）
       if (isDiffTab) {
-        // 「変更」タブ：本文側 2px・窓端 1px（枠・窓端・本文境界のどれにも張り付かない）
-        if (state.diffStale || !t.marks) computeDiff();
-        for (const b of packMarks(t.marks || [], n, h)) {
-          ctx.fillStyle = DIFF_MARK_COLOR[b.k];
-          ctx.fillRect(xMark0, b.y, markMaxW, b.h);
+        const marks = (state.diffView && state.diffView.marks) || [];
+        const row = h / Math.max(1, n);
+        for (const m of marks) {
+          const y = (m.i / n) * h;
+          const bh = Math.max(MIN_BAR, row);
+          if (m.k === "chg") {
+            const hw = Math.max(1, markMaxW >> 1);
+            ctx.fillStyle = DIFF_MARK_COLOR.del;
+            ctx.fillRect(xMark0, y, hw, bh);
+            ctx.fillStyle = DIFF_MARK_COLOR.add;
+            ctx.fillRect(xMark0 + hw, y, markMaxW - hw, bh);
+          } else {
+            ctx.fillStyle = DIFF_MARK_COLOR[m.k] || DIFF_MARK_COLOR.chg;
+            ctx.fillRect(xMark0, y, markMaxW, bh);
+          }
         }
       }
-      // 検索ヒット（「変更」タブでも描く）
+      // 検索ヒット（差分表示中でも描く）
       const hits = isL ? state.refHits : state.edHits;
       const cur = isL ? state.refIdx : state.edIdx;
       hits.forEach((hit, i) => {
@@ -4811,7 +7416,7 @@
 
   /** いま画面に見えている論理行の範囲 { top, bot } */
   function visibleLineRange(isL, lineOf, n) {
-    const pane0 = isL ? $("ref-body") : rScroll();
+    const pane0 = isL ? $("ref-body") : (state.diffMode ? $("edit-diff") : rScroll());
     // テキストが差し替わってもレイアウト寸法が偶然同じ、という取り違えを避けるため
     // 文字数もキーに入れる（5.4D）
     const srcLen = isL ? ((activeTabObj() && activeTabObj().text) || "").length : docLen();
@@ -4835,14 +7440,12 @@
     if (isL) {
       const rb = $("ref-body"), r = rb.getBoundingClientRect();
       const t = activeTabObj();
-      // 「変更」タブは行がブロック要素なので offsetTop を二分探索するだけで正確に出る
-      if (t && t.kind === SYS.DIFF && diffLineEls.length) {
-        const find = y => {
-          let lo = 0, hi = diffLineEls.length - 1;
-          while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (diffLineEls[mid].offsetTop <= y) lo = mid; else hi = mid - 1; }
-          return lo;
+      // 差分表示は行がブロック要素（.drow）なので offsetTop から正確に出せる
+      if (state.diffMode && diffLineEls.length) {
+        return {
+          top: diffLineAtY(rb.scrollTop),
+          bot: diffLineAtY(rb.scrollTop + rb.clientHeight - 1)
         };
-        return { top: find(rb.scrollTop), bot: find(rb.scrollTop + rb.clientHeight - 1) };
       }
       const x = hitX(r);
       const o1 = refOffsetAt(x, r.top + 2), o2 = refOffsetAt(x, r.bottom - 2);
@@ -4859,6 +7462,13 @@
       // 最終手段：まだレイアウトが無いときだけ先頭付近の仮枠（全高にはしない）
       const viewLines = Math.max(1, Math.min(n, Math.round(n * rb.clientHeight / Math.max(1, rb.scrollHeight))));
       return { top: 0, bot: Math.max(0, viewLines - 1) };
+    }
+    if (state.diffMode && diffLineElsR.length) {
+      const ed = $("edit-diff");
+      return {
+        top: diffLineAtY(ed.scrollTop, diffLineElsR),
+        bot: diffLineAtY(ed.scrollTop + ed.clientHeight - 1, diffLineElsR)
+      };
     }
     // 右ペインは textarea なのでミラー（5.6B）経由で求める。
     // style の同期は refreshOverlay 側で済んでいるので、ここでは本文だけ合わせる
@@ -4907,10 +7517,7 @@
   function lineDocY(isL, line) {
     if (isL) {
       const rb = $("ref-body"), t = activeTabObj();
-      if (t && t.kind === SYS.DIFF && diffLineEls.length) {
-        const el = diffLineEls[Math.max(0, Math.min(diffLineEls.length - 1, line))];
-        return el ? el.offsetTop : null;
-      }
+      if (state.diffMode && diffLineEls.length) return diffYForLine(line);
       const root = $("ref-inner").querySelector(".rtext") || $("ref-inner");
       const off = lineStartOffset(root.textContent || "", line);
       const p = nodeAtOffset(root, off);
@@ -4923,6 +7530,7 @@
       if (!rc || (!rc.height && !rc.top)) return null;
       return rc.top - rb.getBoundingClientRect().top + rb.scrollTop;
     }
+    if (state.diffMode && diffLineElsR.length) return diffYForLine(line, diffLineElsR);
     const eb = body();
     let off = lineStartOffset(docText(), line);
     /* ★窓に載っていない行へは textarea をスクロールできない。先に窓を張り直す（5.19） */
@@ -4946,8 +7554,12 @@
       const pane = getPane();
       // クリックした位置の「行」をビューポート中央へ（青枠の中心 ≈ クリック点）。
       // 以前は行を画面上端に置いていたため、枠の上辺がクリック点に来て見えていた（rev53）。
-      const src = isL ? ((activeTabObj() && activeTabObj().text) || "") : docText();
-      const nn = Math.max(1, src.split("\n").length);
+      const src = isL
+        ? (state.diffMode && state.diffView ? "x".repeat(0) : ((activeTabObj() && activeTabObj().text) || ""))
+        : docText();
+      const nn = state.diffMode && state.diffView
+        ? Math.max(1, state.diffView.n)
+        : Math.max(1, src.split("\n").length);
       const line = Math.max(0, Math.min(nn - 1, Math.floor(p * nn)));
       const docY = lineDocY(isL, line);
       const max = Math.max(0, pane.scrollHeight - pane.clientHeight);
@@ -4956,8 +7568,16 @@
       pane.scrollTop = docY == null
         ? Math.max(0, Math.min(max, p * pane.scrollHeight - half))
         : Math.max(0, Math.min(max, docY - half));
+      if (state.diffMode) {
+        const other = isL ? $("edit-diff") : $("ref-body");
+        const srcEls = isL ? diffLineEls : diffLineElsR;
+        const dstEls = isL ? diffLineElsR : diffLineEls;
+        holdDiffSync();
+        other.scrollTop = diffYForLine(diffLineAtY(pane.scrollTop, srcEls), dstEls);
+      }
       if (isL) rememberScroll();
-      drawMinimap(side);
+      drawMinimap("left");
+      drawMinimap("right");
     };
     canvas.addEventListener("pointerdown", e => {
       if (e.button != null && e.button !== 0) return;
@@ -4982,7 +7602,9 @@
       e.preventDefault();
     });
     // ダブルクリックで 1:1 に戻す（誤って右寄りに保存された ratio の救済）
-    sp.addEventListener("dblclick", () => {
+    sp.addEventListener("dblclick", e => {
+      if (e.target && e.target.closest && e.target.closest("#btn-diff-mode")) return;
+      if (Math.abs(state.ratio - 0.5) < 0.02) return;  /* もう 1:1 なら何もしない・トーストしない */
       state.ratio = 0.5;
       relayoutPanes();
       saveSettings();
@@ -5166,6 +7788,7 @@
   $("ed-prev").addEventListener("click", () => stepEd(-1));
 
   function toggleReplace(force) {
+    if (state.diffMode) { toast("diff 表示中は置換できません"); return; }
     const bar = $("ed-repbar");
     const show = force != null ? force : bar.hidden;
     bar.hidden = !show;
@@ -5355,10 +7978,10 @@
       setOrigin(docText(), state.fileName);
       const o = state.tabs.find(x => x.kind === SYS.ORIGIN);
       if (o) o.scroll = 0;                  // 仮値（再描画後に文字オフセット基準で上書き）
-      /* setOrigin は「初期」「変更」タブが出ているときだけ runRefSearch() を通り、その中で
+      /* setOrigin は「初期」タブが出ているときだけ runRefSearch() を通り、その中で
          renderRef() と updateCount("ref") を済ませている。renderRef は #ref-inner の中身を
          全部作り直すので、scrollTop は DOM 確定後に当てる必要がある（二重 rAF）。 */
-      if (!isSysActive(SYS.ORIGIN) && !isSysActive(SYS.DIFF)) {
+      if (!isSysActive(SYS.ORIGIN)) {
         renderRef();
       }
       requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -5374,10 +7997,8 @@
         }
         drawMinimap("left");
       }));
-      if (!isSysActive(SYS.ORIGIN) && !isSysActive(SYS.DIFF)) updateCount("ref");
+      if (!isSysActive(SYS.ORIGIN)) updateCount("ref");
       toast("「初期」を右ペインの現在の内容に再設定しました");
-    } else if (act === "tohere") {
-      rightToHere();
     } else if (act === "toedit") {
       /* 資料タブを右ペインへ（5.22）。保存が絡むので非同期。 */
       const t = activeTabObj();
@@ -5659,12 +8280,28 @@
     const k = (e.key || "").toLowerCase();
     /* 見出し間ジャンプ（Cmd/Ctrl+↓ / Cmd/Ctrl+↑。Shift 併用でそこまで選択）。 */
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === "arrowdown" || k === "arrowup")) {
-      if (navHead(k === "arrowdown" ? 1 : -1, e.shiftKey)) e.preventDefault();
+      const dirH = k === "arrowdown" ? 1 : -1;
+      /* ★diff 中は navHead() が【必ず false】になる（textarea にフォーカスが無い）。
+         diff 専用の移動へ振り分ける（作者報告 2026-08-15）。 */
+      if (state.diffMode) {
+        if (navHeadDiff(dirH)) e.preventDefault();
+        return;
+      }
+      if (navHead(dirH, e.shiftKey)) e.preventDefault();
       return;
     }
     /* Ctrl+Z は原則ブラウザ任せ（制約 #4）。ただし［新規］／［読み込み］だけは
-       履歴に載せていないので、自前で戻せるときに限って横取りする（5.15.3 / rev57）。 */
-    if (k === "z" && !e.shiftKey) { if (undoStep()) e.preventDefault(); return; }
+       履歴に載せていないので、自前で戻せるときに限って横取りする（5.15.3 / rev57）。
+       ★diff の行エディタ（黄枠）に居るときは横取りしない。ここで undoStep() を走らせると
+         「打った文字は消えず、本文だけ 1 手戻る」＝混ざった状態になります
+         （実測：打鍵前 123,157 → Ctrl+Z 後 123,160。打った 3 文字が確定されてしまう。
+          blur の commit が setTimeout(0) で undo のあとに走るため。作者点検 2026-08-14）。
+         その行の中の打鍵は、その textarea のブラウザ標準の undo に任せるのが素直。 */
+    if (k === "z" && !e.shiftKey) {
+      if (document.activeElement === $("diff-line-ed")) return;
+      if (undoStep()) e.preventDefault();
+      return;
+    }
     /* Ctrl+A：本文にフォーカスがあるときだけ横取りする（5.19G）。
        窓化で textarea には一部しか載っていないため、素通しすると窓のぶんしか選べない。
        窓が全文なら標準に任せる（余計なことをしない）。 */
@@ -5699,6 +8336,14 @@
      既存の入力経路に任せる（ここでは呼ばない）。
      ボタン経路だけ toastAt を付けて結果をボタン直下に出す（iPad のキーボード対策）。 */
   $("btn-undo").addEventListener("click", () => {
+    /* ★diff の行エディタ（黄枠）が開いているときは、先に【同期で】確定させる。
+       このあとの t.focus() で黄枠が blur し、その commit は setTimeout(0) なので
+       undo より【あと】に走ります。そのままだと「打った文字は残り、本文はさらに
+       1 手前へ戻る」混ざった状態になります（実測 123,157 → 123,171。作者点検 2026-08-14）。
+       ここで確定しておけば、この ↶ がその打鍵を 1 手として戻します。 */
+    if (state.diffMode) {
+      try { commitDiffLine({ silent: true, sync: true }); } catch (_) {}
+    }
     const t = ta();
     t.focus();
     toastAt = $("btn-undo");
@@ -5727,7 +8372,13 @@
   /* ペイン幅・表示幅を当て直して描き直す（resize / スプリッタで共通）。
      ★applyRatio() の後に reflowWidth()（grid 書き換え直後は clientWidth が古い。5.1B）。 */
   const relayoutPanes = () => {
-    applyRatio(); reflowWidth(); refreshOverlay(); drawMinimap("left");
+    applyRatio(); reflowWidth();
+    if (state.diffMode) {
+      syncDiffWrap();
+      requestAnimationFrame(() => { equalizeDiffRows(); drawMinimap("left"); });
+    }
+    placeDiffBtn();
+    refreshOverlay(); drawMinimap("left");
   };
   function fitToolbar() {
     const tb = $("toolbar");
@@ -5743,7 +8394,9 @@
   }
 
   setupMinimapDrag("mm-left", () => $("ref-body"), "left");
-  setupMinimapDrag("mm-right", rScroll, "right");
+  setupMinimapDrag("mm-right", () => state.diffMode ? $("edit-diff") : rScroll(), "right");
+  bindDiffScroll();
+  bindDiffLineEdit();
 
 
   /* =======================================================
@@ -5753,7 +8406,7 @@
 
   // ① システムタブ（常設・閉じられない）
   addTab("初期", "", false, 0, SYS.ORIGIN);
-  addTab("変更", "", false, 0, SYS.DIFF);
+  /* 「変更」タブ（SYS.DIFF）は 5.23 の差分表示に置き換わり、関係コードごと削除した */
   // ② 起動直後は資料も原稿も空。左右の空状態ヒント（仕様 5.2B / 5.6C）が出る。
   setActiveTab(state.tabs[0].id);          // 「初期」タブをアクティブにする
   state.fileName = "無題.txt";
