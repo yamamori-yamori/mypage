@@ -5620,15 +5620,19 @@
     });
     $("save-over").addEventListener("click", () => { closeMenu(); saveOverwrite(); });
     $("save-as").addEventListener("click", () => { closeMenu(); saveAsTxt(); });
-    /* iOS: メニュー内の名前を採用して共有（prompt なし） */
-    $("save-ios-share").addEventListener("click", () => {
+    /* iOS: メニュー内の名前を採用して共有（prompt なし）。
+       ★closeMenu を先にするとユーザー操作が切れ、share が失敗→download へ落ち、
+         iPad では a.download が無視されて「本文がファイル名」になる（作者報告）。
+         共有を起こしてからメニューを閉じる。 */
+    $("save-ios-share").addEventListener("click", e => {
+      e.preventDefault();
+      e.stopPropagation();
       const raw = $("save-ios-name").value;
       const name = sanitizeSaveName(raw, state.fileName || "無題.txt");
       state.fileName = name;
       updateHeader();
       $("save-ios-name").value = name;
-      closeMenu();
-      saveShareDirect();
+      Promise.resolve(saveShareDirect()).finally(() => { try { closeMenu(); } catch (_) {} });
     });
     /* 入力中の document click でメニューが閉じないよう、フィールド内操作は止める必要は
        setupDropMenu が menu.contains で除外済み。Enter で共有。 */
@@ -7156,7 +7160,8 @@
   /** iOS: いまの fileName のまま共有シート（prompt なし・rev91）。 */
   async function saveShareDirect() {
     const text = withEol(docText());
-    const name = state.fileName || "無題.txt";
+    const name = sanitizeSaveName(state.fileName || "無題.txt", "無題.txt");
+    if (name !== state.fileName) { state.fileName = name; updateHeader(); }
     await exportTxt(text, name, false);
   }
 
@@ -7211,21 +7216,45 @@
       const r = window.prompt(hint, cur);
       if (r === null) return null;
       return sanitizeSaveName(r, cur);
-    } catch (_) { return cur; }
+    } catch (_) { return sanitizeSaveName(cur, "無題.txt"); }
   }
+  /** 保存名の整形。本文が誤って名前に入ってもファイル名にしない。
+   *  ・改行・制御文字・連続空白を潰す（1 行の名前だけ残す）
+   *  ・禁則文字を _
+   *  ・拡張子が無ければ .txt
+   *  ・長すぎる名前は切る（iOS の表示・保存で壊れやすい） */
   function sanitizeSaveName(raw, fallback) {
-    let n = String(raw == null ? "" : raw).trim().replace(/[\\/:*?"<>|]/g, "_");
-    if (!n) n = fallback || "無題.txt";
+    let n = String(raw == null ? "" : raw);
+    /* 改行以降は捨てる（input 経由でもペーストで本文が混ざることがある） */
+    n = n.split(/[\r\n\u2028\u2029]/)[0] || "";
+    n = n.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+    n = n.replace(/[\\/:*?"<>|]/g, "_");
+    n = n.replace(/^\.+/, "").trim();
+    if (!n) n = String(fallback || "無題.txt").split(/[\r\n]/)[0] || "無題.txt";
+    n = n.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+    if (!n) n = "無題.txt";
     if (!/\.[^./\\]+$/.test(n)) n += ".txt";
-    return n.length > 120 ? n.slice(0, 120) : n;
+    if (n.length > 80) {
+      const m = n.match(/(\.[^./\\]+)$/);
+      const ext = m ? m[1] : ".txt";
+      const base = n.slice(0, n.length - ext.length);
+      n = base.slice(0, Math.max(1, 80 - ext.length)) + ext;
+    }
+    return n;
   }
   /** File System Access API が使えないときの出口（5.9.3）。共有シート → download の順に試す。
    *  戻り値は呼び出し側では見ていない（どの経路でもトーストで結果を伝える）。 */
   async function exportTxt(text, name, fellBack) {
+    name = sanitizeSaveName(name, state.fileName || "無題.txt");
     /* iPhone/iPad: 共有シート →「ファイルに保存」で場所を選ぶ */
     if (preferShareFirst()) {
       const r = await tryShareTxt(text, name);
       if (r === "shared" || r === "cancelled") return r;
+      /* ★共有失敗後に download へ落とさない。
+         iPad/iPhone の Safari は a[download] を無視し、blob を開いたうえで
+         「本文の先頭＝ファイル名」のファイルが出来る（作者報告）。 */
+      toast("共有シートを開けませんでした。［ファイル保存］→［共有シートで保存］をもう一度押してください", 7000);
+      return "failed";
     }
 
     /* 共通のフォールバック：download で落とす（Safari だけでなく、Chrome で
@@ -7270,11 +7299,18 @@
 
   async function tryShareTxt(text, name) {
     if (typeof navigator === "undefined" || typeof navigator.share !== "function") return "unavailable";
+    name = sanitizeSaveName(name, "無題.txt");
     let file;
     try {
-      file = new File([text], name, { type: "text/plain" });
+      /* Blob 経由＋ charset。素の文字列 bits だけだと iOS で名前が欠ける事例あり */
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      file = new File([blob], name, { type: "text/plain", lastModified: Date.now() });
     } catch (_) {
-      return "unavailable";
+      try {
+        file = new File([String(text)], name, { type: "text/plain" });
+      } catch (_) {
+        return "unavailable";
+      }
     }
     try {
       if (typeof navigator.canShare === "function" && !navigator.canShare({ files: [file] })) {
@@ -7282,7 +7318,10 @@
       }
     } catch (_) { return "unavailable"; }
     try {
-      await navigator.share({ files: [file], title: name });
+      /* ★files だけ渡す。title / text を足すと iPad の「ファイルに保存」が
+         本物の .txt に加えて「テキスト」という別名ファイルも作り、
+         その中身が title（＝小説のファイル名）になる（作者報告）。 */
+      await navigator.share({ files: [file] });
       state.dirty = false; state.fileSaved = true; updateHeader();
       /* iOS の共有シートに「ダウンロード」という項目は無く、「ファイルに保存」から
          ダウンロード／iCloud／On My iPhone を選ぶ（OS 仕様）。 */
