@@ -232,6 +232,13 @@
   }
   .app h3 { font-size: 0.98rem; margin-bottom: 0.2rem; }
   .app p { font-size: 0.82rem; color: var(--muted); }
+  .app-update {
+    margin-top: 0.35rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #b45309;
+  }
   .app-thumbs {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -567,6 +574,7 @@
           <div>
             <h3>⬅️を参照しながら➡️で書くエディタ novedit</h3>
             <p>左に置いた資料を参照しながら右で執筆できる高速エディタ。ブラウザ上で動作・自動保存・テキスト整形機能つき・完全ローカル／無料。</p>
+            <p class="app-update">ver.1.4.6 差分(diff)機能がつきました。左右の文章の違いを表示できます。</p>
           </div>
           <div class="app-actions">
             <a class="btn" href="./novedit/novedit.html"
@@ -588,8 +596,8 @@
           <div class="app-shots" aria-label="アプリ画面のプレビュー">
             <a href="https://note.com/yamamoriyamori/n/ncde3c1151353" target="_blank" rel="noopener noreferrer">
               <img
-                src="https://assets.st-note.com/img/1785501618-4cLjuP0kgOaG2KvbrVyfMlIW.png"
-                alt="noveditの画面（左が参照ペイン、右が編集ペイン）"
+                src="https://assets.st-note.com/img/1786814781-zYl3n78qsXFbiVTe92MakCE6.png"
+                alt="noveditの画面（差分モード・左右ペイン）"
                 loading="lazy" decoding="async" referrerpolicy="no-referrer" />
             </a>
           </div>
@@ -808,14 +816,21 @@
           </li>
         </ul>
       </div>
-      <a class="novel" href="https://pink.solispia.com/user/822/profile"
-         target="_blank" rel="noopener noreferrer">
-        <div>
-          <h3>ソリスピア（一般およびR18）</h3>
-          <p>作者プロフィール · 作品一覧</p>
+      <div class="novel novel-rich">
+        <div class="novel-top">
+          <div>
+            <h3><a href="https://pink.solispia.com/user/822/profile" target="_blank" rel="noopener noreferrer">ソリスピア（一般およびR18）</a></h3>
+            <p>作者プロフィール · 作品一覧</p>
+          </div>
+          <span class="badge">ソリスピア</span>
         </div>
-        <span class="badge">ソリスピア</span>
-      </a>
+        <ul class="novel-works">
+          <li>
+            新作（一般向け）:
+            <a href="https://solispia.com/title/5649" target="_blank" rel="noopener noreferrer">異世界転移で「レベルを人にあげる」チートを手に入れた僕は、妹に全部注ぎ込んで無双させることにした!</a>
+          </li>
+        </ul>
+      </div>
     </div>
   </section>
 
