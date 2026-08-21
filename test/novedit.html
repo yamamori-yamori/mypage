@@ -8791,8 +8791,23 @@
   setTimeout(() => { reflowWidth(); refreshOverlay(); }, 60);   // フォント確定後に幅の上限を測り直す
 
   /* ---- OS / PWA からのファイル起動（File Handling + launchQueue）----
-     manifest.file_handlers で .txt 等を受け取る。第1件＝右ペイン原稿（handle 付き→上書き可）、
-     第2件以降＝左ペイン参照。PC/iOS で分岐しない。 */
+     manifest.file_handlers で .txt 等を受け取る。
+     空の右（無題・未保存・本文なし）への初回＝右ペイン原稿。
+     すでに原稿があるときの追加起動＝いまの右を左タブへ退避し、渡された最新を右へ。
+     同じ操作で複数件なら、その先頭が右・残りは左。PC/iOS で分岐しない。 */
+  function hasLiveManuscript() {
+    if (state.fileHandle) return true;
+    if (state.fileName && state.fileName !== "無題.txt") return true;
+    if (state.fileSaved) return true;
+    const tx = docText();
+    return !!(tx && tx.length);
+  }
+  function stashEditAsRefTab() {
+    const tab = addTab(state.fileName || "無題.txt", docText(), false);
+    tab.fileSaved = !!state.fileSaved;
+    if (state.fileHandle) tab.handle = state.fileHandle;
+    return tab;
+  }
   async function readLaunchHandle(h) {
     const f = await h.getFile();
     const text = String(await f.text()).replace(/\r\n?/g, "\n");
@@ -8827,9 +8842,13 @@
     if (!items || !items.length) return false;
     const edit = items[0];
     const t = ta();
+    const prevName = state.fileName || "無題.txt";
+    const stash = hasLiveManuscript();
     markUndo({ text: docText(), name: state.fileName, handle: state.fileHandle,
                origin: state.origin, dirty: state.dirty, fileSaved: state.fileSaved, prevTabId: null,
                label: "ファイルの読み込み" });
+    let stashed = null;
+    if (stash) stashed = stashEditAsRefTab();
     setWholeDoc(edit.text);
     state.fileName = edit.name;
     state.dirty = false;
@@ -8837,7 +8856,7 @@
     state.fileHandle = edit.handle || null;
     t.setSelectionRange(0, 0); rScroll().scrollTop = 0; state.caret = 0;
     setOrigin(edit.text, edit.name);
-    let firstRefId = null;
+    let firstRefId = stashed ? stashed.id : null;
     for (let i = 1; i < items.length; i++) {
       const r = items[i];
       const tab = addTab(r.name, r.text, false);
@@ -8850,7 +8869,9 @@
     rememberFileStamp(state.fileHandle);
     persistDraftHandle(state.fileHandle);
     const bits = ["「" + edit.name + "」を開きました"];
-    if (items.length > 1) bits.push("参照 " + (items.length - 1) + " 件");
+    if (stashed) bits.push("直前の「" + prevName + "」を左へ");
+    const extra = items.length - 1;
+    if (extra > 0) bits.push("参照 +" + extra + " 件");
     if (edit.handle) bits.push("Ctrl+S で上書き可");
     toast(bits.join(" ／ "));
     return true;
@@ -8890,7 +8911,9 @@
     try { $("overlay").classList.remove("show"); } catch (_) {}
     const items = r.items;
     const go = () => applyLaunchItems(items);
-    if (state.dirty) {
+    /* すでに原稿があるときは右を捨てず左へ退避するので確認しない。
+       空の無題が dirty のときだけ、従来どおり差し替え確認。 */
+    if (state.dirty && !hasLiveManuscript()) {
       confirmOverwrite(
         "OS から " + items.length + " 件のファイルが渡されました。右ペインの原稿を差し替えます。",
         go,
