@@ -2201,11 +2201,36 @@
     return best;
   }
 
+  /** 一意に1回だけ現れる共通行の本数。まったく別原稿だとほぼ 0。 */
+  function uniqueCommonCount(A, B) {
+    const cb = new Map();
+    for (let j = 0; j < B.length; j++) {
+      const s = B[j];
+      if (!s.trim()) continue;
+      cb.set(s, (cb.get(s) || 0) + 1);
+    }
+    const seen = new Map();
+    let n = 0;
+    for (let i = 0; i < A.length; i++) {
+      const s = A[i];
+      if (!s.trim()) continue;
+      seen.set(s, (seen.get(s) || 0) + 1);
+    }
+    seen.forEach((c, s) => { if (c === 1 && cb.get(s) === 1) n++; });
+    return n;
+  }
+
   function middleDiff(A, B) {
     if (!A.length && !B.length) return [];
     if (!A.length) return B.map(s => ({ t: 1, s: s }));
     if (!B.length) return A.map(s => ({ t: -1, s: s }));
-    if (A.length * B.length <= LCS_CELL_CAP) return lcsCore(A, B);
+    const n = A.length, m = B.length, cells = n * m;
+    /* 別原稿同士は LCS が O(nm) で固まる。一意共通がほぼ無いなら全部 del+add。 */
+    if (cells > 80000) {
+      const u = uniqueCommonCount(A, B);
+      if (u < 3) return [...A.map(s => ({ t: -1, s: s })), ...B.map(s => ({ t: 1, s: s }))];
+    }
+    if (cells <= LCS_CELL_CAP) return lcsCore(A, B);
     const an = findAnchor(A, B);
     if (!an) return [...A.map(s => ({ t: -1, s: s })), ...B.map(s => ({ t: 1, s: s }))];
     return [
@@ -2470,6 +2495,22 @@
       }
       if (adds[0] === "") { emitAdd(adds.shift()); continue; }
       if (dels[0] === "") { emitDel(dels.shift()); continue; }
+
+      /* 大きな不一致 hunk を1行ずつ dice すると別原稿で固まる。先頭を少し見て似ていなければ捨てる。 */
+      if (dels.length >= 40 && adds.length >= 40) {
+        let hit = false;
+        const lim = Math.min(8, dels.length, adds.length);
+        for (let z = 0; z < lim && !hit; z++) {
+          if (pairSc(dels[z], adds[z]) >= SIM_THRESHOLD) hit = true;
+          else if (pairSc(dels[0], adds[z]) >= SIM_THRESHOLD) hit = true;
+          else if (pairSc(dels[z], adds[0]) >= SIM_THRESHOLD) hit = true;
+        }
+        if (!hit) {
+          while (dels.length) emitDel(dels.shift());
+          while (adds.length) emitAdd(adds.shift());
+          break;
+        }
+      }
 
       /* 1 del → 複数 add（行分割＋軽い修正） */
       const jD = bestJoin(dels[0], adds, Math.min(adds.length, 8));
@@ -2904,27 +2945,46 @@
       i = b;
       buf.length = 0;
     };
-    const sameBuf = [];
+    const flushDel = buf => {
+      if (!buf.length) return;
+      const a = i, b = i + buf.length;
+      const h = diffCellHtml(buf);
+      const cv = buf.length >= CV_MIN_LINES ? estChunkPx(buf, wrapM) : 0;
+      left += drowHtml("l", "del", h, false, a, b, cv);
+      right += drowHtml("r", "del", " ", true, a, b, cv);
+      for (let k = 0; k < buf.length; k++) {
+        marks.push({ i: i + k, k: "del" });
+        change.push(i + k);
+        docOfView[i + k] = -1;
+        baseOfView[i + k] = baseLine++;
+      }
+      i = b;
+      buf.length = 0;
+    };
+    const flushAdd = buf => {
+      if (!buf.length) return;
+      const a = i, b = i + buf.length;
+      const h = diffCellHtml(buf);
+      const cv = buf.length >= CV_MIN_LINES ? estChunkPx(buf, wrapM) : 0;
+      left += drowHtml("l", "add", " ", true, a, b, cv);
+      right += drowHtml("r", "add", h, false, a, b, cv);
+      for (let k = 0; k < buf.length; k++) {
+        marks.push({ i: i + k, k: "add" });
+        change.push(i + k);
+        docOfView[i + k] = docLine++;
+        baseOfView[i + k] = -1;
+      }
+      i = b;
+      buf.length = 0;
+    };
+    const sameBuf = [], delBuf = [], addBuf = [];
     for (const r of rows) {
-      if (r.k === "same") { sameBuf.push(r.s); continue; }
+      if (r.k === "same") { flushDel(delBuf); flushAdd(addBuf); sameBuf.push(r.s); continue; }
       flushSame(sameBuf);
-      if (r.k === "del") {
-        left += drowHtml("l", "del", diffCellHtml([r.s]), false, i, i + 1);
-        right += drowHtml("r", "del", " ", true, i, i + 1);
-        marks.push({ i: i, k: "del" });
-        change.push(i);
-        docOfView[i] = -1;
-        baseOfView[i] = baseLine++;
-        i++;
-      } else if (r.k === "add") {
-        left += drowHtml("l", "add", " ", true, i, i + 1);
-        right += drowHtml("r", "add", diffCellHtml([r.s]), false, i, i + 1);
-        marks.push({ i: i, k: "add" });
-        change.push(i);
-        docOfView[i] = docLine++;
-        baseOfView[i] = -1;
-        i++;
-      } else {
+      if (r.k === "del") { flushAdd(addBuf); delBuf.push(r.s); continue; }
+      if (r.k === "add") { flushDel(delBuf); addBuf.push(r.s); continue; }
+      flushDel(delBuf); flushAdd(addBuf);
+      {
         /* ★1 chg に \\n が載ると view は1行なのに原稿だけ複数進む。
            Enter 分割後に「次行を選べない／黄枠が消える」原因。
            左右とも論理行にほぐして docOfView を1:1にする。 */
@@ -2973,6 +3033,8 @@
       }
     }
     flushSame(sameBuf);
+    flushDel(delBuf);
+    flushAdd(addBuf);
     $("ref-empty").style.display = "none";
     $("edit-empty").style.display = "none";
     innerDiffClass(true);
@@ -4837,7 +4899,7 @@
           scrollTop を 0 にクランプした状態が描かれ、
           「小説の最初へ飛んでから戻る」ように見える（実測で左ペインが 0 → 元位置）。
        OFF は平文へ戻すだけで軽いので、この段取りは要らない。 */
-    const heavy = docLen() > DIFF_BUSY_CHARS;
+    const heavy = docLen() > DIFF_BUSY_CHARS || String(baseTabText() || "").length > DIFF_BUSY_CHARS;
     if (!heavy) { rebuildDiffView(); return; }
     document.body.classList.add("diff-busy");
     document.documentElement.style.cursor = "progress";
@@ -7913,9 +7975,16 @@
       const avail = r.width - MM * 2 - SPL;
       // マウス位置＝スプリッタの【中心】とみなす（半幅を引かないと中央で離しても右へ寄る）
       state.ratio = clampRatio((e.clientX - r.left - MM - SPL / 2) / avail);
-      relayoutPanes();
+      /* ドラッグ中は grid 幅だけ。overlay / MM / 幅上限は離してから 1 回（毎 move は重い） */
+      applyRatio();
     });
-    const end = () => { if (dragging) { dragging = false; sp.classList.remove("dragging"); saveSettings(); refreshOverlay(); } };
+    const end = () => {
+      if (!dragging) return;
+      dragging = false;
+      sp.classList.remove("dragging");
+      saveSettings();
+      relayoutPanes();
+    };
     ["pointerup", "pointercancel", "lostpointercapture"].forEach(ev => sp.addEventListener(ev, end));
   })();
 
