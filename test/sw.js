@@ -6,7 +6,7 @@
  * file:// では登録されない（ページ側）
  */
 /* キャッシュ名を変えると activate で旧キャッシュを捨てる（SW ファイル更新時に上げる） */
-var CACHE = "novedit-shell-v1";
+var CACHE = "novedit-shell-v2";
 
 var SHELL = [
   "./novedit.html",
