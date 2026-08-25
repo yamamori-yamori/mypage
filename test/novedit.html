@@ -702,7 +702,7 @@
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.4.10　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.4.11　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
@@ -1518,6 +1518,7 @@
   /* 文字サイズ・幅・ペイン分割が変わったときだけ true。
      入力のたびに getComputedStyle 15 項目を読むのは無駄なので、dirty のときだけ同期する。 */
   let mirrorStyleDirty = true;
+  let lastMirrorSrc = null;   /* docText() の参照。同じなら textContent を読まない */
   function invalidateMirrorStyle() { mirrorStyleDirty = true; }
   function syncMirrorStyle() {
     if (!mirrorStyleDirty) return;
@@ -1536,8 +1537,12 @@
     if (m) m.style.top = (ta().offsetTop - headTop) + "px";
   }
   function syncMirrorText() {
-    const m = $("mirror"), v = docText() + ZWSP;   /* ★ミラーは常に全文（5.19） */
+    const m = $("mirror"), src = docText();
+    /* ★10万字で textContent を読むと比較だけで重い。docCache が同じ参照なら省略。 */
+    if (lastMirrorSrc === src && m.firstChild) return;
+    const v = src + ZWSP;   /* ★ミラーは常に全文（5.19） */
     if (m.textContent !== v) m.textContent = v;
+    lastMirrorSrc = src;
   }
   function mirrorNode() {
     const m = $("mirror");
@@ -7530,6 +7535,9 @@
      ミニマップ（幅は CSS の --minimap-w。JS からは MM で読む → rev41 C-1）
      ======================================================= */
   const drawAll = () => { drawMinimap("left"); drawMinimap("right"); };
+  let mmLineCacheL = { text: null, lines: null, n: 0, lineStarts: null };
+  let mmLineCacheR = { text: null, lines: null, n: 0, lineStarts: null };
+  let mmDiffDummy = { n: 0, text: "" };
 
   function drawMinimap(side) {
     const isL = side === "left";
@@ -7548,9 +7556,13 @@
     if (w0 < 1 || H < 1) return;
     const w = Math.max(1, w0 - padL - padR);   // 横の描画幅
     const h = Math.max(1, H - MM_OUT_Y * 2);   // 縦の内容高さ
-    // レイアウト寸法は CSS 100% に任せ、バッファだけ DPR 合わせる
-    canvas.width = Math.max(1, Math.round(w0 * dpr));
-    canvas.height = Math.max(1, Math.round(H * dpr));
+    // レイアウト寸法は CSS 100% に任せ、バッファだけ DPR 合わせる。
+    // ★毎回 width/height を書くとバッファ再確保＋全面クリアになる（スクロールのたびに高い）。
+    //   寸法が同じなら触らない。塗るのは直後の fillRect。
+    const bw = Math.max(1, Math.round(w0 * dpr));
+    const bh = Math.max(1, Math.round(H * dpr));
+    if (canvas.width !== bw) canvas.width = bw;
+    if (canvas.height !== bh) canvas.height = bh;
     canvas.style.width = "";
     canvas.style.height = "";
     const ctx = canvas.getContext("2d");
@@ -7572,7 +7584,9 @@
     let text = isL ? (refEmpty || !t ? "" : t.text) : docText();
     const isDiffTab = isL && state.diffMode;
     if (state.diffMode && state.diffView && state.diffView.n) {
-      text = Array(state.diffView.n).fill("x").join("\n");
+      const dn = state.diffView.n;
+      if (mmDiffDummy.n !== dn) mmDiffDummy = { n: dn, text: Array(dn).fill("x").join("\n") };
+      text = mmDiffDummy.text;
     }
     const total = text.length;
 
@@ -7580,9 +7594,17 @@
        そしてビューポート枠まで、すべて行番号で位置を決める。
        ピクセル比（scrollTop / scrollHeight）を混ぜると、折り返しのぶんだけ必ずずれる。
        行頭オフセットの表を1回作り、二分探索で行番号に直す。 */
-    const lines = text.split("\n"), n = Math.max(1, lines.length);
-    const lineStarts = [0];
-    for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) lineStarts.push(i + 1);
+    let lines, n, lineStarts;
+    const mmCache = isL ? mmLineCacheL : mmLineCacheR;
+    if (mmCache.text === text) {
+      lines = mmCache.lines; n = mmCache.n; lineStarts = mmCache.lineStarts;
+    } else {
+      lines = text.split("\n"); n = Math.max(1, lines.length);
+      lineStarts = [0];
+      for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) lineStarts.push(i + 1);
+      const next = { text: text, lines: lines, n: n, lineStarts: lineStarts };
+      if (isL) mmLineCacheL = next; else mmLineCacheR = next;
+    }
     const lineOf = off => {
       let lo = 0, hi = lineStarts.length - 1;
       while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (lineStarts[mid] <= off) lo = mid; else hi = mid - 1; }
@@ -7602,9 +7624,25 @@
       // 行数が多いときに色が埋もれて見えなくなる。
       if (!isDiffTab && !state.diffMode) {
         ctx.fillStyle = "#b0bec5";
-        for (let i = 0; i < n; i++) {
-          const len = lines[i].length;
-          if (len) ctx.fillRect(x0, (i / n) * h, Math.max(1, Math.min(maxW, (len / 42) * maxW)), Math.min(rowH, 2));
+        /* 行数がキャンバス高さより多いとき、全行 fillRect しても画素は潰れる。
+           縦ビンごとに最長行を1本出す（短い行に隠されない）。行数が少なければ従来どおり1行1本。 */
+        if (n > h) {
+          const bins = Math.max(1, Math.floor(h));
+          for (let y = 0; y < bins; y++) {
+            const i0 = Math.floor(y * n / bins);
+            const i1 = Math.max(i0 + 1, Math.floor((y + 1) * n / bins));
+            let maxLen = 0;
+            for (let i = i0; i < i1 && i < n; i++) {
+              const len = lines[i].length;
+              if (len > maxLen) maxLen = len;
+            }
+            if (maxLen) ctx.fillRect(x0, y, Math.max(1, Math.min(maxW, (maxLen / 42) * maxW)), 1);
+          }
+        } else {
+          for (let i = 0; i < n; i++) {
+            const len = lines[i].length;
+            if (len) ctx.fillRect(x0, (i / n) * h, Math.max(1, Math.min(maxW, (len / 42) * maxW)), Math.min(rowH, 2));
+          }
         }
       }
       /* 見出しマーカー：Lv1＝赤系・全幅／Lv2＝緑・幅55%（本文の見出し色と揃える）。
@@ -8242,12 +8280,17 @@
       caretNavNeedFull = false;
       if (full) {
         refreshOverlay();
-      } else {
-        /* 矢印移動など：ミラー＋キャレット＋右MM（見出し帯はテキスト不変なので触らない） */
+      } else if (document.activeElement !== t0) {
+        /* blur 直後など：ゴースト座標が要る */
         syncMirrorStyle();
         syncMirrorText();
         updateCaret(true);
-        drawMinimap("right");
+        kickRightMM();
+      } else {
+        /* ★矢印移動：フォーカス中は textarea がキャレットを出すので Range しない。
+           ミラー全文比較と同期 MM 描画が 10万字で重い。右 MM は rAF 1 回へ。 */
+        updateCaret(false);
+        kickRightMM();
       }
     });
   }
@@ -8372,7 +8415,7 @@
     }
   });
 
-  $("ref-body").addEventListener("scroll", () => { rememberScroll(); drawMinimap("left"); });
+  $("ref-body").addEventListener("scroll", () => { rememberScroll(); drawLeftMM(); });
   // 右ペインのスクロールでは追従しない（カーソルが動いたときだけ）
   /* ★drawMinimap は全文を毎回 split("\n") して見出し・検索ヒットを描き直すため、
      長文（数十万字）だと1回で数〜十数msかかる。scroll イベントはフリックだけで
@@ -8381,13 +8424,16 @@
      ＝「スクロールすると帯が遅れて動く」の原因。帯そのもの（transform）は
      毎回すぐ動かし、重い MM 描画だけ rAF で 1 フレームに 1 回へまとめる。 */
   let rightMMPending = false;
-  rScroll().addEventListener("scroll", () => {
-    growWindowHeadIfNeeded();       /* ★窓の上端に着いたら頭を継ぎ足す（5.19） */
-    syncEditLayersScroll();
+  function kickRightMM() {
     if (!rightMMPending) {
       rightMMPending = true;
       requestAnimationFrame(() => { rightMMPending = false; drawMinimap("right"); });
     }
+  }
+  rScroll().addEventListener("scroll", () => {
+    growWindowHeadIfNeeded();       /* ★窓の上端に着いたら頭を継ぎ足す（5.19） */
+    syncEditLayersScroll();
+    kickRightMM();
   });
 
   /* ---- ［文字］［幅］のスピナー（5.20）----
