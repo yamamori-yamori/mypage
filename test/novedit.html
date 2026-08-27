@@ -72,11 +72,13 @@
     --hd2: #2e7d32;
     --hd2-bg: #e8f5e9;
     --hd2-fg: #1b5e20;
-    /* Lv3＝本文中の ** / *** 強調（行頭見出しではない） */
+    /* Lv3＝本文中の ** / *** 強調と 《》 ルビ（行頭見出しではない） */
     --hd3r: #c62828;
     --hd3r-bg: rgba(198, 40, 40, .10);
     --hd3b: #1565c0;
     --hd3b-bg: rgba(21, 101, 192, .10);
+    --hd3p: #6a1b9a;
+    --hd3p-bg: rgba(106, 27, 154, .10);
     /* 差分表示（novdiff 準拠） */
     --deleted-bg: #ffebee;
     --deleted-text: #c62828;
@@ -298,6 +300,23 @@
   .searchbar input[type="text"] { flex: 1; min-width: 0; font-size: 12px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 3px; background: #fff; }
   .searchbar input:focus { outline: none; border-color: #4db6ac; }
   .searchbar input:disabled { background: #eceff1; color: #b0bec5; }
+  .q-wrap {
+    position: relative; display: flex; align-items: stretch;
+    flex: 1; min-width: 0;
+  }
+  .q-wrap input[type="text"] { flex: 1; width: 100%; padding-right: 22px; }
+  /* 左検索窓は半分まで。残りをコンテキストボタンに使う */
+  #ref-q-wrap { flex: 1 1 40%; max-width: 50%; }
+  .q-clear {
+    position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+    width: 18px; height: 18px; padding: 0; margin: 0;
+    border: none !important; background: transparent !important;
+    color: #90a4ae !important; font-size: 14px; line-height: 18px;
+    text-align: center; cursor: pointer; border-radius: 50% !important;
+    text-decoration: none !important;
+  }
+  .q-clear:hover { background: #eceff1 !important; color: #546e7a !important; }
+  .q-clear[hidden] { display: none !important; }
   .searchbar button { border: 1px solid var(--line); background: #fff; color: #546e7a; border-radius: 3px; padding: 3px 8px; font-size: 12px; cursor: pointer; line-height: 1.4; white-space: nowrap; flex-shrink: 0; }
   .searchbar button:hover { background: var(--panel-bg); }
   .searchbar button.on { background: #dcedc8; border-color: #aed581; color: #33691e; }
@@ -308,8 +327,6 @@
   }
   /* 常に「N / M」のヒット数（5.3.4） */
   .searchbar .count { font-size: 11px; color: #78909c; min-width: 52px; text-align: right; flex-shrink: 0; }
-  /* 左検索窓は半分まで。残りをコンテキストボタンに使う */
-  #ref-q { flex: 1 1 40%; max-width: 50%; }
   #ref-act {
     flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
     background: #e8f0e9; border-color: #a5c9a8; color: #2e5c33; font-weight: 600;
@@ -332,6 +349,14 @@
   }
   #diff-chrome button:hover { background: #fff8e1; }
   #ed-rep-toggle[hidden] { display: none; }
+  #btn-ruby[hidden] { display: none; }
+  /* 使えないときは取り消し線にしない（置換不可の見た目と混ぜない。条件待ち） */
+  #btn-ruby:disabled,
+  #btn-ruby:disabled:hover {
+    text-decoration: none;
+    background: #eceff1; color: #90a4ae; border-color: #cfd8dc;
+    cursor: not-allowed;
+  }
   #btn-diff-mode {
     position: absolute; z-index: 12;
     left: 50%; transform: translate(-50%, -50%);
@@ -390,6 +415,10 @@
   /* Lv3：背景帯ではなく文字色＋太字（本文中の短い強調向け） */
   #ref-inner .hd3r { color: var(--hd3r); font-weight: 700; background: transparent; box-shadow: none; }
   #ref-inner .hd3b { color: var(--hd3b); font-weight: 700; background: transparent; box-shadow: none; }
+  /* なろう／カクヨム：｜親《ルビ》。｜と《》は textContent に残してオフセットを守る */
+  #ref-inner ruby { ruby-position: over; ruby-align: center; }
+  #ref-inner rt { font-size: 0.5em; font-weight: 400; line-height: 1.15; color: var(--hd3p); }
+  #ref-inner rp, #ref-inner .rb-bar { display: none; }
 
   /* ---------- 差分表示（左ペイン・5.23） ---------- */
   /* 通常タブと折り返しを揃えるため、左右パディングの合計は WIDTH_PAD に保つ。
@@ -508,6 +537,7 @@
   .drow .dhd2 { color: var(--hd2); }
   .drow .dhd3r { color: var(--hd3r); }
   .drow .dhd3b { color: var(--hd3b); }
+  .drow .dhd3p { color: var(--hd3p); }
   .drow .ci { border-radius: 2px; }
   .drow.k-del .ci, .drow.k-chg.side-l .ci { background: #ef9a9a; color: var(--deleted-text); }
   .drow.k-add .ci, .drow.k-chg.side-r .ci { background: #81c784; color: var(--added-text); }
@@ -537,6 +567,7 @@
   /* 右ペインは textarea のため文字色を変えられない。薄い帯だけで位置を示す */
   #hd-layer .hdr.l3r { background: var(--hd3r-bg); box-shadow: none; }
   #hd-layer .hdr.l3b { background: var(--hd3b-bg); box-shadow: none; }
+  #hd-layer .hdr.l3p { background: var(--hd3p-bg); box-shadow: none; }
   #hit-layer .hit { position: absolute; background: var(--hit); border-radius: 2px; }
   #hit-layer .hit.cur { background: var(--hit-cur); box-shadow: 0 0 0 1px #f57c00; }
 
@@ -654,6 +685,7 @@
   }
   .dialog .cfg-em.b { background: var(--hd3b-bg); color: var(--hd3b); }
   .dialog .cfg-em.r { background: var(--hd3r-bg); color: var(--hd3r); }
+  .dialog .cfg-em.p { background: var(--hd3p-bg); color: var(--hd3p); }
   .dialog .fld { margin: 8px 0 4px; }
   /* 記号は Lv1／Lv2 まとめて1チェック＋1行入力 */
   .dialog .fld.sym-row {
@@ -702,7 +734,7 @@
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.4.11　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.5.0　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
@@ -804,7 +836,10 @@
       <button id="tab-undo" title="閉じたタブを復元" aria-label="閉じたタブを復元">↩</button>
     </div>
     <div class="searchbar">
-      <input type="text" id="ref-q" placeholder="検索">
+      <span class="q-wrap" id="ref-q-wrap">
+        <input type="text" id="ref-q" placeholder="検索">
+        <button type="button" class="q-clear" id="ref-q-clear" hidden title="検索を消す" aria-label="検索を消す">×</button>
+      </span>
       <button id="ref-prev" title="前へ">▲</button>
       <button id="ref-next" title="次へ">▼</button>
       <span class="count" id="ref-count">0 / 0</span>
@@ -839,11 +874,15 @@
         <button type="button" id="diff-prev" title="前の差分へ">prev ↑</button>
         <button type="button" id="diff-next" title="次の差分へ">next ↓</button>
       </span>
-      <input type="text" id="ed-q" placeholder="右ペインを検索">
+      <span class="q-wrap" id="ed-q-wrap">
+        <input type="text" id="ed-q" placeholder="右ペインを検索">
+        <button type="button" class="q-clear" id="ed-q-clear" hidden title="検索を消す" aria-label="検索を消す">×</button>
+      </span>
       <button id="ed-prev" title="前へ (Shift+Enter)">▲</button>
       <button id="ed-next" title="次へ (Enter)">▼</button>
       <span class="count" id="ed-count">0 / 0</span>
       <button id="ed-rep-toggle" title="置換 (Ctrl+H)">置換 ▾</button>
+      <button type="button" id="btn-ruby" disabled title="10文字以内（改行なし）を選択するとルビを付けます">ルビ</button>
     </div>
     <div class="searchbar replacebar" id="ed-repbar" hidden>
       <span class="lbl">→</span>
@@ -928,7 +967,7 @@
 
     <p id="cfg-nav-hint">キーボード：Ctrl（Mac は ⌘）+↑↓ で上下の見出しへ移動。Shift 併用でそこまで選択（1話コピペが簡単に）。</p>
 
-    <h3>本文中での強調表示（行頭以外でも使える）</h3>
+    <h3>本文中での強調・ルビ（行頭以外でも使える）</h3>
     <div id="cfg-lv3"></div>
 
     <p id="cfg-preview">—</p>
@@ -1003,8 +1042,7 @@
     origin: { text: "", name: "" },      // 右ペインの「初期」
     eol: "lf",                    // ツール＞保存する改行コード。"lf"|"crlf"。既定 lf（現状維持。保存時のみ適用＝5.14）
     sepPat: "",                   // ツール＞区切り行パターン（改行区切りで複数可）。行全体一致で判定（5.14）
-    diffMode: false,              // 5.23。起動・復元とも常に false（LS に書かない）
-    diffBaseTabId: null
+    diffMode: false              // 5.23。起動・復元とも常に false（LS に書かない）
   };
   const SYS = { ORIGIN: "origin" };   // システムタブ（閉じられない）。DIFF は「変更」タブごと廃止
   const MM_BG_L = "#EFE7D2";                        // 左ミニマップの下地（仕様 5.2C。canvas 塗りなので CSS 変数は持たない）
@@ -1018,24 +1056,6 @@
   /* MM canvas 上下の余白（枠用）。★drawMinimap と setupMinimapDrag の両方が使う。
      別々に書くと片方だけ変えたときに青枠とクリック位置がずれる（5.5.2）。 */
   const MM_OUT_Y = 1;
-  /* 重なるマーカーを1本にまとめる（手順・症状・実測は構築仕様書 5.5.1B）。h は MM 内側の高さ。
-     ★固定グリッドに丸める方式は使わない。chg の2行はすぐ隣なのに
-       グリッドの境目をまたぐと別々のままになり、橙にならない。 */
-  function packMarks(marks, nLines, h) {
-    const row = h / Math.max(1, nLines);
-    const pts = marks.map(m => ({ y: (m.i / nLines) * h, k: m.k })).sort((a, b) => a.y - b.y);
-    const out = [];
-    for (const p of pts) {
-      const last = out[out.length - 1];
-      if (last && p.y < last.y + last.h) {          // 直前の棒に食い込む
-        if (last.k !== p.k) last.k = "chg";
-        last.h = Math.max(last.h, p.y + MIN_BAR - last.y);
-      } else if (last && last.k === p.k && p.y <= last.y + last.h + row * 1.05) {
-        last.h = p.y + MIN_BAR - last.y;            // 同じ種別の連続行 → 伸ばす
-      } else out.push({ y: p.y, k: p.k, h: MIN_BAR });
-    }
-    return out;
-  }
   let tabSeq = 0, hitEls = [], armedTab = null, armTimer = null;
   /* タブ切り替えを受けるイベント。PointerEvent が無い環境だけ mousedown に落とす（5.3.2B） */
   const TAB_ACTIVATE_EV = window.PointerEvent ? "pointerdown" : "mousedown";
@@ -1095,9 +1115,6 @@
   /** 全文座標のキャレット位置 */
   const docSelStart = () => docHead.length + ta().selectionStart;
   const docSelEnd   = () => docHead.length + ta().selectionEnd;
-  /** 窓⇔全文の座標変換 */
-  const toWin = off => off - docHead.length;
-  const inWin = off => off >= docHead.length;
 
   /** 全文を丸ごと差し替える（読み込み・Undo・整形など）。窓は先頭に戻す */
   function setDocText(v) {
@@ -1358,7 +1375,7 @@
       label: "話・回の語（最終話・閑話）" }
   };
   const BUILTIN_ORDER = ["chapterNum", "chapterWord", "episodeNum", "episodeWord"];
-  /* Lv3：行頭見出しではなく、本文中の ** / *** 囲み（inline:true） */
+  /* Lv3：行頭見出しではなく、本文中の ** / *** 囲みと 《》 ルビ（inline:true） */
   const BUILTIN_LV3 = {
     starBlue: {
       kind: "blue", open: "***", close: "***",
@@ -1367,15 +1384,19 @@
     starRed: {
       kind: "red", open: "**", close: "**",
       sample: "**重要**", note: "（**…**。本文の途中でも可）"
+    },
+    wrapGuillemet: {
+      kind: "purple", open: "《", close: "》",
+      sample: "《ルビ》", note: "ルビテキスト"
     }
   };
   /* 赤（**）を先に並べる（UI）。判定は青（***）を先に処理する必要があるので findInlineLv3 側で順序固定 */
-  const BUILTIN_LV3_ORDER = ["starRed", "starBlue"];
+  const BUILTIN_LV3_ORDER = ["starRed", "starBlue", "wrapGuillemet"];
 
   const HEAD_DEFAULT = {
     builtin: {
       chapterNum: true, chapterWord: true, episodeNum: true, episodeWord: true,
-      starBlue: true, starRed: true
+      starBlue: true, starRed: true, wrapGuillemet: true
     },
     lv1: "# ＃ §",
     lv2: "▼ ▽ ■ □ ● 〇 ○ ## ＃＃",
@@ -1398,9 +1419,13 @@
   }
   let headC = compileHead(HEAD_DEFAULT);
 
-  /** 表示用クラス接尾辞（1 / 2 / 3r / 3b） */
+  /** 表示用クラス接尾辞（1 / 2 / 3r / 3b / 3p） */
   function headClassSuffix(h) {
-    if (h.lv === 3) return h.kind === "blue" ? "3b" : "3r";
+    if (h.lv === 3) {
+      if (h.kind === "blue") return "3b";
+      if (h.kind === "purple") return "3p";
+      return "3r";
+    }
     return String(h.lv);
   }
 
@@ -1423,11 +1448,12 @@
   }
 
   /**
-   * Lv3：`***…***`（青）と `**…**`（赤）を本文全体から拾う。
+   * Lv3：`***…***`（青）と `**…**`（赤）と `《…》`（紫・ルビテキスト）を本文全体から拾う。
    * - 改行をまたがない（1行内の強調だけ）
    * - 中身が空なら無視
    * - *** を ** より先に確定し、確定済み区間は再マッチしない
    * - `**` 探索時、位置が `***` の先頭ならスキップ（*** の一部を ** と誤認しない）
+   * - 《》 は ** / *** のあと（確定済み区間は再マッチしない）
    */
   function findInlineLv3(text, comp) {
     const c = comp || headC;
@@ -1468,12 +1494,56 @@
       }
     }
 
-    /* 検出は必ず青（***）→赤（**）。UI の並び（BUILTIN_LV3_ORDER）とは独立 */
+    /* なろう／カクヨム：｜親《ルビ》／直前の漢字連続《ルビ》。親が取れない《》は無視 */
+    function isRubyPipe(ch) { return ch === "|" || ch === "｜"; }
+    function isRubyKanji(ch) {
+      const c = ch.charCodeAt(0);
+      return (c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3400 && c <= 0x4DBF) ||
+        ch === "々" || ch === "〆" || ch === "ヵ" || ch === "ヶ" || ch === "仝";
+    }
+    function scanRuby() {
+      let i = 0;
+      while (i < text.length) {
+        const s = text.indexOf("《", i);
+        if (s < 0) break;
+        if (text.startsWith("《《", s)) { i = s + 2; continue; }
+        if (overlaps(s, s + 1)) { i = s + 1; continue; }
+        const j = text.indexOf("》", s + 1);
+        if (j < 0) break;
+        if (text.slice(s + 1, j).indexOf("\n") >= 0 || j === s + 1) { i = s + 1; continue; }
+        const end = j + 1;
+        let lineStart = s;
+        while (lineStart > 0 && text.charCodeAt(lineStart - 1) !== 10) lineStart--;
+        let start = -1, base0 = s;
+        for (let p = s - 1; p >= lineStart; p--) {
+          if (isRubyPipe(text.charAt(p))) {
+            if (p + 1 < s) { start = p; base0 = p + 1; }
+            break;
+          }
+        }
+        if (start < 0) {
+          let k = s - 1;
+          while (k >= lineStart && isRubyKanji(text.charAt(k))) k--;
+          base0 = k + 1;
+          if (base0 < s) start = base0;
+        }
+        if (start < 0 || overlaps(start, end)) { i = s + 1; continue; }
+        out.push({
+          start: start, end: end, open: s, close: j, base0: base0,
+          line: lineIndexAt(text, start), lv: 3, kind: "purple", ruby: true
+        });
+        mark(start, end);
+        i = end;
+      }
+    }
+
+    /* 検出は青（***）→赤（**）→ルビ。《《 はルビにしない（カクヨム傍点は表示しない） */
     for (const k of ["starBlue", "starRed"]) {
       if (!c.builtin[k]) continue;
       const b = BUILTIN_LV3[k];
       scan(b.open, b.close, b.kind);
     }
+    if (c.builtin.wrapGuillemet) scanRuby();
     return out;
   }
 
@@ -1702,6 +1772,7 @@
     }
     paintCaretPos(state.caret, docText());
     syncDiffToCaret();      // 本文が変わっていたら diff の行 DOM を作り直す（5.23）
+    updateRubyBtn();
   }
   function showDropCaret(off) {
     const rc = rectForOffset(off), p = toContent(rc), d = $("drop-caret");
@@ -2885,7 +2956,6 @@
       pendingDiffAlignOff = null;
     }
     const t = activeTabObj();
-    state.diffBaseTabId = t ? t.id : null;
     const base = baseTabText();
     const neu = docText();
     if (!t) {
@@ -3594,7 +3664,6 @@
      ↑↓ 以外のキー・打鍵・クリックで捨てる。 */
   let diffGoalX = null;
   let diffLineComposing = false;
-  let diffLineDirty = false;   // 行 textarea が正本と違う
   let diffRebuildBusy = false;
 
   function hideDiffLineEd() {
@@ -3612,7 +3681,6 @@
     ed.value = "";
     diffEdit = null;
     diffLineComposing = false;
-    diffLineDirty = false;
   }
 
   /** 原稿の論理行 docLine の [start, end)＝本文（終端 \\n は含まない） */
@@ -4217,22 +4285,13 @@
     if (rbPane && paneHL > 0) clampDiffPaneHeight(rbPane, paneHL);
   }
 
-  /**
-   * クリックした点 → その点にある view 行。
-   * ★same 塊（1 つの .drow に数百〜2000 行）の中は【比例配分してはいけない】。
-   *   行ごとに折り返し数が違うので、実原稿（1 塊 2,699 行）では 52 行ずれた。
-   *   ずれた行に黄枠を載せると、mountDiffLineEd → focus() がその行を見せに行き、
-   *   画面が別の場所へ飛ぶ（作者報告 2026-08-14「差分モードに入って最初にスクロールして
-   *   クリックした瞬間に別の場所へスクロールする」。2 回目が正常なのは、1 回目の
-   *   expandSameChunkAt で塊が 1 行ずつにほぐれて b === a+1 になるから）。
-   *   罠20 と同じ型＝【塊の中は必ず実測する】。当て方は DnD の diffRowHitAt と共用。
-   */
-  function diffViewLineAtPoint(row, x, y) {
-    const hit = diffHitAtPoint(row, x, y);
-    return hit ? hit.viewLine : +row.dataset.a;
-  }
-
   /** クリック点 → { viewLine, col }。col は【その行の中の桁】（分からなければ null）。
+   *  ★same 塊（1 つの .drow に数百〜2000 行）の中は【比例配分してはいけない】。
+   *    行ごとに折り返し数が違うので、実原稿（1 塊 2,699 行）では 52 行ずれた。
+   *    ずれた行に黄枠を載せると、mountDiffLineEd → focus() がその行を見せに行き、
+   *    画面が別の場所へ飛ぶ（作者報告 2026-08-14）。2 回目が正常なのは、1 回目の
+   *    expandSameChunkAt で塊が 1 行ずつにほぐれて b === a+1 になるから。
+   *    罠20 と同じ型＝【塊の中は必ず実測する】。当て方は DnD の diffRowHitAt と共用。
    *  ★桁も返すのは、クリックした場所にキャレットを置くため（作者指示 2026-08-14。
    *    それまでは常に行末に飛んでいた）。 */
   function diffHitAtPoint(row, x, y) {
@@ -4328,7 +4387,6 @@
     const body = full.slice(rg.start, rg.end);
     const row = drowForViewLine(viewLine, diffLineElsR) || row0;
     diffEdit = { viewLine: viewLine, docLine: docLine, snapFull: full, row: row };
-    diffLineDirty = false;
     /* 黄枠を開いた行を prev/next と橙 flash の起点にする（作者指示） */
     try { setDiffJumpFocus(viewLine, { scroll: false }); } catch (_) {}
     const lineTa = $("diff-line-ed");
@@ -4427,7 +4485,6 @@
     if (!diffEdit || diffLineComposing) return;
     const lineTa = $("diff-line-ed");
     diffGoalX = null;                   // 打鍵（IME 確定も）で覚えている桁は捨てる
-    diffLineDirty = true;
     state.dirty = true;
     try { $("edit-dirty").textContent = " ●"; } catch (_) {}
     /* 打鍵＝編集操作。橙 flash はここで消す */
@@ -4815,9 +4872,9 @@
       rep.textContent = "置換 ▾";
       rep.title = "置換 (Ctrl+H)";
     }
+    updateRubyBtn();
     placeDiffBtn();
   }
-  let ratioBeforeDiff = null;
   function setDiffMode(on) {
     const next = !!on;
     if (state.diffMode === next) { syncDiffChrome(); return; }
@@ -4849,10 +4906,8 @@
       try {
         setWholeDoc(docText());
         state.diffMode = false;
-        state.diffBaseTabId = null;
         diffSessionReadOff = keepRightOff;
         diffSessionScrolled = false;
-        ratioBeforeDiff = null;
         syncDiffChrome();
         exitDiffPaint();
         /* 平文描画直後：同じ基準テキストが上端に来るよう1回だけ合わせる */
@@ -4882,7 +4937,6 @@
     diffJumpViewLine = null;
     state.diffMode = true;
     if (Math.abs(state.ratio - 0.5) > 0.02) {
-      ratioBeforeDiff = state.ratio;
       state.ratio = 0.5;
       applyRatio(); reflowWidth();
     } else {
@@ -4891,10 +4945,7 @@
         state.ratio = 0.5;
         applyRatio();
       }
-      ratioBeforeDiff = null;
     }
-    const t = activeTabObj();
-    state.diffBaseTabId = t ? t.id : null;
     syncDiffChrome();
     /* ★ON は重い。12万字だと LCS より【全文 DOM を左右 2 面ぶんレイアウトする】ほうが支配的で、
        体感 1 秒。仮想スクロールは V2 の課題（要求仕様 §12-1「一期は全文 DOM ＋警告でよい」）。
@@ -5145,7 +5196,12 @@
 
     // 境界点を集めて区間ごとに描画（見出しと検索の入れ子に対応）
     const pts = new Set([0, text.length]);
-    heads.forEach(h => { pts.add(h.start); pts.add(h.end); });
+    heads.forEach(h => {
+      pts.add(h.start); pts.add(h.end);
+      if (h.ruby) {
+        pts.add(h.base0); pts.add(h.open); pts.add(h.open + 1); pts.add(h.close);
+      }
+    });
     hits.forEach(h => { pts.add(h.start); pts.add(h.end); });
     const arr = [...pts].sort((a, b) => a - b);
 
@@ -5159,7 +5215,16 @@
       const isHit = (hj < hits.length && hits[hj].start <= s);
       let frag = esc(text.slice(s, e));
       if (isHit) frag = '<mark' + (hj === state.refIdx ? ' class="cur"' : '') + '>' + frag + '</mark>';
-      if (hd) frag = '<span class="hd hd' + headClassSuffix(hd) + '">' + frag + '</span>';
+      if (hd && hd.ruby) {
+        if (e <= hd.base0) frag = '<span class="rb-bar">' + frag + "</span>";
+        else if (s >= hd.open && e <= hd.open + 1) frag = "<rp>" + frag + "</rp>";
+        else if (s >= hd.open + 1 && e <= hd.close) frag = "<rt>" + frag + "</rt>";
+        else if (s >= hd.close) frag = "<rp>" + frag + "</rp>";
+        if (s === hd.start) frag = "<ruby>" + frag;
+        if (e === hd.end) frag += "</ruby>";
+      } else if (hd) {
+        frag = '<span class="hd hd' + headClassSuffix(hd) + '">' + frag + '</span>';
+      }
       html += frag;
     }
     inner.innerHTML = '<div class="rtext">' + html + "</div>";
@@ -5223,6 +5288,18 @@
       return Math.min(txt.length, Math.floor(txt.length * ratio));
     } catch (_) { return null; }
   }
+  function syncQClear(inputId) {
+    const q = $(inputId), btn = $(inputId + "-clear");
+    if (!q || !btn) return;
+    btn.hidden = !q.value || q.disabled;
+  }
+  function clearSearch(inputId, run) {
+    const q = $(inputId);
+    q.value = "";
+    q.focus();
+    syncQClear(inputId);
+    run();
+  }
   function runRefSearch() {
     const t = activeTabObj();
     const searchable = refSearchable();
@@ -5232,6 +5309,7 @@
     if (state.refHits.length && state.refIdx < 0) state.refIdx = nearestHitIdx(state.refHits, refViewOffset());
     updateRefAct();
     updateCount("ref"); renderRef();
+    syncQClear("ref-q");
   }
 
   /** 左検索欄の有効・無効。
@@ -5248,6 +5326,7 @@
     q.placeholder = ok ? "左ペインを検索" : "資料を開くと検索できます";
     q.title = q.disabled ? q.placeholder : "";
     if (q.disabled && document.activeElement === q) q.blur();
+    syncQClear("ref-q");
   }
 
   /** 左検索バー右端のコンテキストボタン（システムタブ用） */
@@ -5344,6 +5423,7 @@
     if (!keepIdx || state.edIdx >= state.edHits.length) state.edIdx = state.edHits.length ? nearestHitIdx(state.edHits, docSelStart()) : -1;
     updateCount("ed");
     syncMirrorText(); buildHitLayer(); drawMinimap("right");
+    syncQClear("ed-q");
   }
   function stepEd(d) {
     /* ★diff 表示中は、まず編集中の 1 行を【同期で】確定させる。
@@ -5388,6 +5468,56 @@
     let ok = false;
     try { ok = document.execCommand("insertText", false, text); } catch (_) {}
     if (!ok) { const t = ta(); t.setRangeText(text, t.selectionStart, t.selectionEnd, "end"); }
+  }
+  /* 右検索バー［ルビ］。クリックで選択が消えるので pointerdown で範囲を控える */
+  let markSnap = null;
+  function takeMarkSnap() {
+    const a = docSelStart(), b = docSelEnd();
+    markSnap = { a, b, t: docText().slice(a, b) };
+  }
+  function readMarkSnap() {
+    if (markSnap) {
+      const s = markSnap;
+      markSnap = null;
+      return s;
+    }
+    const a = docSelStart(), b = docSelEnd();
+    return { a, b, t: docText().slice(a, b) };
+  }
+  function canWrapRuby(sel) {
+    return !!sel && sel.length >= 1 && sel.length <= 10 && sel.indexOf("\n") < 0;
+  }
+  function updateRubyBtn() {
+    const rb = $("btn-ruby");
+    if (!rb) return;
+    if (state.diffMode) {
+      rb.hidden = true; rb.disabled = true;
+      return;
+    }
+    rb.hidden = false;
+    const a = docSelStart(), b = docSelEnd();
+    const sel = a < b ? docText().slice(a, b) : "";
+    const okR = canWrapRuby(sel);
+    rb.disabled = !okR;
+    rb.title = okR
+      ? "選択範囲にルビを付ける（|親《ルビ》）"
+      : "10文字以内（改行なし）を選択するとルビを付けます";
+  }
+  function wrapRuby() {
+    if (state.diffMode) return;
+    const { a, b, t: sel } = readMarkSnap();
+    if (!canWrapRuby(sel)) {
+      toast("10文字以内（改行なし）を選択してください");
+      updateRubyBtn();
+      return;
+    }
+    ta().focus();
+    setDocSel(a, b);
+    insertText("|" + sel + "《》");
+    const cur = a + 1 + sel.length + 1; /* |親《 の直後 */
+    setDocSel(cur, cur);
+    onEdit(true);
+    updateCaret();
   }
   function replaceOne() {
     if (!state.edHits.length) { toast("検索結果がありません"); return; }
@@ -8172,6 +8302,7 @@
   });
 
   $("ref-q").addEventListener("input", () => runRefSearch());
+  $("ref-q-clear").addEventListener("click", () => clearSearch("ref-q", runRefSearch));
   /* 日本語入力（IME）の変換確定の Enter を奪ってはならない。
      preventDefault() すると変換が確定できず、検索欄にカタカナや漢字を入れられない。
      e.isComposing（未対応環境は keyCode 229）で変換中を判定して素通しする。 */
@@ -8184,6 +8315,7 @@
   $("ref-prev").addEventListener("click", () => stepRef(-1));
 
   $("ed-q").addEventListener("input", () => runEdSearch());
+  $("ed-q-clear").addEventListener("click", () => clearSearch("ed-q", runEdSearch));
   $("ed-q").addEventListener("keydown", e => {
     if (e.key !== "Enter" || composingKey(e)) return;      // IME の変換確定を奪わない
     e.preventDefault(); stepEd(e.shiftKey ? -1 : 1);
@@ -8204,6 +8336,8 @@
   $("ed-rep-toggle").addEventListener("click", () => toggleReplace());
   $("ed-rep-one").addEventListener("click", replaceOne);
   $("ed-rep-all").addEventListener("click", replaceAll);
+  $("btn-ruby").addEventListener("pointerdown", takeMarkSnap);
+  $("btn-ruby").addEventListener("click", wrapRuby);
   $("ed-r").addEventListener("keydown", e => {
     if (e.key !== "Enter" || composingKey(e)) return;      // IME の変換確定を奪わない
     e.preventDefault();
@@ -8501,10 +8635,15 @@
       const b = BUILTIN_LV3[k];
       const l = document.createElement("label");
       l.className = "ck";
-      const em = b.kind === "blue" ? "b" : "r";
+      const em = b.kind === "blue" ? "b" : b.kind === "purple" ? "p" : "r";
       l.innerHTML = '<input type="checkbox" data-b="' + k + '"><span></span>';
-      l.querySelector("span").innerHTML =
-        '<span class="cfg-em ' + em + '">' + b.sample + '</span> ' + b.note;
+      if (k === "wrapGuillemet") {
+        l.querySelector("span").innerHTML =
+          '<span class="cfg-em p">《ルビ》</span> ルビテキスト';
+      } else {
+        l.querySelector("span").innerHTML =
+          '<span class="cfg-em ' + em + '">' + b.sample + "</span>" + (b.note ? " " + b.note : "");
+      }
       box3.appendChild(l);
     });
   })();
@@ -8544,8 +8683,9 @@
     const n2 = h.filter(x => x.lv === 2).length;
     const n3r = h.filter(x => x.lv === 3 && x.kind === "red").length;
     const n3b = h.filter(x => x.lv === 3 && x.kind === "blue").length;
+    const n3p = h.filter(x => x.lv === 3 && x.kind === "purple").length;
     $("cfg-preview").textContent =
-      "現状：Lv1 " + n1 + " / Lv2 " + n2 + " / 強調：赤 " + n3r + " / 青 " + n3b;
+      "現状：Lv1 " + n1 + " / Lv2 " + n2 + " / 強調：赤 " + n3r + " / 青 " + n3b + " / ルビ " + n3p;
   }
   function openHeadCfg() {
     cfgToDialog(state.headCfg);
@@ -8818,7 +8958,6 @@
 
   // ① システムタブ（常設・閉じられない）
   addTab("初期", "", false, 0, SYS.ORIGIN);
-  /* 「変更」タブ（SYS.DIFF）は 5.23 の差分表示に置き換わり、関係コードごと削除した */
   // ② 起動直後は資料も原稿も空。左右の空状態ヒント（仕様 5.2B / 5.6C）が出る。
   setActiveTab(state.tabs[0].id);          // 「初期」タブをアクティブにする
   state.fileName = "無題.txt";
