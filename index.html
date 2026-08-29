@@ -230,6 +230,12 @@
     text-align: center; font-weight: 500; line-height: 1.25;
     background: linear-gradient(160deg, #9a3412, #c4a484);
   }
+  .app-icon.app-icon-img {
+    padding: 0; overflow: hidden; background: none;
+  }
+  .app-icon.app-icon-img img {
+    width: 64px; height: 64px; display: block; object-fit: cover;
+  }
   .app h3 { font-size: 0.98rem; margin-bottom: 0.2rem; }
   .app p { font-size: 0.82rem; color: var(--muted); }
   .app-update {
@@ -487,6 +493,7 @@
   <nav>
     <a href="#works">商業作品</a>
     <a href="#apps">アプリ</a>
+    <a href="#games">ゲーム</a>
     <a href="#novels-general">小説</a>
     <a href="#links">リンク</a>
   </nav>
@@ -749,6 +756,29 @@
     </div>
   </section>
 
+  <section id="games">
+    <h2>ゲーム</h2>
+    <div class="rule"></div>
+    <div class="apps">
+      <div class="app">
+        <div class="app-head">
+          <div class="app-icon app-icon-img">
+            <img src="https://yamamori-yamori.github.io/sudoku/icons/icon.svg"
+                 alt="" width="64" height="64" decoding="async" />
+          </div>
+          <div>
+            <h3>数字パズル</h3>
+            <p>ブラウザで遊べる数字パズル（数独とかナンクロとか系）.スマホのHOME画面に置けます）。</p>
+          </div>
+          <div class="app-actions">
+            <a class="btn" href="https://yamamori-yamori.github.io/sudoku/"
+               target="_blank" rel="noopener noreferrer">WEB版</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="novels-general">
     <h2>一般向けWeb小説（やまもりやもり）</h2>
     <p class="sec-desc">一般向け名義での掲載先です。</p>
@@ -845,6 +875,7 @@
           <a href="https://note.com/yamamoriyamori" target="_blank" rel="noopener noreferrer"><span class="link-label">note やまもりやもり</span><span class="link-go">→</span></a>
           <a href="#novels-general"><span class="link-label">小説掲載</span><span class="link-go">↑</span></a>
           <a href="#apps"><span class="link-label">自作アプリ</span><span class="link-go">↑</span></a>
+          <a href="#games"><span class="link-label">ゲーム</span><span class="link-go">↑</span></a>
         </div>
         <div class="x-feed" aria-label="やまもりやもりの最近の投稿">
           <div class="x-feed-head">
