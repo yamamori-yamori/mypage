@@ -236,6 +236,156 @@
   .app-icon.app-icon-img img {
     width: 64px; height: 64px; display: block; object-fit: cover;
   }
+  .game-1024-link {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 1.15rem;
+    min-height: 112px;
+    padding: 1rem 1.2rem;
+    overflow: hidden;
+    border: 1px solid #d8cabe;
+    background:
+      linear-gradient(90deg, rgba(238,228,218,0.5), transparent 42%),
+      var(--card);
+    color: var(--ink);
+    text-decoration: none;
+    transition: transform 180ms ease, border-color 700ms ease,
+      background-color 700ms ease, box-shadow 180ms ease, color 700ms ease;
+  }
+  .game-1024-link:hover {
+    transform: translateY(-2px);
+    border-color: #bbada0;
+    box-shadow: 0 12px 28px rgba(28,25,23,0.09);
+  }
+  .game-1024-link::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: #05080c;
+    opacity: 0;
+    transition: opacity 700ms ease;
+  }
+  .game-1024-link:focus-visible {
+    outline: 3px solid #c97c5f; outline-offset: 3px;
+  }
+  .game-1024-copy { position: relative; z-index: 2; min-width: 0; }
+  .game-1024-title {
+    display: flex; align-items: center; gap: 0.5rem; line-height: 1;
+  }
+  .game-1024-title strong {
+    font-size: clamp(1.45rem, 4vw, 2rem); letter-spacing: -0.05em;
+  }
+  .game-1024-pop {
+    display: inline-block;
+    padding: 0.28rem 0.4rem 0.34rem;
+    border-radius: 6px;
+    background: #f65e3b;
+    color: #fffdf7;
+    font-size: 0.85rem;
+    font-style: normal;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    transform: rotate(-4deg);
+    transition: color 700ms ease, background-color 700ms ease,
+      border-color 700ms ease, box-shadow 700ms ease;
+  }
+  .game-1024-copy p {
+    margin-top: 0.48rem; color: var(--muted); font-size: 0.78rem;
+    transition: color 700ms ease;
+  }
+  .game-1024-ranking {
+    display: inline-block;
+    margin-left: 0.45rem;
+    padding: 0.08rem 0.42rem 0.12rem;
+    border: 1px solid #cdbbad;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.5);
+    color: #7f4a72;
+    font-size: 0.65rem;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: color 700ms ease, background-color 700ms ease,
+      border-color 700ms ease, box-shadow 700ms ease;
+  }
+  .game-1024-mode {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    margin-left: 0.45rem; color: #9a7d69;
+    font-size: 0.62rem; font-weight: 600; letter-spacing: 0.1em;
+    transition: color 700ms ease;
+  }
+  .game-1024-mode::before {
+    content: ""; width: 0.38rem; height: 0.38rem; border-radius: 50%;
+    background: #f2b179; box-shadow: 0 0 0 transparent;
+    transition: background-color 700ms ease, box-shadow 700ms ease;
+  }
+  .game-1024-mode-night { display: none; }
+  .game-1024-stones {
+    position: relative; z-index: 2;
+    display: flex; align-items: center; gap: clamp(0.32rem, 1.3vw, 0.65rem);
+  }
+  .game-1024-stone {
+    display: grid; place-items: center;
+    width: clamp(42px, 7vw, 56px); aspect-ratio: 1;
+    border: 2px solid transparent;
+    border-radius: 9px;
+    color: #776e65;
+    font-size: clamp(0.92rem, 2.6vw, 1.18rem);
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    transform-origin: 50% 80%;
+    transition: color 700ms ease, background-color 700ms ease,
+      border-color 700ms ease, box-shadow 700ms ease;
+    animation: game-1024-twitch 3.6s ease-in-out infinite;
+  }
+  .game-1024-stone:nth-child(1) { background: #eee4da; }
+  .game-1024-stone:nth-child(2) { background: #ede0c8; animation-delay: 0.12s; }
+  .game-1024-stone:nth-child(3) { background: #f2b179; color: #fff; animation-delay: 0.24s; }
+  .game-1024-stone:nth-child(4) { background: #f59563; color: #fff; animation-delay: 0.36s; }
+  .game-1024-link.is-night {
+    border-color: #344252;
+    color: #d8e3ed;
+    box-shadow: inset 0 0 24px #70d6ff0d;
+  }
+  .game-1024-link.is-night::before { opacity: 1; }
+  .game-1024-link.is-night:hover {
+    border-color: #657383;
+    box-shadow: inset 0 0 24px #70d6ff12, 0 12px 28px rgba(0,0,0,0.18);
+  }
+  .game-1024-link.is-night .game-1024-pop {
+    border: 1px solid #ff5c42;
+    background: #05070a; color: #ff735c;
+    box-shadow: 0 0 8px #ff5c4266;
+  }
+  .game-1024-link.is-night .game-1024-copy p { color: #aebbc7; }
+  .game-1024-link.is-night .game-1024-ranking {
+    border-color: #a78bfa;
+    background: #151023;
+    color: #c4b5fd;
+    box-shadow: 0 0 7px #a78bfa44;
+  }
+  .game-1024-link.is-night .game-1024-mode { color: #fff36a; }
+  .game-1024-link.is-night .game-1024-mode::before {
+    background: #fff36a; box-shadow: 0 0 7px #fff36a88;
+  }
+  .game-1024-link.is-night .game-1024-mode-day { display: none; }
+  .game-1024-link.is-night .game-1024-mode-night { display: inline; }
+  .game-1024-link.is-night .game-1024-stone {
+    background: #05070a;
+    border-color: currentColor;
+    box-shadow: 0 0 7px currentColor, inset 0 0 9px #000;
+  }
+  .game-1024-link.is-night .game-1024-stone:nth-child(1) { color: #70d6ff; }
+  .game-1024-link.is-night .game-1024-stone:nth-child(2) { color: #5eead4; }
+  .game-1024-link.is-night .game-1024-stone:nth-child(3) { color: #86efac; }
+  .game-1024-link.is-night .game-1024-stone:nth-child(4) { color: #fde047; }
+  @keyframes game-1024-twitch {
+    0%, 12%, 100% { transform: rotate(0) translateY(0); }
+    3% { transform: rotate(-3deg) translateY(-2px); }
+    6% { transform: rotate(3deg) translateY(0); }
+    9% { transform: rotate(-1deg) translateY(-1px); }
+  }
   .app h3 { font-size: 0.98rem; margin-bottom: 0.2rem; }
   .app p { font-size: 0.82rem; color: var(--muted); }
   .app-update {
@@ -280,6 +430,9 @@
     object-fit: cover; object-position: top center; display: block;
   }
   @media (max-width: 560px) {
+    .game-1024-link { grid-template-columns: 1fr; gap: 0.9rem; }
+    .game-1024-stones { justify-content: space-between; width: 100%; }
+    .game-1024-stone { width: min(18vw, 54px); }
     .app-thumbs { grid-template-columns: 1fr; }
     .app-thumb img, .app-shots img { max-height: 160px; }
   }
@@ -475,6 +628,13 @@
     border-top: 1px solid var(--line);
     text-align: center; color: var(--muted);
     font-size: 0.76rem; padding: 2rem 1rem;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .game-1024-link,
+    .game-1024-link * {
+      animation: none !important;
+      transition: none !important;
+    }
   }
 </style>
 <!-- Google tag (gtag.js) -->
@@ -760,6 +920,30 @@
     <h2>ゲーム</h2>
     <div class="rule"></div>
     <div class="apps">
+      <a class="game-1024-link" data-1024-theme-cycle
+         href="https://1024-pop.pages.dev/"
+         target="_blank" rel="noopener noreferrer"
+         aria-label="1024 POPをWEBで遊ぶ。ONLINEランキング毎日開催">
+        <div class="game-1024-copy">
+          <div class="game-1024-title">
+            <strong>1024</strong><em class="game-1024-pop">POP!</em>
+          </div>
+          <p>
+            同じ数字の石を重ねて、1024を作ろう
+            <span class="game-1024-ranking">ONLINEランキング 毎日開催</span>
+            <span class="game-1024-mode" aria-hidden="true">
+              <span class="game-1024-mode-day">DAY</span>
+              <span class="game-1024-mode-night">NIGHT</span>
+            </span>
+          </p>
+        </div>
+        <div class="game-1024-stones" aria-hidden="true">
+          <span class="game-1024-stone">2</span>
+          <span class="game-1024-stone">4</span>
+          <span class="game-1024-stone">8</span>
+          <span class="game-1024-stone">16</span>
+        </div>
+      </a>
       <div class="app">
         <div class="app-head">
           <div class="app-icon app-icon-img">
@@ -1248,6 +1432,37 @@
     }
   }
   document.querySelectorAll("[data-x-user]").forEach(loadFeed);
+})();
+</script>
+<script>
+(() => {
+  const link = document.querySelector("[data-1024-theme-cycle]");
+  if (!link) return;
+
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let timer = null;
+  let night = false;
+
+  function stopCycle() {
+    if (timer) window.clearInterval(timer);
+    timer = null;
+    night = false;
+    link.classList.remove("is-night");
+  }
+
+  function startCycle() {
+    stopCycle();
+    if (reducedMotion.matches) return;
+    timer = window.setInterval(() => {
+      night = !night;
+      link.classList.toggle("is-night", night);
+    }, 4000);
+  }
+
+  startCycle();
+  if (typeof reducedMotion.addEventListener === "function") {
+    reducedMotion.addEventListener("change", startCycle);
+  }
 })();
 </script>
 </body>
