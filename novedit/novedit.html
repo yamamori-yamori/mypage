@@ -2139,10 +2139,10 @@
   /** 打ち終わってから一度だけ見出し帯を描き直す（5.19D）。
    *  執筆中の skipHeavy は打鍵ごとの重さを避けるためのものなので、
    *  「手が止まったら描く」なら趣旨を壊さずに **強調** の色がすぐ出る。
-   *  ★遅延は 0ms（次 tick）。実測で前方ウィンドウ化後の重い側は数十ms程度に収まっており、
-   *    650ms も待たせる必要はない。0 でも clearTimeout による debounce は効くので、
-   *    連続入力中は最後の1打鍵の後まで描き直しをまとめる効果は変わらない。 */
-  function scheduleHeadRepaint() {
+   *  ★3万字超の削除は180msの打ち止まり待ち（5.19M）。0msではキーリピートより
+   *    先に発火し、削除ごとにミラー全文同期・Range測定まで走ってしまう。
+   *    短文・挿入・IME確定は従来の0ms。本文差し替えは専用の強制描画を保つ。 */
+  function scheduleHeadRepaint(ev) {
     clearTimeout(headIdleTimer);
     headIdleTimer = setTimeout(() => {
       headIdleTimer = null;
@@ -2150,7 +2150,7 @@
       overlayForceHeavy = true;
       overlayWantFull = true;
       kickOverlay();
-    }, 0);
+    }, ev && (ev.inputType || "").indexOf("delete") === 0 && docLen() > 30000 ? 180 : 0);
   }
   let overlayFullTimer = null;
   let leftMmFollowTimer = null;
@@ -8579,7 +8579,7 @@
     }
     onEdit(false, e);
     scheduleWindowFix();          /* ★打ち終わりに窓を詰める（5.19） */
-    scheduleHeadRepaint();        /* ★打ち終わりに **強調** の色を出す（5.19D） */
+    scheduleHeadRepaint(e);       /* ★長文の削除は打ち止まり後に強調の色を更新（5.19M） */
   });
   /* 関所（markedText）の武装／解除（5.15.3）。
      ・人が編集したら解除する（その編集を戻すのはブラウザの仕事）
