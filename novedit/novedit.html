@@ -734,7 +734,7 @@
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.5.0　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.5.2　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
@@ -1440,11 +1440,68 @@
     return 0;
   }
 
-  /** オフセット → 行番号（0 始まり） */
+  /** オフセット → 行番号（0 始まり）。
+   *  ★1 件ごとに本文先頭から数え直すので O(オフセット)。ルビ・強調が多い長文で
+   *    ここが二乗になっていた（S-7）。行頭表があるときは lineIndexFrom() を使うこと。 */
   function lineIndexAt(text, off) {
     let ln = 0;
     for (let i = 0; i < off && i < text.length; i++) if (text.charCodeAt(i) === 10) ln++;
     return ln;
+  }
+  /** 行頭オフセット表。starts[k] = k 行目の先頭（S-7） */
+  function lineStartTable(text) {
+    const starts = [0];
+    for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) starts.push(i + 1);
+    return starts;
+  }
+  /** 行頭表から off の行番号を二分探索（starts[ln] <= off < starts[ln+1]）。
+   *  lineIndexAt(text, off) と同じ値を返す（off が本文長を超える場合も含めて総当たり検査済み）。 */
+  function lineIndexFrom(starts, off) {
+    let lo = 0, hi = starts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (starts[mid] <= off) lo = mid; else hi = mid - 1;
+    }
+    return lo;
+  }
+  /** 確定済み区間の集合（S-7）。旧実装は配列 covered を候補ごとに毎回全部見ていた。
+   *  ★区間どうしは重ならない。しかも「同じパスの中では start が単調に増える」——
+   *    scan / scanRuby は確定したら i を区間の右端まで進めるので、次の候補は
+   *    必ずその右端以降から始まる（start が前の右端より手前なら、それは重なりとして
+   *    弾かれる）。だから走査中のぶん cur も確定ぶん base もソート済みで、
+   *    重なり判定は二分探索 2 回で済む。パスの切れ目で cur を base へ併合する。 */
+  function coveredSet() {
+    let base = [], cur = [];
+    /* arr の中で「右端が s より大きい」最初の区間を探し、その左端が e 未満なら重なる */
+    const hitIn = (arr, s, e) => {
+      let lo = 0, hi = arr.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid][1] <= s) lo = mid + 1; else hi = mid; }
+      return lo < arr.length && arr[lo][0] < e;
+    };
+    return {
+      overlaps: (s, e) => hitIn(base, s, e) || hitIn(cur, s, e),
+      mark: (s, e) => {
+        if (cur.length && s < cur[cur.length - 1][0]) {
+          /* ★上の理由で起きないはず。走査の進め方を将来変えたときに
+             二分探索が黙って壊れないよう、そのときだけ挿入して整列を保つ。 */
+          let lo = 0, hi = cur.length;
+          while (lo < hi) { const mid = (lo + hi) >> 1; if (cur[mid][0] < s) lo = mid + 1; else hi = mid; }
+          cur.splice(lo, 0, [s, e]);
+          return;
+        }
+        cur.push([s, e]);
+      },
+      /** パスの終わり。走査ぶんを確定ぶんへ併合する（どちらもソート済みなので線形） */
+      endPass: () => {
+        if (!cur.length) return;
+        const out = [];
+        let i = 0, j = 0;
+        while (i < base.length && j < cur.length) out.push(base[i][0] <= cur[j][0] ? base[i++] : cur[j++]);
+        while (i < base.length) out.push(base[i++]);
+        while (j < cur.length) out.push(cur[j++]);
+        base = out; cur = [];
+      }
+    };
   }
 
   /**
@@ -1455,16 +1512,28 @@
    * - `**` 探索時、位置が `***` の先頭ならスキップ（*** の一部を ** と誤認しない）
    * - 《》 は ** / *** のあと（確定済み区間は再マッチしない）
    */
-  function findInlineLv3(text, comp) {
+  function findInlineLv3(text, comp, starts) {
     const c = comp || headC;
     const out = [];
     if (!text) return out;
-    const covered = []; // [start, end) 確定済み
-    const overlaps = (s, e) => covered.some(r => s < r[1] && e > r[0]);
-    const mark = (s, e) => { covered.push([s, e]); };
+    /* ★行頭表は findHeadings が作ったものを使い回す。単体で呼ばれたときだけ自分で作る（S-7） */
+    const lines = starts || lineStartTable(text);
+    const cov = coveredSet();
+    const overlaps = (s, e) => cov.overlaps(s, e);
+    const mark = (s, e) => { cov.mark(s, e); };
 
     function scan(open, close, kind) {
       const olen = open.length, clen = close.length;
+      /* ★「from 以降の最初の改行」を前進だけするキャッシュで引く（S-7）。
+         from（= s + olen）は単調に増えるので、覚えた位置が from 以上ならそのまま使える。
+         -1（もう改行は無い）も覚える。★毎回 text.indexOf("\n", from) を呼ぶと、
+         改行の無い原稿で「残り全部を舐める」を候補ごとに払って二乗になる
+         （実測 39,000字・改行なしで 60.2ms → 1ms）。 */
+      let nlAt = -2;
+      const nextNl = from => {
+        if (nlAt === -2 || (nlAt >= 0 && nlAt < from)) nlAt = text.indexOf("\n", from);
+        return nlAt;
+      };
       let i = 0;
       while (i < text.length) {
         let s = text.indexOf(open, i);
@@ -1472,6 +1541,10 @@
         // ** が *** の先頭に重なるときは進めない（青側の担当）
         if (open === "**" && text.startsWith("***", s)) { i = s + 1; continue; }
         if (overlaps(s, s + olen)) { i = s + 1; continue; }
+        /* ★この s の行末（次の改行）。候補ごとに text.slice(s + olen, j) を作ると
+           それ自体が距離に比例して重いので、「inner が改行を含む」は
+           nl が j より手前にあるかどうかで判る。 */
+        const nl = nextNl(s + olen);
         let eSearch = s + olen;
         let found = -1;
         while (eSearch <= text.length - clen) {
@@ -1479,16 +1552,25 @@
           if (j < 0) break;
           // 閉じ側の ** が *** の一部なら次へ
           if (close === "**" && text.startsWith("***", j)) { eSearch = j + 1; continue; }
+          /* ★改行の打ち切りは【重なり判定より先】に見る。
+             inner は j が進むほど伸びる一方なので、一度でも改行を含んだら
+             以降のどの j でも必ず含む＝この s に相方は無い。
+             ★順序が逆だと打ち切りを迂回する：`**未完 ***青***` のように
+               確定済み区間（青）が行内にあると overlaps(s, end) の continue が
+               先に効いて、改行の手前で止まれず残り全文を舐めてしまう
+               （実測 2.6万字 176ms → 5.2万字 815ms → 10.4万字 3,074ms の二乗）。
+             ★空判定（j === s + olen）も overlaps より先でよい。どちらの順でも
+               この候補は continue になるので結果は変わらない。 */
+          if (nl >= 0 && nl < j) break;
+          if (j === s + olen) { eSearch = j + 1; continue; }
           const end = j + clen;
           if (overlaps(s, end)) { eSearch = j + 1; continue; }
-          const inner = text.slice(s + olen, j);
-          if (!inner.length || inner.indexOf("\n") >= 0) { eSearch = j + 1; continue; }
           found = j;
           break;
         }
         if (found < 0) { i = s + 1; continue; }
         const end = found + clen;
-        out.push({ start: s, end: end, line: lineIndexAt(text, s), lv: 3, kind: kind });
+        out.push({ start: s, end: end, line: lineIndexFrom(lines, s), lv: 3, kind: kind });
         mark(s, end);
         i = end;
       }
@@ -1502,6 +1584,25 @@
         ch === "々" || ch === "〆" || ch === "ヵ" || ch === "ヶ" || ch === "仝";
     }
     function scanRuby() {
+      /* ★改行位置も scan() と同じ前進キャッシュで引く（S-7） */
+      let nlAtR = -2;
+      const nextNlR = from => {
+        if (nlAtR === -2 || (nlAtR >= 0 && nlAtR < from)) nlAtR = text.indexOf("\n", from);
+        return nlAtR;
+      };
+      /* ★「直前の ｜ / |」を左から一度だけ舐めて覚える（S-7）。
+         s は単調に増える（確定したら i を右端へ、外れたら s+1 へ進めるだけ）ので、
+         前へ戻る必要がない。旧実装は 《 のたびに行頭まで 1 文字ずつ戻っていたため、
+         1 行が長い原稿——とくに改行の無い本文——で二乗になっていた
+         （実測 39,000字・改行なしで 1,218.9ms のうち 135.9ms ぶん）。 */
+      let pipeScan = 0, lastPipe = -1;
+      const advancePipe = upto => {
+        while (pipeScan < upto) {
+          const cc = text.charCodeAt(pipeScan);
+          if (cc === 124 || cc === 0xFF5C) lastPipe = pipeScan;   /* | ／ ｜ */
+          pipeScan++;
+        }
+      };
       let i = 0;
       while (i < text.length) {
         const s = text.indexOf("《", i);
@@ -1510,18 +1611,19 @@
         if (overlaps(s, s + 1)) { i = s + 1; continue; }
         const j = text.indexOf("》", s + 1);
         if (j < 0) break;
-        if (text.slice(s + 1, j).indexOf("\n") >= 0 || j === s + 1) { i = s + 1; continue; }
+        const nlR = nextNlR(s + 1);                   /* ★slice を作らない。理由は scan() と同じ */
+        if ((nlR >= 0 && nlR < j) || j === s + 1) { i = s + 1; continue; }
         const end = j + 1;
-        let lineStart = s;
-        while (lineStart > 0 && text.charCodeAt(lineStart - 1) !== 10) lineStart--;
+        const lineStart = lines[lineIndexFrom(lines, s)];   /* ★行頭まで 1 文字ずつ戻らない（S-7） */
+        advancePipe(s);
         let start = -1, base0 = s;
-        for (let p = s - 1; p >= lineStart; p--) {
-          if (isRubyPipe(text.charAt(p))) {
-            if (p + 1 < s) { start = p; base0 = p + 1; }
-            break;
-          }
-        }
+        /* ★同じ行に ｜ があるときだけ親にする。親が空（｜ の直後が 《）なら
+           start は -1 のままで、下の漢字ルールへ落ちる——旧実装の break と同じ。 */
+        if (lastPipe >= lineStart && lastPipe + 1 < s) { start = lastPipe; base0 = lastPipe + 1; }
         if (start < 0) {
+          /* ★こちらは漢字の連なりぶんしか戻らないので、行の長さには比例しない */
+          /* ★｜ が 《 の直前にあった（親が空）ときもここへ来るが、text[s-1] が ｜ で
+             漢字ではないので while は即止まり、base0 = s → start は -1 のまま。旧実装と同じ。 */
           let k = s - 1;
           while (k >= lineStart && isRubyKanji(text.charAt(k))) k--;
           base0 = k + 1;
@@ -1530,7 +1632,7 @@
         if (start < 0 || overlaps(start, end)) { i = s + 1; continue; }
         out.push({
           start: start, end: end, open: s, close: j, base0: base0,
-          line: lineIndexAt(text, start), lv: 3, kind: "purple", ruby: true
+          line: lineIndexFrom(lines, start), lv: 3, kind: "purple", ruby: true
         });
         mark(start, end);
         i = end;
@@ -1542,8 +1644,9 @@
       if (!c.builtin[k]) continue;
       const b = BUILTIN_LV3[k];
       scan(b.open, b.close, b.kind);
+      cov.endPass();
     }
-    if (c.builtin.wrapGuillemet) scanRuby();
+    if (c.builtin.wrapGuillemet) { scanRuby(); cov.endPass(); }
     return out;
   }
 
@@ -1551,16 +1654,25 @@
   function findHeadings(text, comp) {
     const out = [];
     if (!text) return out;
+    /* ★行頭オフセット表はここで 1 回だけ作り、findInlineLv3 と共有する（S-7） */
+    const lines = [0];
     let pos = 0, ln = 0;
     for (const raw of text.split("\n")) {
       const lv = headLevel(raw, comp);
       if (lv) out.push({ start: pos, end: pos + raw.length, line: ln, lv: lv });
       pos += raw.length + 1; ln++;
+      if (pos <= text.length) lines.push(pos);
     }
-    const inline = findInlineLv3(text, comp);
-    // 行頭見出しと重なる inline は行頭側を優先（区間が完全に行見出し内なら inline を落とす）
+    const inline = findInlineLv3(text, comp, lines);
+    /* 行頭見出しと重なる inline は行頭側を優先（区間が完全に行見出し内なら inline を落とす）。
+       ★行見出しは 1 行に 1 つで互いに重ならないので、h を含みうるのは
+         「start が h.start 以下で最後のもの」1 つだけ。総当たりを二分探索にした（S-7）。 */
+    const nHead = out.length;
     for (const h of inline) {
-      const blocked = out.some(L => L.lv < 3 && h.start >= L.start && h.end <= L.end);
+      let lo = 0, hi = nHead;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (out[mid].start <= h.start) lo = mid + 1; else hi = mid; }
+      const L = lo > 0 ? out[lo - 1] : null;
+      const blocked = !!L && L.lv < 3 && h.end <= L.end;
       if (!blocked) out.push(h);
     }
     out.sort((a, b) => a.start - b.start || a.end - b.end);
@@ -5214,7 +5326,9 @@
       const hd = (hi < heads.length && heads[hi].start <= s) ? heads[hi] : null;
       const isHit = (hj < hits.length && hits[hj].start <= s);
       let frag = esc(text.slice(s, e));
-      if (isHit) frag = '<mark' + (hj === state.refIdx ? ' class="cur"' : '') + '>' + frag + '</mark>';
+      /* ★data-hi はヒット番号。1 件のヒットは見出し・ルビの境界で複数の <mark> に
+         割れるので、▲▼ で色を移すときは番号でまとめて掴む（5.4G・moveRefCur）。 */
+      if (isHit) frag = '<mark data-hi="' + hj + '"' + (hj === state.refIdx ? ' class="cur"' : '') + '>' + frag + '</mark>';
       if (hd && hd.ruby) {
         if (e <= hd.base0) frag = '<span class="rb-bar">' + frag + "</span>";
         else if (s >= hd.open && e <= hd.open + 1) frag = "<rp>" + frag + "</rp>";
@@ -5300,7 +5414,51 @@
     syncQClear(inputId);
     run();
   }
+  /* =======================================================
+     5.4G 検索は「打鍵のたび」に走らせない
+     -------------------------------------------------------
+     左右とも input で即 run していた。1 打鍵で全文検索＋本文 HTML の
+     組み直し（左）／ミラー同期＋ヒット層＋MM（右）まで通る。
+     実測（同一ブラウザで新旧を並べて。10万字・ヒット 5,000 件）:
+       左 打鍵 1 回の input ハンドラ   121.8ms → 0.2ms
+       左 連続 10 打鍵の合計           137.8ms → 0.4ms
+       左 ▼ 1 手                       毎回 185〜215ms → 2 手目以降 6〜9ms
+       ★右のほうが重い（ミラー全文＋ヒット層＋MM を通るため）
+       右 打鍵 1 回の input ハンドラ  1340.2ms → 0.1ms
+       右 連続 10 打鍵の合計          4816.3ms → 0.7ms
+     ★「ハンドラが 0.1ms」は「固まらなくなった」ではない。動かしたのは
+       【いつ・何回走らせるか】だけで、1 回ぶんの重さは変えていない。
+       longtask 実測（10万字・5,000 ヒット）: 予約実行〜描画で
+       右 1,205ms ／ 左 259ms のロングタスクが残る（0 ヒットなら 16ms 未満）。
+       右は buildHitLayer の rectsForRange（上限 1,000 件の矩形測定）が主。
+       稼げたのは「打鍵のたびに払わない」「連続入力で 1 回にまとまる」まで。
+       1 回ぶんを割るのは未処置 S-8。
+     60fps の 1 フレーム（16.7ms）を大きく超えるうえ、★日本語入力では
+     変換中の 1 文字ごとに走るので「文字入力が遅い」として体に出る。
+     ★遅らせるのは「いつ走らせるか」だけ。検索結果・上限 5,000 件・
+       現在位置に近いヒットを選ぶ規則（nearestHitIdx）は一切変えない。
+     ★結果がすぐ要る操作（Enter・▲▼・クリア）は flush で先に確定させる。
+     ★タブ切替・「初期」の再設定・編集テキスト入れ替えは run を直接呼ぶので、
+       run の先頭で予約を捨てる。捨てないと、切り替えた【あと】に古い予約が
+       走って新しいタブのテキストに古い検索語を当て直す（5.4D と同じ型）。 */
+  const SEARCH_DELAY_MS = 120;
+  let refSearchTimer = null, refQComposing = false;
+  function cancelRefSearch() { clearTimeout(refSearchTimer); refSearchTimer = null; }
+  function scheduleRefSearch() {
+    cancelRefSearch();
+    /* ★空にしたときは待たない。findAll は語が無ければ即 [] を返すのでまとめる意味が無く、
+       待たせると消したはずの <mark> が 120ms 残って見える。クリアと同じ扱いにする。 */
+    if (!$("ref-q").value) { runRefSearch(); return; }
+    refSearchTimer = setTimeout(() => { refSearchTimer = null; runRefSearch(); }, SEARCH_DELAY_MS);
+  }
+  /** 予約が残っていれば先に走らせる。走らせたら true */
+  function flushRefSearch() {
+    if (refSearchTimer === null) return false;
+    cancelRefSearch(); runRefSearch(); return true;
+  }
+
   function runRefSearch() {
+    cancelRefSearch();          /* ★予約の取り消し。理由は 5.4G */
     const t = activeTabObj();
     const searchable = refSearchable();
     state.refHits = searchable ? findAll(t.text, $("ref-q").value) : [];
@@ -5363,12 +5521,38 @@
     try { toast(msg, ms); }
     finally { toastAt = prev; }
   }
+  /** 現在ヒットの色だけ移し、先頭の <mark> を返す。移せなければ null（5.4G）。
+   *  ★1 件のヒットが 1 個の <mark> とは限らない。renderRef は見出し・ルビの
+   *    境界でも区間を割るので、見出しをまたぐヒットは複数の <mark> になる。
+   *    data-hi でまとめて付け外しする。
+   *  ★null を返す条件を「DOM に見つからない」だけにしてはいけない。
+   *    diff 表示中は rebuildDiffView が描くので #ref-inner に mark[data-hi] は無く、
+   *    テキストが差し替わっていれば古いヒットに当ててずれる（5.4D の保険）。
+   *    どちらも renderRef 側の従来経路へ落とす。 */
+  function moveRefCur() {
+    if (state.diffMode) return null;
+    const t = activeTabObj();
+    if (!t || (state.refHitsSrc !== null && state.refHitsSrc !== t.text)) return null;
+    const inner = $("ref-inner");
+    const next = inner.querySelectorAll('mark[data-hi="' + state.refIdx + '"]');
+    if (!next.length) return null;
+    inner.querySelectorAll("mark.cur").forEach(m => m.classList.remove("cur"));
+    next.forEach(m => m.classList.add("cur"));
+    return next[0];
+  }
   function stepRef(d) {
     if (!state.refHits.length) return;
     state.refIdx = (state.refIdx + d + state.refHits.length) % state.refHits.length;
-    updateCount("ref"); renderRef();
+    updateCount("ref");
+    /* ★色を 1 箇所移すために本文 HTML を組み直さない（5.4G）。
+       右ペイン（markCurrentHit）と同じく class の付け替えで済ませる。
+       ★内訳（10万字・5,000 ヒット）: querySelectorAll 0.7ms／class 付け外し 0.2ms／
+         offsetTop の強制レイアウト 162.6ms。重いのは最後だけで、これは
+         描画直後の 1 回で済む（2 手目以降は 6〜9ms）。組み直す旧実装は
+         毎回 200ms 前後を払い続けていた。 */
+    let target = moveRefCur();
+    if (!target) { renderRef(); target = $("ref-inner").querySelector("mark.cur"); }
     const rb = $("ref-body");
-    const target = $("ref-inner").querySelector("mark.cur");
     if (target) { rb.scrollTop = target.offsetTop - rb.clientHeight / 2; rememberScroll(); drawMinimap("left"); }
   }
   function updateCount(which) {
@@ -5417,7 +5601,9 @@
   }
   const markCurrentHit = () => hitEls.forEach((els, i) => els.forEach(d => d.classList.toggle("cur", i === state.edIdx)));
 
+  let edQComposing = false;
   function runEdSearch(keepIdx) {
+    cancelEdSearch();           /* ★予約の取り消し。理由は 5.4G */
     state.edHitsSrc = docText();       // どのテキストに対するヒットか（5.4D）
     state.edHits = findAll(docText(), $("ed-q").value);
     if (!keepIdx || state.edIdx >= state.edHits.length) state.edIdx = state.edHits.length ? nearestHitIdx(state.edHits, docSelStart()) : -1;
@@ -5520,6 +5706,12 @@
     updateCaret();
   }
   function replaceOne() {
+    /* ★予約中の検索を先に確定させる（5.4G）。デバウンスを入れる前は input で
+       毎回 run していたので state.edHits は必ず最新だった。入れたあとは、
+       検索語を書き換えて 120ms 以内に［1件置換］を押すと【古い語のヒット】を
+       置換してしまう（本文「猫 犬」で「猫」→「犬」に変えた直後に「鳥」で置換すると
+       「鳥 犬」になる）。Enter・▲▼ と同じく flush を通す。 */
+    flushEdSearch();
     if (!state.edHits.length) { toast("検索結果がありません"); return; }
     if (state.edIdx < 0) state.edIdx = 0;
     const h = state.edHits[state.edIdx], rep = $("ed-r").value, t = ta();
@@ -6436,13 +6628,24 @@
     if (it === "historyUndo" || it === "historyRedo") return true;
     return true;
   }
-  let edSearchTimer = null;
+  /* ★本文編集でヒットを数え直す経路（下の 6449 相当）と、右検索欄の打鍵（5.4G）で
+     同じ予約を使う。別々に持つと、片方の予約が残ったまま他方が走って二重に数える。
+     遅延は左右そろえて SEARCH_DELAY_MS（旧 150ms。左を足すときに 120ms へ統一した）。 */
+  let edSearchTimer = null, edSearchKeep = false;
+  function cancelEdSearch() { clearTimeout(edSearchTimer); edSearchTimer = null; }
   function scheduleEdSearch(keepIdx) {
-    clearTimeout(edSearchTimer);
+    cancelEdSearch(); edSearchKeep = !!keepIdx;   /* ★flush が keepIdx を落とさないように控える */
+    if (!$("ed-q").value) { runEdSearch(keepIdx); return; }  /* ★空は待たない。理由は scheduleRefSearch */
     edSearchTimer = setTimeout(() => {
       edSearchTimer = null;
       runEdSearch(keepIdx);
-    }, 150);
+    }, SEARCH_DELAY_MS);
+  }
+  /** 予約が残っていれば先に走らせる。走らせたら true（Enter・▲▼ 用。5.4G） */
+  function flushEdSearch() {
+    if (edSearchTimer === null) return false;
+    const keep = edSearchKeep;
+    cancelEdSearch(); runEdSearch(keep); return true;
   }
   /* 自動保存の状態はトーストではなく、ツールバーの空き領域に出したままにする（5.8）。
      本文の上に何も重ならないので、書いている最中でも視界を邪魔しない。
@@ -8214,7 +8417,7 @@
     clearTimeout(overlayFullTimer); overlayFullTimer = null;
     clearTimeout(headerStatsTimer); headerStatsTimer = null;
     clearTimeout(saveTimer); saveTimer = null;
-    clearTimeout(edSearchTimer); edSearchTimer = null;
+    cancelEdSearch();
     clearTimeout(diffTimer); diffTimer = null;
     clearTimeout(leftMmFollowTimer); leftMmFollowTimer = null;
     clearTimeout(winFixTimer); winFixTimer = null;   /* ★変換中に窓を張り直さない（5.19） */
@@ -8301,27 +8504,42 @@
     e.target.value = "";
   });
 
-  $("ref-q").addEventListener("input", () => runRefSearch());
-  $("ref-q-clear").addEventListener("click", () => clearSearch("ref-q", runRefSearch));
+  /* ★変換中は検索しない（5.4G）。クリアボタンの出し入れだけ即時に追う。
+     compositionend のあとに input が来る環境でも、来ない環境でも、
+     scheduleRefSearch は前の予約を捨てるので実行は 1 回にまとまる。 */
+  $("ref-q").addEventListener("compositionstart", () => { refQComposing = true; cancelRefSearch(); });
+  $("ref-q").addEventListener("compositionend", () => { refQComposing = false; scheduleRefSearch(); });
+  $("ref-q").addEventListener("input", () => {
+    syncQClear("ref-q");
+    if (refQComposing) return;
+    scheduleRefSearch();
+  });
+  $("ref-q-clear").addEventListener("click", () => clearSearch("ref-q", () => { cancelRefSearch(); runRefSearch(); }));
   /* 日本語入力（IME）の変換確定の Enter を奪ってはならない。
      preventDefault() すると変換が確定できず、検索欄にカタカナや漢字を入れられない。
      e.isComposing（未対応環境は keyCode 229）で変換中を判定して素通しする。 */
   const composingKey = e => e.isComposing === true || e.keyCode === 229;
   $("ref-q").addEventListener("keydown", e => {
     if (e.key !== "Enter" || composingKey(e)) return;
-    e.preventDefault(); stepRef(e.shiftKey ? -1 : 1);
+    e.preventDefault(); flushRefSearch(); stepRef(e.shiftKey ? -1 : 1);
   });
-  $("ref-next").addEventListener("click", () => stepRef(1));
-  $("ref-prev").addEventListener("click", () => stepRef(-1));
+  $("ref-next").addEventListener("click", () => { flushRefSearch(); stepRef(1); });
+  $("ref-prev").addEventListener("click", () => { flushRefSearch(); stepRef(-1); });
 
-  $("ed-q").addEventListener("input", () => runEdSearch());
-  $("ed-q-clear").addEventListener("click", () => clearSearch("ed-q", runEdSearch));
+  $("ed-q").addEventListener("compositionstart", () => { edQComposing = true; cancelEdSearch(); });
+  $("ed-q").addEventListener("compositionend", () => { edQComposing = false; scheduleEdSearch(); });
+  $("ed-q").addEventListener("input", () => {
+    syncQClear("ed-q");
+    if (edQComposing) return;
+    scheduleEdSearch();
+  });
+  $("ed-q-clear").addEventListener("click", () => clearSearch("ed-q", () => { cancelEdSearch(); runEdSearch(); }));
   $("ed-q").addEventListener("keydown", e => {
     if (e.key !== "Enter" || composingKey(e)) return;      // IME の変換確定を奪わない
-    e.preventDefault(); stepEd(e.shiftKey ? -1 : 1);
+    e.preventDefault(); flushEdSearch(); stepEd(e.shiftKey ? -1 : 1);
   });
-  $("ed-next").addEventListener("click", () => stepEd(1));
-  $("ed-prev").addEventListener("click", () => stepEd(-1));
+  $("ed-next").addEventListener("click", () => { flushEdSearch(); stepEd(1); });
+  $("ed-prev").addEventListener("click", () => { flushEdSearch(); stepEd(-1); });
 
   function toggleReplace(force) {
     if (state.diffMode) { toast("diff 表示中は置換できません"); return; }
