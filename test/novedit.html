@@ -734,7 +734,7 @@
 
 <div id="toolbar">
   <span class="app-title"><span class="app-name">novedit</span></span>
-  <span class="app-meta">ver.1.5.2　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
+  <span class="app-meta">ver.1.5.3　<a href="https://yamamori-yamori.github.io/mypage/" target="_blank" rel="noopener noreferrer">by やまもりやもり</a></span>
 
   <!-- 自動保存の状態。空いている中央に出したままにする（5.8） -->
   <span id="autosave-note" aria-live="polite"></span>
@@ -2139,9 +2139,10 @@
   /** 打ち終わってから一度だけ見出し帯を描き直す（5.19D）。
    *  執筆中の skipHeavy は打鍵ごとの重さを避けるためのものなので、
    *  「手が止まったら描く」なら趣旨を壊さずに **強調** の色がすぐ出る。
-   *  ★3万字超の削除は180msの打ち止まり待ち（5.19M）。0msではキーリピートより
-   *    先に発火し、削除ごとにミラー全文同期・Range測定まで走ってしまう。
-   *    短文・挿入・IME確定は従来の0ms。本文差し替えは専用の強制描画を保つ。 */
+   *  ★文字数・入力種別を問わず180msの打ち止まり待ち（5.19N）。
+   *    14,485文字でも94範囲の帯を毎キー再構築していた。IME確定も同じ予約へまとめる。
+   *    ここでは本文長を読む必要もない。本文表示とキャレットはブラウザが即時更新し、
+   *    設定・読込の強制描画はrefreshOverlay()の別経路を保つ。 */
   function scheduleHeadRepaint(ev) {
     clearTimeout(headIdleTimer);
     headIdleTimer = setTimeout(() => {
@@ -2150,7 +2151,7 @@
       overlayForceHeavy = true;
       overlayWantFull = true;
       kickOverlay();
-    }, ev && (ev.inputType || "").indexOf("delete") === 0 && docLen() > 30000 ? 180 : 0);
+    }, 180);
   }
   let overlayFullTimer = null;
   let leftMmFollowTimer = null;
